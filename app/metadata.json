@@ -1,0 +1,6 @@
+{
+  "name": "Arwora Hyper Toolkit",
+  "description": "An advanced system toolkit featuring Private DNS Changer with custom servers, Wi-Fi password manager, and system utility tools.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,158 @@
+package com.arwora.ui.components
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.Immutable
+import androidx.navigation.NavController
+import androidx.navigation.NavDestination
+import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import com.arwora.ui.navigation.Screen
+
+import androidx.compose.material3.ripple
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextOverflow
+
+fun NavController.navigateSingleTopWithRestore(route: String) {
+    this.navigate(route) {
+        launchSingleTop = true
+        restoreState = true
+        popUpTo(this@navigateSingleTopWithRestore.graph.findStartDestination().id) {
+            saveState = true
+        }
+    }
+}
+
+@Immutable
+data class BottomNavItem(
+    val title: String,
+    val route: String,
+    val selectedIcon: ImageVector,
+    val unselectedIcon: ImageVector
+)
+
+val bottomNavItems = listOf(
+    BottomNavItem("Home", Screen.Home.route, Icons.Filled.Home, Icons.Outlined.Home),
+    BottomNavItem("Generate", Screen.GenerateDashboard.route, Icons.Filled.AutoAwesome, Icons.Outlined.AutoAwesome),
+    BottomNavItem("Social", Screen.Social.route, Icons.Filled.DynamicFeed, Icons.Outlined.DynamicFeed),
+    BottomNavItem("System", Screen.SystemDashboard.route, Icons.Filled.Dns, Icons.Outlined.Dns),
+    BottomNavItem("Settings", Screen.Settings.route, Icons.Filled.Settings, Icons.Outlined.Settings)
+)
+
+@Composable
+fun CustomBottomNavigationBar(
+    navController: NavController,
+    currentDestination: NavDestination?,
+    isDarkTheme: Boolean
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding(),
+        contentAlignment = Alignment.Center
+    ) {
+        Surface(
+            modifier = Modifier
+                .widthIn(max = 580.dp)
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            shape = RoundedCornerShape(24.dp),
+            color = if (isDarkTheme) Color(0xE615151C) else Color(0xEEFFFFFF),
+            border = BorderStroke(1.dp, if (isDarkTheme) Color(0x2EFFFFFF) else Color(0x50E2E8F0)),
+            shadowElevation = if (isDarkTheme) 2.dp else 6.dp
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(64.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                bottomNavItems.forEach { item ->
+                    val isSelected = currentDestination?.hierarchy?.any { it.route == item.route } == true
+                    val selectedPillColor = if (isDarkTheme) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+                    } else {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                    }
+                    val selectedTintColor = MaterialTheme.colorScheme.primary
+                    val unselectedTintColor = MaterialTheme.colorScheme.onSurfaceVariant
+
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .testTag("nav_item_${item.title.lowercase()}")
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = ripple(bounded = true, color = selectedTintColor)
+                            ) {
+                                com.arwora.utils.SoundEffectManager.playClick()
+                                navController.navigateSingleTopWithRestore(item.route)
+                            },
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(width = 52.dp, height = 28.dp)
+                                .background(
+                                    if (isSelected) selectedPillColor else Color.Transparent,
+                                    RoundedCornerShape(percent = 50)
+                                )
+                                .then(
+                                    if (isSelected) {
+                                        Modifier.border(
+                                            width = 1.dp,
+                                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                                            shape = RoundedCornerShape(percent = 50)
+                                        )
+                                    } else {
+                                        Modifier
+                                    }
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (isSelected) item.selectedIcon else item.unselectedIcon,
+                                contentDescription = item.title,
+                                modifier = Modifier.size(20.dp),
+                                tint = if (isSelected) selectedTintColor else unselectedTintColor
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = item.title,
+                            fontSize = 11.sp,
+                            color = if (isSelected) selectedTintColor else unselectedTintColor,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+    }
+}

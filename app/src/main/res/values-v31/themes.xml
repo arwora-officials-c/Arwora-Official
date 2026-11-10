@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.App.Starting" parent="Theme.SplashScreen">
+        <!-- Set the splash screen background color -->
+        <item name="windowSplashScreenBackground">@color/splash_bg</item>
+        <!-- Set the splash screen icon -->
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_icon</item>
+        <!-- Theme to switch to after splash screen exits -->
+        <item name="postSplashScreenTheme">@style/Theme.MyApplication</item>
+    </style>
+</resources>

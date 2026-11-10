@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="splash_bg">#0D0D12</color>
+    <color name="purple_accent">#FF8B5CF6</color>
+    <color name="card_background">#FF151419</color>
+    <color name="card_text_primary">#FFFFFFFF</color>
+    <color name="card_text_secondary">#FFA1A1AA</color>
+</resources>

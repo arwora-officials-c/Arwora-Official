@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Android 12+ Splash screen icons are masked by a circle.
+         The icon must fit within a safe zone (central 72dp of the 108dp icon).
+         Using insets/padding to ensure the entire logo + text is visible. -->
+    <item
+        android:width="64dp"
+        android:height="64dp"
+        android:drawable="@drawable/ic_app_logo"
+        android:gravity="center" />
+</layer-list>

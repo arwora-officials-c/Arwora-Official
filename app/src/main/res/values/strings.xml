@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Arwora Hyper Toolkit</string>
+    <string name="auto_clicker_service_name">Auto Clicker Service</string>
+    <string name="auto_clicker_service_description">Automates screen taps and swipe gestures at configured intervals for games and productivity tasks.</string>
+</resources>
