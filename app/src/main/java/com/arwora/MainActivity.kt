@@ -51,24 +51,8 @@ class MainActivity : ComponentActivity(), Shizuku.OnRequestPermissionResultListe
         }
     }
 
-    override fun onStart() {
-        super.onStart()
-        com.arwora.data.firebase.DeviceManager.onAppForeground()
-    }
-
-    override fun onResume() {
-        super.onResume()
-        com.arwora.data.firebase.DeviceManager.onAppForeground()
-    }
-
-    override fun onStop() {
-        super.onStop()
-        com.arwora.data.firebase.DeviceManager.onAppBackground()
-    }
-
     override fun onDestroy() {
         super.onDestroy()
-        com.arwora.data.firebase.DeviceManager.onAppBackground()
         try {
             Shizuku.removeRequestPermissionResultListener(this)
         } catch (e: Throwable) {
@@ -95,10 +79,7 @@ class MainActivity : ComponentActivity(), Shizuku.OnRequestPermissionResultListe
         val app = application as NameGenApplication
         val viewModel = app.sharedViewModel
 
-        // Initialize Firebase Realtime Sync and Hardware Device Registration immediately on launch
-        com.arwora.data.firebase.FirebaseSyncManager.init(this)
-        com.arwora.data.firebase.DeviceManager.init(this)
-        com.arwora.data.firebase.DeviceManager.triggerNewInstallNotification(this, force = false)
+
 
         handleIncomingIntent(intent, viewModel)
 

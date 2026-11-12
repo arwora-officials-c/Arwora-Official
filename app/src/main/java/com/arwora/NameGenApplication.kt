@@ -97,8 +97,6 @@ class NameGenApplication : Application() {
         StartupDefer.schedulePostFirstFrame(this) {
             com.arwora.utils.SoundEffectManager.init(this@NameGenApplication)
             com.arwora.feature.system.battery.service.BatteryMonitorManager.init(this@NameGenApplication)
-            com.arwora.data.firebase.FirebaseSyncManager.init(this@NameGenApplication)
-            com.arwora.data.firebase.DeviceManager.init(this@NameGenApplication)
         }
     }
 }
