@@ -4,13 +4,32 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import com.arwora.NameGenApplication
 import com.arwora.data.db.NotificationEntity
+import com.arwora.utils.WirelessPairingManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 class NotificationHistoryService : NotificationListenerService() {
-    
-    private val scope = CoroutineScope(Dispatchers.IO)
+
+    private val serviceJob = SupervisorJob()
+    private val scope = CoroutineScope(serviceJob + Dispatchers.IO)
+
+    override fun onListenerConnected() {
+        super.onListenerConnected()
+        WirelessPairingManager.checkNotificationPermissionStatus(this)
+    }
+
+    override fun onListenerDisconnected() {
+        super.onListenerDisconnected()
+        WirelessPairingManager.checkNotificationPermissionStatus(this)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        serviceJob.cancel()
+    }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         sbn?.let {

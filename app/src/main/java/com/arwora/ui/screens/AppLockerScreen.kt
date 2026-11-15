@@ -39,6 +39,7 @@ import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.arwora.ui.AppManagerViewModel
+import com.arwora.ui.components.ArworaAnimatedSwitch
 import com.arwora.ui.components.PinAuthDialog
 import com.arwora.ui.components.PinSetupDialog
 import com.arwora.utils.AppLockerManager
@@ -199,7 +200,7 @@ fun AppLockerScreen(
                             )
                         }
 
-                        Switch(
+                        ArworaAnimatedSwitch(
                             checked = isLockerEnabled,
                             onCheckedChange = { checked ->
                                 SoundEffectManager.playClick()
@@ -644,7 +645,7 @@ fun ToolsLockerTab(
                         )
                     }
 
-                    Switch(
+                    ArworaAnimatedSwitch(
                         checked = isLocked,
                         onCheckedChange = { onToggleTool(tool.id) }
                     )
@@ -774,7 +775,7 @@ fun AppsLockerTab(
                             )
                         }
 
-                        Switch(
+                        ArworaAnimatedSwitch(
                             checked = isLocked,
                             onCheckedChange = { onToggleApp(app.packageName) }
                         )
@@ -885,7 +886,7 @@ fun SecuritySettingsTab(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Switch(
+                        ArworaAnimatedSwitch(
                             checked = isBiometricEnabled,
                             onCheckedChange = onToggleBiometric
                         )
@@ -965,7 +966,7 @@ fun SecuritySettingsTab(
                             Text("Vibrate on Failed Attempt", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                             Text("Haptic feedback on incorrect PIN entry", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Switch(checked = vibrateOnError, onCheckedChange = onToggleVibrate)
+                        ArworaAnimatedSwitch(checked = vibrateOnError, onCheckedChange = onToggleVibrate)
                     }
 
                     HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
@@ -978,7 +979,7 @@ fun SecuritySettingsTab(
                             Text("Scramble Keypad", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                             Text("Randomizes PIN digits to prevent shoulder-surfing", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Switch(checked = scrambleKeypad, onCheckedChange = onToggleScramble)
+                        ArworaAnimatedSwitch(checked = scrambleKeypad, onCheckedChange = onToggleScramble)
                     }
 
                     HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))

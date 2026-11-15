@@ -39,6 +39,7 @@ import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
+import com.arwora.ui.components.ArworaAnimatedSwitch
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +54,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -804,26 +806,21 @@ data class StorageSegmentItem(
 @Composable
 fun CompactWellbeingDashboardCard(
     summary: WellbeingSummary,
-    activeTimersCount: Int,
-    exceededTimersCount: Int,
+    activeTimersCount: Int = 0,
+    exceededTimersCount: Int = 0,
     selectedTimeframe: UsageTimeframe,
     onTimeframeSelected: (UsageTimeframe) -> Unit,
     modifier: Modifier = Modifier,
     cardTitle: String = "Daily Screen Overview",
     hasPermission: Boolean = true,
     isLoading: Boolean = false,
+    showExtendedTelemetry: Boolean = true,
     onCardClick: (() -> Unit)? = null
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val primaryColor = MaterialTheme.colorScheme.primary
     val surfaceVariantColor = MaterialTheme.colorScheme.surfaceVariant
 
-    val liveSteps by RealtimeUsageTracker.todaySteps.collectAsStateWithLifecycle()
-    val hasActivityPermission by RealtimeUsageTracker.hasActivityRecognitionPermission.collectAsStateWithLifecycle()
-    val isStepSensorAvailable by RealtimeUsageTracker.isStepSensorAvailable.collectAsStateWithLifecycle()
-
-    val mobileBytes by RealtimeUsageTracker.mobileDataBytes.collectAsStateWithLifecycle()
-    val wifiBytes by RealtimeUsageTracker.wifiDataBytes.collectAsStateWithLifecycle()
     val tempCelsius by RealtimeUsageTracker.batteryTempCelsius.collectAsStateWithLifecycle()
     val batteryHealth by RealtimeUsageTracker.batteryHealthStatus.collectAsStateWithLifecycle()
     val batteryLevel by RealtimeUsageTracker.batteryLevelPercent.collectAsStateWithLifecycle()
@@ -831,17 +828,6 @@ fun CompactWellbeingDashboardCard(
     val ramUsed by RealtimeUsageTracker.ramUsedBytes.collectAsStateWithLifecycle()
     val ramTotal by RealtimeUsageTracker.ramTotalBytes.collectAsStateWithLifecycle()
     val ramPct by RealtimeUsageTracker.ramPercentUsed.collectAsStateWithLifecycle()
-    val dlBps by RealtimeUsageTracker.downloadSpeedBps.collectAsStateWithLifecycle()
-    val ulBps by RealtimeUsageTracker.uploadSpeedBps.collectAsStateWithLifecycle()
-    val pickups by RealtimeUsageTracker.realtimePickups.collectAsStateWithLifecycle()
-
-    val activityPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            RealtimeUsageTracker.init(context, summary.unlockCount)
-        }
-    }
 
     LaunchedEffect(summary.unlockCount) {
         RealtimeUsageTracker.init(context, summary.unlockCount)
@@ -1130,7 +1116,7 @@ fun CompactWellbeingDashboardCard(
                 }
             }
 
-            // 6 Real-time Telemetry & Hardware Tracking Metrics formatted as horizontal list rows inside App Usage Stats
+            // Real-time Telemetry & Hardware Tracking Metrics formatted as horizontal list rows inside App Usage Stats
             HorizontalDivider(
                 color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
                 thickness = 0.5.dp,
@@ -1138,46 +1124,66 @@ fun CompactWellbeingDashboardCard(
             )
 
             Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                // Item 1: Steps Today
-                CompactMetricItem(
-                    icon = Icons.Default.DirectionsWalk,
-                    iconTint = Color(0xFF10B981),
-                    title = "Steps Today",
-                    value = if (hasActivityPermission) "$liveSteps" else "Grant",
-                    subtitle = if (isStepSensorAvailable) "hardware sensor" else "pedometer",
-                    onClick = { if (!hasActivityPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) activityPermissionLauncher.launch(android.Manifest.permission.ACTIVITY_RECOGNITION) }
-                )
+                if (showExtendedTelemetry) {
+                    val liveSteps by RealtimeUsageTracker.todaySteps.collectAsStateWithLifecycle()
+                    val hasActivityPermission by RealtimeUsageTracker.hasActivityRecognitionPermission.collectAsStateWithLifecycle()
+                    val isStepSensorAvailable by RealtimeUsageTracker.isStepSensorAvailable.collectAsStateWithLifecycle()
+                    val mobileBytes by RealtimeUsageTracker.mobileDataBytes.collectAsStateWithLifecycle()
+                    val wifiBytes by RealtimeUsageTracker.wifiDataBytes.collectAsStateWithLifecycle()
 
-                // Item 2: Notification
-                CompactMetricItem(
-                    icon = Icons.Default.Notifications,
-                    iconTint = Color(0xFF3B82F6),
-                    title = "Notification",
-                    value = if (!hasPermission) "—" else if (isLoading) "..." else "${summary.notificationCount}",
-                    subtitle = "received alerts"
-                )
+                    val activityPermissionLauncher = rememberLauncherForActivityResult(
+                        ActivityResultContracts.RequestPermission()
+                    ) { isGranted ->
+                        if (isGranted) {
+                            RealtimeUsageTracker.init(context, summary.unlockCount)
+                        }
+                    }
 
-                // Item 3: App Limits
-                val timerColor = if (exceededTimersCount > 0) Color(0xFFEF4444) else Color(0xFF10B981)
-                CompactMetricItem(
-                    icon = if (exceededTimersCount > 0) Icons.Default.TimerOff else Icons.Default.Timer,
-                    iconTint = timerColor,
-                    title = "App",
-                    value = if (!hasPermission) "—" else if (isLoading) "..." else if (exceededTimersCount > 0) "$exceededTimersCount Over" else "$activeTimersCount Active",
-                    subtitle = if (exceededTimersCount > 0) "limit exceeded" else "monitored",
-                    valueColor = if (exceededTimersCount > 0) Color(0xFFEF4444) else null
-                )
+                    // Item 1: Steps Today
+                    CompactMetricItem(
+                        icon = Icons.Default.DirectionsWalk,
+                        iconTint = Color(0xFF10B981),
+                        title = "Steps Today",
+                        value = if (hasActivityPermission) "$liveSteps" else "Grant",
+                        subtitle = if (isStepSensorAvailable) "hardware sensor" else "pedometer",
+                        modifier = Modifier.testTag("compact_metric_steps_today"),
+                        onClick = { if (!hasActivityPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) activityPermissionLauncher.launch(android.Manifest.permission.ACTIVITY_RECOGNITION) }
+                    )
 
-                // Item 4: Data Usage Today
-                CompactMetricItem(
-                    icon = Icons.Default.DataUsage,
-                    iconTint = Color(0xFF3B82F6),
-                    title = "Data Usage Today",
-                    value = "Mobile ${formatDataBytes(mobileBytes)} • Wi-Fi ${formatDataBytes(wifiBytes)}",
-                    subtitle = "mobile & wi-fi"
-                )
+                    // Item 2: Notification
+                    CompactMetricItem(
+                        icon = Icons.Default.Notifications,
+                        iconTint = Color(0xFF3B82F6),
+                        title = "Notification",
+                        value = if (!hasPermission) "—" else if (isLoading) "..." else "${summary.notificationCount}",
+                        subtitle = "received alerts",
+                        modifier = Modifier.testTag("compact_metric_notification")
+                    )
 
-                // Item 2: Battery Thermal
+                    // Item 3: App Limits
+                    val timerColor = if (exceededTimersCount > 0) Color(0xFFEF4444) else Color(0xFF10B981)
+                    CompactMetricItem(
+                        icon = if (exceededTimersCount > 0) Icons.Default.TimerOff else Icons.Default.Timer,
+                        iconTint = timerColor,
+                        title = "App",
+                        value = if (!hasPermission) "—" else if (isLoading) "..." else if (exceededTimersCount > 0) "$exceededTimersCount Over" else "$activeTimersCount Active",
+                        subtitle = if (exceededTimersCount > 0) "limit exceeded" else "monitored",
+                        valueColor = if (exceededTimersCount > 0) Color(0xFFEF4444) else null,
+                        modifier = Modifier.testTag("compact_metric_app_limits")
+                    )
+
+                    // Item 4: Data Usage Today
+                    CompactMetricItem(
+                        icon = Icons.Default.DataUsage,
+                        iconTint = Color(0xFF3B82F6),
+                        title = "Data Usage Today",
+                        value = "Mobile ${formatDataBytes(mobileBytes)} • Wi-Fi ${formatDataBytes(wifiBytes)}",
+                        subtitle = "mobile & wi-fi",
+                        modifier = Modifier.testTag("compact_metric_data_usage")
+                    )
+                }
+
+                // Battery Thermal
                 val tempColor = if (tempCelsius > 39.0f) Color(0xFFEF4444) else if (tempCelsius > 35.0f) Color(0xFFF59E0B) else Color(0xFF10B981)
                 CompactMetricItem(
                     icon = Icons.Default.Thermostat,
@@ -1185,10 +1191,11 @@ fun CompactWellbeingDashboardCard(
                     title = "Battery Thermal",
                     value = "${String.format(Locale.US, "%.1f", tempCelsius)} °C • Health: $batteryHealth",
                     subtitle = "temperature",
-                    valueColor = tempColor
+                    valueColor = tempColor,
+                    modifier = Modifier.testTag("compact_metric_battery_thermal")
                 )
 
-                // Item 3: Battery Drain Rate
+                // Battery Drain Rate
                 val drainColor = if (drainRate > 5.0f) Color(0xFFEF4444) else Color(0xFF10B981)
                 CompactMetricItem(
                     icon = Icons.Default.BatteryAlert,
@@ -1196,10 +1203,11 @@ fun CompactWellbeingDashboardCard(
                     title = "Battery Drain Rate",
                     value = "${String.format(Locale.US, "%.1f", drainRate)}% / hr • ~${(batteryLevel / drainRate.coerceAtLeast(0.5f)).toInt()}h est. backup",
                     subtitle = "drain rate",
-                    valueColor = drainColor
+                    valueColor = drainColor,
+                    modifier = Modifier.testTag("compact_metric_battery_drain")
                 )
 
-                // Item 4: RAM Breakdown
+                // RAM Breakdown
                 val ramColor = if (ramPct > 80) Color(0xFFEF4444) else MaterialTheme.colorScheme.primary
                 CompactMetricItem(
                     icon = Icons.Default.Memory,
@@ -1207,17 +1215,22 @@ fun CompactWellbeingDashboardCard(
                     title = "RAM Breakdown",
                     value = "${formatDataBytes(ramUsed)} / ${formatDataBytes(ramTotal)} ($ramPct%)",
                     subtitle = "memory footprint",
-                    valueColor = ramColor
+                    valueColor = ramColor,
+                    modifier = Modifier.testTag("compact_metric_ram_breakdown")
                 )
 
-                // Item 5: Device Pickups
-                CompactMetricItem(
-                    icon = Icons.Default.PhonelinkRing,
-                    iconTint = Color(0xFFEC4899),
-                    title = "Device Pickups",
-                    value = "$pickups Pickups",
-                    subtitle = "screen pick-ups"
-                )
+                if (showExtendedTelemetry) {
+                    val pickups by RealtimeUsageTracker.realtimePickups.collectAsStateWithLifecycle()
+                    // Item 5: Device Pickups
+                    CompactMetricItem(
+                        icon = Icons.Default.PhonelinkRing,
+                        iconTint = Color(0xFFEC4899),
+                        title = "Device Pickups",
+                        value = "$pickups Pickups",
+                        subtitle = "screen pick-ups",
+                        modifier = Modifier.testTag("compact_metric_device_pickups")
+                    )
+                }
             }
         }
     }
@@ -1231,6 +1244,7 @@ fun CompactMetricItem(
     value: String,
     subtitle: String,
     valueColor: Color? = null,
+    modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null
 ) {
     Surface(
@@ -1239,7 +1253,7 @@ fun CompactMetricItem(
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
-        modifier = Modifier.fillMaxWidth()
+        modifier = modifier.fillMaxWidth()
     ) {
         Row(
             modifier = Modifier
@@ -1576,7 +1590,7 @@ fun DigitalWellbeingToolsSection(
                                     )
                                 }
                                 Box(contentAlignment = Alignment.Center) {
-                                    Switch(
+                                    ArworaAnimatedSwitch(
                                         checked = settings.bedtimeEnabled,
                                         onCheckedChange = { checked ->
                                             SoundEffectManager.playClick()
@@ -1650,7 +1664,7 @@ fun DigitalWellbeingToolsSection(
                                     )
                                 }
                                 Box(contentAlignment = Alignment.Center) {
-                                    Switch(
+                                    ArworaAnimatedSwitch(
                                         checked = settings.focusModeEnabled,
                                         onCheckedChange = { checked ->
                                             SoundEffectManager.playClick()
@@ -1732,7 +1746,7 @@ fun DigitalWellbeingToolsSection(
                                     )
                                 }
                                 Box(contentAlignment = Alignment.Center) {
-                                    Switch(
+                                    ArworaAnimatedSwitch(
                                         checked = settings.reminderEnabled,
                                         onCheckedChange = { checked ->
                                             SoundEffectManager.playClick()
@@ -1878,7 +1892,7 @@ fun BedtimeModeDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Enable Bedtime Mode", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                    Switch(checked = enabled, onCheckedChange = { enabled = it })
+                    ArworaAnimatedSwitch(checked = enabled, onCheckedChange = { enabled = it })
                 }
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
@@ -1943,7 +1957,7 @@ fun BedtimeModeDialog(
                         Text("Grayscale Display", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                         Text("Changes screen to black and white at bedtime", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Switch(checked = grayscale, onCheckedChange = { grayscale = it })
+                    ArworaAnimatedSwitch(checked = grayscale, onCheckedChange = { grayscale = it })
                 }
 
                 // Do Not Disturb switch
@@ -1956,7 +1970,7 @@ fun BedtimeModeDialog(
                         Text("Do Not Disturb", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                         Text("Mute calls, notifications and sound alerts", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Switch(checked = dnd, onCheckedChange = { dnd = it })
+                    ArworaAnimatedSwitch(checked = dnd, onCheckedChange = { dnd = it })
                 }
             }
         },
@@ -2021,7 +2035,7 @@ fun FocusModeDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Enable Focus Mode", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                    Switch(checked = enabled, onCheckedChange = { enabled = it })
+                    ArworaAnimatedSwitch(checked = enabled, onCheckedChange = { enabled = it })
                 }
 
                 Text(
@@ -2119,7 +2133,7 @@ fun ScreenTimeReminderDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Enable Continuous Reminders", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                    Switch(checked = enabled, onCheckedChange = { enabled = it })
+                    ArworaAnimatedSwitch(checked = enabled, onCheckedChange = { enabled = it })
                 }
 
                 Text("Reminder Frequency", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
@@ -2155,7 +2169,7 @@ fun ScreenTimeReminderDialog(
                         Text("Eye Rest & Posture Alert", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                         Text("Prompts 20-20-20 rule for eye health", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Switch(checked = eyeRest, onCheckedChange = { eyeRest = it })
+                    ArworaAnimatedSwitch(checked = eyeRest, onCheckedChange = { eyeRest = it })
                 }
             }
         },

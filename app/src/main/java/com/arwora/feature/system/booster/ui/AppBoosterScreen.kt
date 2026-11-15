@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.arwora.feature.system.booster.service.AppBoosterManager
+import com.arwora.ui.components.ArworaAnimatedSwitch
 import com.arwora.utils.SoundEffectManager
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -342,7 +343,7 @@ fun AppBoosterScreen(
                                 Text(text = "Show 1-tap floating widget overlay for instant cleaning", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
-                        Switch(
+                        ArworaAnimatedSwitch(
                             checked = floatingWidgetActive,
                             onCheckedChange = {
                                 haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)

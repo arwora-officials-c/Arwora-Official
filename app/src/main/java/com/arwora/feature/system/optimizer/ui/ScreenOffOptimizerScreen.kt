@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.arwora.feature.system.optimizer.service.ScreenOffOptimizerManager
+import com.arwora.ui.components.ArworaAnimatedSwitch
 import com.arwora.utils.SoundEffectManager
 import rikka.shizuku.Shizuku
 
@@ -98,21 +99,27 @@ fun ScreenOffOptimizerScreen(
     // Dynamic pre-check handler on ON_RESUME: auto-resumes service immediately once permission is granted!
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
+        val shizukuListeners = com.arwora.utils.ShizukuConnectionManager.registerListeners(
+            onBinderChanged = {
+                ScreenOffOptimizerManager.setShizukuPermissionGranted(
+                    com.arwora.utils.ShizukuConnectionManager.hasShizukuPermission()
+                )
+            },
+            onPermissionResult = { _, granted ->
+                ScreenOffOptimizerManager.setShizukuPermissionGranted(granted)
+            }
+        )
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 val granted = notificationManager?.isNotificationPolicyAccessGranted == true
                 val wasMissing = !hasPolicyAccess
                 hasPolicyAccess = granted
                 ScreenOffOptimizerManager.checkAndSyncDndPermission(context)
-                
-                // Check Shizuku permission
-                try {
-                    val shizukuGranted = Shizuku.pingBinder() && Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED
-                    ScreenOffOptimizerManager.setShizukuPermissionGranted(shizukuGranted)
-                } catch (_: Exception) {
-                    ScreenOffOptimizerManager.setShizukuPermissionGranted(false)
-                }
-                
+
+                // Check Shizuku permission cleanly
+                val shizukuGranted = com.arwora.utils.ShizukuConnectionManager.hasShizukuPermission()
+                ScreenOffOptimizerManager.setShizukuPermissionGranted(shizukuGranted)
+
                 // Auto-start / auto-resume service immediately when user returns with permission granted
                 if (granted) {
                     if (wasMissing || !isServiceActive) {
@@ -125,6 +132,7 @@ fun ScreenOffOptimizerScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+            com.arwora.utils.ShizukuConnectionManager.unregisterListeners(shizukuListeners)
         }
     }
 
@@ -324,7 +332,7 @@ fun ScreenOffOptimizerScreen(
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
-                            Switch(
+                            ArworaAnimatedSwitch(
                                 checked = isServiceActive,
                                 onCheckedChange = { active ->
                                     haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
@@ -521,7 +529,7 @@ fun ScreenOffOptimizerScreen(
                                         Text(text = "Safely flush cached data and free RAM", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                     }
                                 }
-                                Switch(
+                                ArworaAnimatedSwitch(
                                     checked = killApps,
                                     onCheckedChange = {
                                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
@@ -560,7 +568,7 @@ fun ScreenOffOptimizerScreen(
                                             Text(text = "Disables DND, clears silent/vibrate, & sets Ring, Notif, Alarm, Media, System to 100% max", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis)
                                         }
                                     }
-                                    Switch(
+                                    ArworaAnimatedSwitch(
                                         checked = enableSilent,
                                         onCheckedChange = { checked ->
                                             haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
@@ -614,7 +622,7 @@ fun ScreenOffOptimizerScreen(
                                         Text(text = "Restore ringer mode back to normal when device unlocks", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                     }
                                 }
-                                Switch(
+                                ArworaAnimatedSwitch(
                                     checked = disableSilent,
                                     onCheckedChange = { checked ->
                                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
@@ -656,7 +664,7 @@ fun ScreenOffOptimizerScreen(
                                             Text(text = "Bluetooth & Location optimization", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                         }
                                     }
-                                    Switch(
+                                    ArworaAnimatedSwitch(
                                         checked = turnOffRadios,
                                         onCheckedChange = {
                                             haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
@@ -682,17 +690,19 @@ fun ScreenOffOptimizerScreen(
                                                 color = if (shizukuPermissionGranted) Color(0xFF10B981) else Color(0xFFEF4444)
                                             )
                                         }
-                                        Switch(
+                                        ArworaAnimatedSwitch(
                                             checked = useShizuku,
                                             onCheckedChange = { checked ->
                                                 haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                                                 SoundEffectManager.playClick()
                                                 if (checked && !shizukuPermissionGranted) {
-                                                    try {
-                                                        Shizuku.requestPermission(101)
-                                                    } catch (_: Exception) {
-                                                        Toast.makeText(context, "Shizuku not running or not found", Toast.LENGTH_SHORT).show()
-                                                    }
+                                                    com.arwora.utils.ShizukuConnectionManager.connect(
+                                                        context = context,
+                                                        requestCode = 101,
+                                                        onConnected = {
+                                                            ScreenOffOptimizerManager.setShizukuPermissionGranted(true)
+                                                        }
+                                                    )
                                                 }
                                                 ScreenOffOptimizerManager.setUseShizuku(checked)
                                             }

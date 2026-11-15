@@ -1,16 +1,20 @@
 package com.arwora.service
 
+import android.annotation.SuppressLint
 import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.ImageView
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -41,6 +45,7 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.arwora.NameGenApplication
+import com.arwora.R
 import com.arwora.ui.components.SystemOverlayContent
 import com.arwora.ui.theme.NameGenProTheme
 import kotlinx.coroutines.*
@@ -70,7 +75,13 @@ open class FloatingWindowService : Service(), LifecycleOwner, SavedStateRegistry
     protected var rootContainer: FrameLayout? = null
     protected var bubbleView: ComposeView? = null
     protected var windowCardView: ComposeView? = null
+    protected var resizeHandleView: FrameLayout? = null
     protected var layoutParams: WindowManager.LayoutParams? = null
+
+    private var isPanelExpanded: Boolean = false
+    private var hasUserResized: Boolean = false
+    private var currentWindowWidthPx: Int = 0
+    private var currentWindowHeightPx: Int = 0
 
     private val serviceJob = Job()
     private val serviceScope = CoroutineScope(Dispatchers.Main + serviceJob)
@@ -217,7 +228,7 @@ open class FloatingWindowService : Service(), LifecycleOwner, SavedStateRegistry
                             viewModel = viewModel,
                             onDragDelta = { dx, dy -> updateOverlayPosition(dx, dy) },
                             onMinimize = { minimizeWindow() },
-                            onTogglePanel = { togglePanelOptions() },
+                            onTogglePanel = { expanded -> togglePanelOptions(expanded) },
                             onLaunchApp = { launchMainActivity() },
                             onClose = { closeOverlay() }
                         )
@@ -226,13 +237,104 @@ open class FloatingWindowService : Service(), LifecycleOwner, SavedStateRegistry
                 visibility = View.GONE
             }
 
-            val metrics = resources.displayMetrics
-            val maxWidth = (metrics.widthPixels * 0.90f).toInt()
-            val maxHeight = (metrics.heightPixels * 0.75f).toInt()
-            val desiredWidth = (360 * density).toInt()
-            val desiredHeight = (540 * density).toInt()
-            val windowWidth = desiredWidth.coerceAtMost(maxWidth)
-            val windowHeight = desiredHeight.coerceAtMost(maxHeight)
+            // 3. Touch-friendly Bottom-Right Corner Resize Handle (48dp touch target)
+            val handleTouchPx = (48 * density).toInt()
+            val badgeSizePx = (24 * density).toInt()
+            val badgeMarginPx = (4 * density).toInt()
+            val iconPadPx = (4 * density).toInt()
+
+            val badgeBackground = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadii = floatArrayOf(
+                    10f * density, 10f * density,
+                    2f * density, 2f * density,
+                    14f * density, 14f * density,
+                    2f * density, 2f * density
+                )
+                setColor(viewModel.uiColor.value.toInt())
+                alpha = 215
+            }
+
+            val resizeIcon = ImageView(this).apply {
+                setImageResource(R.drawable.ic_resize_handle)
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                setPadding(iconPadPx, iconPadPx, iconPadPx, iconPadPx)
+                background = badgeBackground
+            }
+
+            val resizeHandle = FrameLayout(this).apply {
+                contentDescription = "Resize Floating Window"
+                isClickable = true
+                isFocusable = true
+                addView(
+                    resizeIcon,
+                    FrameLayout.LayoutParams(badgeSizePx, badgeSizePx, Gravity.BOTTOM or Gravity.END).apply {
+                        rightMargin = badgeMarginPx
+                        bottomMargin = badgeMarginPx
+                    }
+                )
+                visibility = View.GONE
+            }
+
+            serviceScope.launch {
+                viewModel.uiColor.collect { colorLong ->
+                    badgeBackground.setColor(colorLong.toInt())
+                    badgeBackground.alpha = 215
+                }
+            }
+
+            var resizeInitialWidth = 0
+            var resizeInitialHeight = 0
+            var resizeInitialTouchX = 0f
+            var resizeInitialTouchY = 0f
+
+            @SuppressLint("ClickableViewAccessibility")
+            resizeHandle.setOnTouchListener { v, event ->
+                val params = layoutParams ?: return@setOnTouchListener false
+                val containerView = rootContainer ?: return@setOnTouchListener false
+
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        resizeInitialWidth = params.width.takeIf { it > 0 } ?: containerView.width
+                        resizeInitialHeight = params.height.takeIf { it > 0 } ?: containerView.height
+                        resizeInitialTouchX = event.rawX
+                        resizeInitialTouchY = event.rawY
+                        resizeIcon.animate().scaleX(1.15f).scaleY(1.15f).setDuration(80).start()
+                        true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val dx = (event.rawX - resizeInitialTouchX).toInt()
+                        val dy = (event.rawY - resizeInitialTouchY).toInt()
+                        val (minW, maxW, minH, maxH) = computeWindowSizeBounds(params, isPanelExpanded)
+
+                        val newWidth = (resizeInitialWidth + dx).coerceIn(minW, maxW)
+                        val newHeight = (resizeInitialHeight + dy).coerceIn(minH, maxH)
+
+                        if (newWidth != params.width || newHeight != params.height) {
+                            params.width = newWidth
+                            params.height = newHeight
+                            currentWindowWidthPx = newWidth
+                            currentWindowHeightPx = newHeight
+                            hasUserResized = true
+                            try {
+                                windowManager.updateViewLayout(containerView, params)
+                                windowCardView?.invalidateOutline()
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }
+                        true
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        resizeIcon.animate().scaleX(1f).scaleY(1f).setDuration(80).start()
+                        if (event.actionMasked == MotionEvent.ACTION_UP) {
+                            v.performClick()
+                        }
+                        true
+                    }
+                    else -> false
+                }
+            }
 
             container.addView(bubble, FrameLayout.LayoutParams(
                 (52 * density).toInt(),
@@ -240,13 +342,20 @@ open class FloatingWindowService : Service(), LifecycleOwner, SavedStateRegistry
             ))
 
             container.addView(windowCard, FrameLayout.LayoutParams(
-                windowWidth,
-                windowHeight
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            ))
+
+            container.addView(resizeHandle, FrameLayout.LayoutParams(
+                handleTouchPx,
+                handleTouchPx,
+                Gravity.BOTTOM or Gravity.END
             ))
 
             this.rootContainer = container
             this.bubbleView = bubble
             this.windowCardView = windowCard
+            this.resizeHandleView = resizeHandle
 
             try {
                 windowManager.addView(container, params)
@@ -256,23 +365,71 @@ open class FloatingWindowService : Service(), LifecycleOwner, SavedStateRegistry
         }
     }
 
-    protected fun expandWindow() {
+    private data class WindowSizeBounds(
+        val minWidth: Int,
+        val maxWidth: Int,
+        val minHeight: Int,
+        val maxHeight: Int
+    )
+
+    private fun computeWindowSizeBounds(
+        params: WindowManager.LayoutParams,
+        expanded: Boolean
+    ): WindowSizeBounds {
         val metrics = resources.displayMetrics
         val density = metrics.density
-        val maxWidth = (metrics.widthPixels * 0.90f).toInt()
-        val maxHeight = (metrics.heightPixels * 0.75f).toInt()
-        val desiredWidth = (360 * density).toInt()
-        val desiredHeight = (540 * density).toInt()
-        
+        val minW = (240 * density).toInt()
+        val minH = if (expanded) (240 * density).toInt() else (180 * density).toInt()
+        val maxW = (metrics.widthPixels - params.x)
+            .coerceAtLeast(minW)
+            .coerceAtMost((metrics.widthPixels * 0.96f).toInt().coerceAtLeast(minW))
+        val maxH = (metrics.heightPixels - params.y)
+            .coerceAtLeast(minH)
+            .coerceAtMost((metrics.heightPixels * 0.88f).toInt().coerceAtLeast(minH))
+        return WindowSizeBounds(minW, maxW, minH, maxH)
+    }
+
+    private fun getDefaultWindowDimensions(expanded: Boolean): Pair<Int, Int> {
+        val density = resources.displayMetrics.density
+        val app = application as? NameGenApplication
+        val sizePref = app?.sharedViewModel?.defaultFloatingSize?.value ?: "Compact"
+        return if (expanded) {
+            when (sizePref) {
+                "Large" -> (380 * density).toInt() to (560 * density).toInt()
+                "Compact" -> (340 * density).toInt() to (460 * density).toInt()
+                else -> (360 * density).toInt() to (520 * density).toInt()
+            }
+        } else {
+            when (sizePref) {
+                "Large" -> (360 * density).toInt() to (225 * density).toInt()
+                "Medium" -> (345 * density).toInt() to (210 * density).toInt()
+                else -> (330 * density).toInt() to (196 * density).toInt()
+            }
+        }
+    }
+
+    protected fun expandWindow() {
         bubbleView?.visibility = View.GONE
         windowCardView?.visibility = View.VISIBLE
+        resizeHandleView?.visibility = View.VISIBLE
 
         layoutParams?.let { params ->
-            params.width = desiredWidth.coerceAtMost(maxWidth)
-            params.height = desiredHeight.coerceAtMost(maxHeight)
+            val bounds = computeWindowSizeBounds(params, isPanelExpanded)
+            val (defaultW, defaultH) = getDefaultWindowDimensions(isPanelExpanded)
+            val targetW = (if (hasUserResized && currentWindowWidthPx > 0) currentWindowWidthPx else defaultW)
+                .coerceIn(bounds.minWidth, bounds.maxWidth)
+            val targetH = (if (hasUserResized && currentWindowHeightPx > 0) currentWindowHeightPx else defaultH)
+                .coerceIn(bounds.minHeight, bounds.maxHeight)
+
+            params.width = targetW
+            params.height = targetH
+            currentWindowWidthPx = targetW
+            currentWindowHeightPx = targetH
+
             rootContainer?.let { view ->
                 try {
                     windowManager.updateViewLayout(view, params)
+                    windowCardView?.invalidateOutline()
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
@@ -282,6 +439,7 @@ open class FloatingWindowService : Service(), LifecycleOwner, SavedStateRegistry
 
     protected fun minimizeWindow() {
         windowCardView?.visibility = View.GONE
+        resizeHandleView?.visibility = View.GONE
         bubbleView?.visibility = View.VISIBLE
 
         val density = resources.displayMetrics.density
@@ -298,21 +456,28 @@ open class FloatingWindowService : Service(), LifecycleOwner, SavedStateRegistry
         }
     }
 
-    protected fun togglePanelOptions() {
-        // Expands/collapses the internal options panel inside the floating overlay without launching the main app
-        val metrics = resources.displayMetrics
-        val density = metrics.density
-        val maxWidth = (metrics.widthPixels * 0.90f).toInt()
-        val maxHeight = (metrics.heightPixels * 0.75f).toInt()
-        val desiredWidth = (360 * density).toInt()
-        val desiredHeight = (540 * density).toInt()
-
+    protected fun togglePanelOptions(expanded: Boolean = !isPanelExpanded) {
+        isPanelExpanded = expanded
         layoutParams?.let { params ->
-            params.width = desiredWidth.coerceAtMost(maxWidth)
-            params.height = desiredHeight.coerceAtMost(maxHeight)
+            val bounds = computeWindowSizeBounds(params, expanded)
+            val (defaultW, defaultH) = getDefaultWindowDimensions(expanded)
+            val targetW = (if (hasUserResized && currentWindowWidthPx > 0) currentWindowWidthPx else defaultW)
+                .coerceIn(bounds.minWidth, bounds.maxWidth)
+            val targetH = (if (expanded) {
+                if (hasUserResized && currentWindowHeightPx > defaultH) currentWindowHeightPx else defaultH
+            } else {
+                defaultH
+            }).coerceIn(bounds.minHeight, bounds.maxHeight)
+
+            params.width = targetW
+            params.height = targetH
+            currentWindowWidthPx = targetW
+            currentWindowHeightPx = targetH
+
             rootContainer?.let { view ->
                 try {
                     windowManager.updateViewLayout(view, params)
+                    windowCardView?.invalidateOutline()
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
@@ -350,8 +515,8 @@ open class FloatingWindowService : Service(), LifecycleOwner, SavedStateRegistry
         val screenWidth = metrics.widthPixels
         val screenHeight = metrics.heightPixels
 
-        val viewW = view.width.takeIf { it > 0 } ?: 200
-        val viewH = view.height.takeIf { it > 0 } ?: 200
+        val viewW = params.width.takeIf { it > 0 } ?: view.width.takeIf { it > 0 } ?: 200
+        val viewH = params.height.takeIf { it > 0 } ?: view.height.takeIf { it > 0 } ?: 200
 
         val maxX = (screenWidth - viewW).coerceAtLeast(0)
         val maxY = (screenHeight - viewH).coerceAtLeast(0)
@@ -395,6 +560,7 @@ open class FloatingWindowService : Service(), LifecycleOwner, SavedStateRegistry
             rootContainer = null
             bubbleView = null
             windowCardView = null
+            resizeHandleView = null
         }
     }
 

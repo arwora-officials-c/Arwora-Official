@@ -21,14 +21,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arwora.utils.PairingStatus
 import com.arwora.utils.SoundEffectManager
 import com.arwora.utils.WirelessPairingManager
-import kotlinx.coroutines.delay
 
 @Composable
 fun WirelessPairingWizard(
@@ -36,13 +40,11 @@ fun WirelessPairingWizard(
     onPairingSuccess: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    val pairingStatus by WirelessPairingManager.status.collectAsState()
-    val discoveredPort by WirelessPairingManager.discoveredPort.collectAsState()
-    val capturedCode by WirelessPairingManager.lastCapturedCode.collectAsState()
-
-    var hasNotificationAccess by remember {
-        mutableStateOf(WirelessPairingManager.isNotificationAccessGranted(context))
-    }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val pairingStatus by WirelessPairingManager.status.collectAsStateWithLifecycle()
+    val discoveredPort by WirelessPairingManager.discoveredPort.collectAsStateWithLifecycle()
+    val capturedCode by WirelessPairingManager.lastCapturedCode.collectAsStateWithLifecycle()
+    val hasNotificationAccess by WirelessPairingManager.notificationAccessGranted.collectAsStateWithLifecycle()
 
     var manualCodeInput by remember { mutableStateOf("") }
     var manualPortInput by remember { mutableStateOf("") }
@@ -60,11 +62,17 @@ fun WirelessPairingWizard(
         }
     }
 
-    // Periodically re-verify notification access when resuming
-    LaunchedEffect(Unit) {
-        while (true) {
-            hasNotificationAccess = WirelessPairingManager.isNotificationAccessGranted(context)
-            delay(2000L)
+    // Re-evaluate notification access cleanly on mount and every ON_RESUME (no polling loop)
+    DisposableEffect(lifecycleOwner, context) {
+        WirelessPairingManager.checkNotificationPermissionStatus(context)
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                WirelessPairingManager.checkNotificationPermissionStatus(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
 
@@ -79,10 +87,16 @@ fun WirelessPairingWizard(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Notification Access Missing Warning Card
-        if (!hasNotificationAccess) {
+        // Notification Access Missing Warning Card (animates away smoothly once granted)
+        AnimatedVisibility(
+            visible = !hasNotificationAccess,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically()
+        ) {
             Card(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("wireless_notification_access_warning_card"),
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
@@ -112,7 +126,10 @@ fun WirelessPairingWizard(
                             SoundEffectManager.playClick()
                             WirelessPairingManager.openNotificationAccessSettings(context)
                         },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .testTag("wireless_grant_notification_button"),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
@@ -204,6 +221,24 @@ fun WirelessPairingWizard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = if (hasNotificationAccess) Icons.Default.CheckCircle else Icons.Default.Info,
+                        contentDescription = null,
+                        tint = if (hasNotificationAccess) Color(0xFF10B981) else Color(0xFFFF9800),
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        text = if (hasNotificationAccess) "Notification Auto-Capture Ready" else "Manual Entry or Grant Notification Access",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (hasNotificationAccess) Color(0xFF10B981) else Color(0xFFFF9800)
+                    )
+                }
 
                 if (pairingStatus is PairingStatus.Listening) {
                     LinearProgressIndicator(
@@ -365,7 +400,10 @@ fun WirelessPairingWizard(
                                     Toast.makeText(context, "Please enter a valid 6-digit code and port (1024-65535)", Toast.LENGTH_SHORT).show()
                                 }
                             },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                                .testTag("wireless_pair_manually_button"),
                             shape = RoundedCornerShape(12.dp),
                             enabled = manualCodeInput.length == 6 && (manualPortInput.toIntOrNull() ?: 0) in 1024..65535,
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)

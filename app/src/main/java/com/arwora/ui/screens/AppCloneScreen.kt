@@ -1,5 +1,10 @@
 package com.arwora.ui.screens
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -35,6 +40,7 @@ import com.arwora.feature.clone.ui.MyClonesTab
 import com.arwora.feature.clone.ui.CloneSettingsTab
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.arwora.feature.clone.ui.CloneViewModel
+import com.arwora.ui.components.GoogleStyleLoadingView
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -196,14 +202,27 @@ fun CloneChecksContent(
         )
         Spacer(modifier = Modifier.height(16.dp))
 
-        if (isChecking && results.isEmpty()) {
-            Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                results.forEach { check ->
-                    CheckItem(check = check, onAction = onAction)
+        AnimatedContent(
+            targetState = isChecking && results.isEmpty(),
+            transitionSpec = {
+                fadeIn(animationSpec = tween(220)) togetherWith fadeOut(animationSpec = tween(180))
+            },
+            label = "app_clone_compat_loading"
+        ) { loading ->
+            if (loading) {
+                GoogleStyleLoadingView(
+                    title = "Checking system compatibility",
+                    subtitle = "Inspecting Android runtime and profile capabilities...",
+                    icon = Icons.Default.AssignmentTurnedIn,
+                    showSkeletonRows = false,
+                    scrollable = false,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    results.forEach { check ->
+                        CheckItem(check = check, onAction = onAction)
+                    }
                 }
             }
         }

@@ -39,17 +39,24 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.NavController
 import com.arwora.ui.MainViewModel
 import com.arwora.ui.components.AppLogo
+import com.arwora.ui.components.ArworaAnimatedSwitch
 import com.arwora.ui.navigation.Screen
+import com.arwora.utils.AppPermissionsHelper
+import com.arwora.utils.ManagedAppPermission
+import com.arwora.utils.ManagedPermissionCategory
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
@@ -93,6 +100,22 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
     var showColorPickerDialog by remember { mutableStateOf(false) }
     var originalUiColor by remember { mutableStateOf(uiColorLong) }
     var originalButtonColor by remember { mutableStateOf(buttonColorLong) }
+    var isPermissionsExpanded by remember { mutableStateOf(false) }
+    var appPermissions by remember {
+        mutableStateOf(AppPermissionsHelper.inspectPermissions(context))
+    }
+
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                appPermissions = AppPermissionsHelper.inspectPermissions(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
     
     // Performance, Game, Display, and Thermal states (Removed)
 
@@ -182,10 +205,13 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
             TopAppBar(
                 title = { Text("Settings", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = {
-                        com.arwora.utils.SoundEffectManager.playClick()
-                        navController.popBackStack()
-                    }) {
+                    IconButton(
+                        onClick = {
+                            com.arwora.utils.SoundEffectManager.playClick()
+                            navController.popBackStack()
+                        },
+                        modifier = Modifier.testTag("settings_back_button")
+                    ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -252,6 +278,7 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
                                     .weight(1f)
                                     .height(48.dp)
                                     .clip(RoundedCornerShape(12.dp))
+                                    .testTag("settings_theme_mode_${mode.lowercase()}")
                                     .clickable {
                                         com.arwora.utils.SoundEffectManager.playClick()
                                         when (mode) {
@@ -365,7 +392,10 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
                             originalButtonColor = buttonColorLong
                             showColorPickerDialog = true
                         },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .testTag("settings_custom_color_button"),
                         shape = RoundedCornerShape(12.dp),
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
                     ) {
@@ -383,13 +413,10 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
                     subtitle = "Enable fluid transitions and motion effects",
                     icon = Icons.Default.Animation,
                     trailingContent = {
-                        Switch(
+                        ArworaAnimatedSwitch(
                             checked = animations,
                             onCheckedChange = { viewModel.setAnimations(it) },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = MaterialTheme.colorScheme.primary,
-                                checkedTrackColor = MaterialTheme.colorScheme.primaryContainer
-                            )
+                            modifier = Modifier.testTag("settings_animations_switch")
                         )
                     }
                 )
@@ -406,13 +433,10 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
                     subtitle = "Play subtle click audio on user interactions",
                     icon = Icons.Default.VolumeUp,
                     trailingContent = {
-                        Switch(
+                        ArworaAnimatedSwitch(
                             checked = soundEffects,
                             onCheckedChange = { viewModel.setSoundEffects(it) },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = MaterialTheme.colorScheme.primary,
-                                checkedTrackColor = MaterialTheme.colorScheme.primaryContainer
-                            )
+                            modifier = Modifier.testTag("settings_sound_effects_switch")
                         )
                     }
                 )
@@ -424,13 +448,10 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
                     subtitle = "Tactile vibration responses on button presses",
                     icon = Icons.Default.Vibration,
                     trailingContent = {
-                        Switch(
+                        ArworaAnimatedSwitch(
                             checked = hapticFeedback,
                             onCheckedChange = { viewModel.setHapticFeedback(it) },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = MaterialTheme.colorScheme.primary,
-                                checkedTrackColor = MaterialTheme.colorScheme.primaryContainer
-                            )
+                            modifier = Modifier.testTag("settings_haptic_feedback_switch")
                         )
                     }
                 )
@@ -442,7 +463,7 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
                     subtitle = "Show system-wide floating overlay bubble",
                     icon = Icons.Default.PictureInPictureAlt,
                     trailingContent = {
-                        Switch(
+                        ArworaAnimatedSwitch(
                             checked = floatingMode,
                             onCheckedChange = { enabled ->
                                 if (enabled) {
@@ -472,10 +493,7 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
                                     }
                                 }
                             },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = MaterialTheme.colorScheme.primary,
-                                checkedTrackColor = MaterialTheme.colorScheme.primaryContainer
-                            )
+                            modifier = Modifier.testTag("settings_floating_mode_switch")
                         )
                     }
                 )
@@ -487,13 +505,10 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
                     subtitle = "Save dragged window location on screen",
                     icon = Icons.Default.PinDrop,
                     trailingContent = {
-                        Switch(
+                        ArworaAnimatedSwitch(
                             checked = rememberPos,
                             onCheckedChange = { viewModel.setRememberFloatingPosition(it) },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = MaterialTheme.colorScheme.primary,
-                                checkedTrackColor = MaterialTheme.colorScheme.primaryContainer
-                            )
+                            modifier = Modifier.testTag("settings_remember_pos_switch")
                         )
                     }
                 )
@@ -522,6 +537,7 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
                                     com.arwora.utils.SoundEffectManager.playClick()
                                     viewModel.setDefaultFloatingSize(size)
                                 },
+                                modifier = Modifier.testTag("settings_floating_size_${size.lowercase()}"),
                                 label = { Text(size, fontWeight = if (defaultSize == size) FontWeight.Bold else FontWeight.Normal) }
                             )
                         }
@@ -530,7 +546,83 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
             }
 
             // ==========================================
-            // 3. DATA, STORAGE & TELEMETRY CATEGORY
+            // 3. APP PERMISSIONS & STATUS CATEGORY
+            // ==========================================
+            SettingsCategoryHeader(title = "App Permissions & Status", icon = Icons.Default.AdminPanelSettings)
+
+            val grantedCount = appPermissions.count { it.isGranted }
+            SettingsGroupCard(modifier = Modifier.testTag("settings_app_permissions_card")) {
+                SettingsItemRow(
+                    title = "App Permissions",
+                    subtitle = "$grantedCount of ${appPermissions.size} permissions granted",
+                    icon = Icons.Default.AdminPanelSettings,
+                    modifier = Modifier.testTag("settings_app_permissions_row"),
+                    trailingContent = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f))
+                            ) {
+                                Text(
+                                    text = "$grantedCount/${appPermissions.size}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                            Icon(
+                                imageVector = if (isPermissionsExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                contentDescription = if (isPermissionsExpanded) "Collapse Permissions" else "Expand Permissions",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    },
+                    onClick = {
+                        com.arwora.utils.SoundEffectManager.playClick()
+                        appPermissions = AppPermissionsHelper.inspectPermissions(context)
+                        isPermissionsExpanded = !isPermissionsExpanded
+                    }
+                )
+
+                AnimatedVisibility(visible = isPermissionsExpanded) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+                        appPermissions.forEachIndexed { index, permission ->
+                            AppPermissionStatusRow(
+                                permission = permission,
+                                onOpenSettings = {
+                                    com.arwora.utils.SoundEffectManager.playClick()
+                                    val opened = AppPermissionsHelper.openPermissionSettings(
+                                        context,
+                                        permission.category
+                                    )
+                                    if (!opened) {
+                                        Toast.makeText(
+                                            context,
+                                            "Unable to open system settings",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }
+                            )
+                            if (index < appPermissions.lastIndex) {
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.08f),
+                                    modifier = Modifier.padding(horizontal = 16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ==========================================
+            // 4. DATA, STORAGE & TELEMETRY CATEGORY
             // ==========================================
             SettingsCategoryHeader(title = "Data, Storage & Telemetry", icon = Icons.Default.Storage)
 
@@ -539,6 +631,7 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
                     title = "Export Data",
                     subtitle = "Share history and favorites (TXT / CSV / JSON)",
                     icon = Icons.Default.Share,
+                    modifier = Modifier.testTag("settings_export_data_row"),
                     trailingContent = {
                         Icon(
                             imageVector = Icons.Default.ChevronRight,
@@ -561,6 +654,7 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
                     iconTint = MaterialTheme.colorScheme.error,
                     iconBackground = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
                     titleColor = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.testTag("settings_clear_history_row"),
                     onClick = {
                         com.arwora.utils.SoundEffectManager.playClick()
                         showClearHistoryDialog = true
@@ -576,6 +670,7 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
                     iconTint = MaterialTheme.colorScheme.error,
                     iconBackground = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
                     titleColor = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.testTag("settings_clear_favorites_row"),
                     onClick = {
                         com.arwora.utils.SoundEffectManager.playClick()
                         showClearFavDialog = true
@@ -593,6 +688,7 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
                     title = "About App",
                     subtitle = "System details, licenses, and architecture",
                     icon = Icons.Default.Info,
+                    modifier = Modifier.testTag("settings_about_app_row"),
                     trailingContent = {
                         Icon(
                             imageVector = Icons.Default.ChevronRight,
@@ -603,6 +699,26 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
                     onClick = {
                         com.arwora.utils.SoundEffectManager.playClick()
                         navController.navigate(Screen.About.route)
+                    }
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+
+                SettingsItemRow(
+                    title = "Privacy Policy",
+                    subtitle = "Offline data handling & permission transparency",
+                    icon = Icons.Default.VerifiedUser,
+                    modifier = Modifier.testTag("settings_privacy_policy_row"),
+                    trailingContent = {
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    onClick = {
+                        com.arwora.utils.SoundEffectManager.playClick()
+                        navController.navigate(Screen.PrivacyPolicy.route)
                     }
                 )
 
@@ -843,11 +959,12 @@ fun SettingsItemRow(
     iconTint: Color = MaterialTheme.colorScheme.primary,
     iconBackground: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
     titleColor: Color = MaterialTheme.colorScheme.onSurface,
+    modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
     trailingContent: @Composable (() -> Unit)? = null
 ) {
     Surface(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .then(
                 if (onClick != null) Modifier.clickable(onClick = onClick)
@@ -879,6 +996,109 @@ fun SettingsItemRow(
                     contentAlignment = Alignment.Center
                 ) {
                     trailingContent()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppPermissionStatusRow(
+    permission: ManagedAppPermission,
+    onOpenSettings: () -> Unit
+) {
+    val statusColor = if (permission.isGranted) Color(0xFF16A34A) else Color(0xFFDC2626)
+    val statusLabel = if (permission.isGranted) "Granted" else "Not Granted"
+    val permissionIcon = when (permission.category) {
+        ManagedPermissionCategory.MICROPHONE -> Icons.Default.Mic
+        ManagedPermissionCategory.STORAGE -> Icons.Default.FolderOpen
+        ManagedPermissionCategory.NOTIFICATIONS -> Icons.Default.Notifications
+        ManagedPermissionCategory.NOTIFICATION_LISTENER -> Icons.Default.NotificationsActive
+        ManagedPermissionCategory.OVERLAY -> Icons.Default.Layers
+    }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .defaultMinSize(minHeight = 64.dp)
+            .testTag("settings_permission_item_${permission.id}")
+            .clickable(onClick = onOpenSettings),
+        color = Color.Transparent
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(statusColor.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = permissionIcon,
+                    contentDescription = permission.title,
+                    tint = statusColor,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = permission.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = permission.subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Surface(
+                shape = CircleShape,
+                color = statusColor.copy(alpha = 0.12f),
+                border = BorderStroke(1.dp, statusColor.copy(alpha = 0.30f)),
+                modifier = Modifier.testTag("settings_permission_status_${permission.id}")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .clip(CircleShape)
+                            .background(statusColor)
+                    )
+                    Text(
+                        text = statusLabel,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = statusColor,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                    Icon(
+                        imageVector = Icons.Default.OpenInNew,
+                        contentDescription = "Manage ${permission.title}",
+                        tint = statusColor,
+                        modifier = Modifier.size(12.dp)
+                    )
                 }
             }
         }

@@ -869,27 +869,27 @@ fun FloatingWindowOverlay(viewModel: MainViewModel) {
                                                 
                                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                                     Text("Initials Only", fontSize = 11.sp)
-                                                    Switch(checked = initialsOnly, onCheckedChange = { viewModel.setInitialsOnly(it) }, modifier = Modifier.scale(0.7f))
+                                                    ArworaAnimatedSwitch(checked = initialsOnly, onCheckedChange = { viewModel.setInitialsOnly(it) }, modifier = Modifier.scale(0.7f))
                                                 }
                                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                                     Text("Include Middle", fontSize = 11.sp)
-                                                    Switch(checked = includeMiddle, onCheckedChange = { viewModel.setIncludeMiddle(it) }, modifier = Modifier.scale(0.7f))
+                                                    ArworaAnimatedSwitch(checked = includeMiddle, onCheckedChange = { viewModel.setIncludeMiddle(it) }, modifier = Modifier.scale(0.7f))
                                                 }
                                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                                     Text("Include Meaning", fontSize = 11.sp)
-                                                    Switch(checked = includeMeaning, onCheckedChange = { viewModel.setIncludeMeaning(it) }, modifier = Modifier.scale(0.7f))
+                                                    ArworaAnimatedSwitch(checked = includeMeaning, onCheckedChange = { viewModel.setIncludeMeaning(it) }, modifier = Modifier.scale(0.7f))
                                                 }
                                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                                     Text("No Repeat", fontSize = 11.sp)
-                                                    Switch(checked = noRepeat, onCheckedChange = { viewModel.setNoRepeat(it) }, modifier = Modifier.scale(0.7f))
+                                                    ArworaAnimatedSwitch(checked = noRepeat, onCheckedChange = { viewModel.setNoRepeat(it) }, modifier = Modifier.scale(0.7f))
                                                 }
                                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                                     Text("Exclude Duplicates", fontSize = 11.sp)
-                                                    Switch(checked = excludeDuplicates, onCheckedChange = { viewModel.setExcludeDuplicates(it) }, modifier = Modifier.scale(0.7f))
+                                                    ArworaAnimatedSwitch(checked = excludeDuplicates, onCheckedChange = { viewModel.setExcludeDuplicates(it) }, modifier = Modifier.scale(0.7f))
                                                 }
                                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                                     Text("Use Rare Names", fontSize = 11.sp)
-                                                    Switch(checked = useRareNames, onCheckedChange = { viewModel.setUseRareNames(it) }, modifier = Modifier.scale(0.7f))
+                                                    ArworaAnimatedSwitch(checked = useRareNames, onCheckedChange = { viewModel.setUseRareNames(it) }, modifier = Modifier.scale(0.7f))
                                                 }
 
                                                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
@@ -1150,7 +1150,7 @@ fun FloatingWindowOverlay(viewModel: MainViewModel) {
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Text("Include Emojis", style = MaterialTheme.typography.bodyMedium)
-                                            Switch(checked = bioEmoji, onCheckedChange = { viewModel.setBioEmoji(it); viewModel.generateCurrentTool() })
+                                            ArworaAnimatedSwitch(checked = bioEmoji, onCheckedChange = { viewModel.setBioEmoji(it); viewModel.generateCurrentTool() })
                                         }
                                     }
                                 }

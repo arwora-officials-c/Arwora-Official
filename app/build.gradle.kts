@@ -17,8 +17,8 @@ android {
     applicationId = "com.arworahyper.toolkit"
     minSdk = 24
     targetSdk = 35
-    versionCode = 160
-    versionName = "1.48.1"
+    versionCode = 175
+    versionName = "1.49.14"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -98,10 +98,8 @@ android {
 secrets {
   propertiesFileName = ".env"
   defaultPropertiesFileName = ".env.example"
-  ignoreList.add("FIREBASE_APPCHECK_DEBUG_TOKEN")
 }
 
-// googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }
 
 // Some unused dependencies are commented out below instead of being removed.
 // This makes it easy to add them back in the future if needed.
@@ -138,7 +136,7 @@ dependencies {
   implementation("androidx.work:work-runtime-ktx:2.9.0")
   implementation(libs.androidx.room.runtime)
   implementation(libs.coil.compose)
-  implementation(libs.converter.moshi)
+  // implementation(libs.converter.moshi)
   implementation(libs.shizuku.api)
   implementation(libs.shizuku.provider)
   implementation(libs.osmdroid.android)
@@ -147,7 +145,6 @@ dependencies {
   implementation(libs.logging.interceptor)
   implementation(libs.moshi.kotlin)
   implementation(libs.okhttp)
-  implementation(libs.security.crypto)
   implementation("androidx.exifinterface:exifinterface:1.3.7")
   implementation(libs.mlkit.text.recognition)
   implementation(libs.youtubedl.android)

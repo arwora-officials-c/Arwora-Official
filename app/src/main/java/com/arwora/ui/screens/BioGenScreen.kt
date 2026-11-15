@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.arwora.ui.MainViewModel
+import com.arwora.ui.components.ArworaAnimatedSwitch
 import com.arwora.utils.BioGenerator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -117,7 +118,7 @@ fun BioGenScreen(navController: NavController, viewModel: MainViewModel) {
             Spacer(modifier = Modifier.height(16.dp))
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Text("Include Emojis", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-                Switch(checked = useEmoji, onCheckedChange = { viewModel.setBioEmoji(it) })
+                ArworaAnimatedSwitch(checked = useEmoji, onCheckedChange = { viewModel.setBioEmoji(it) })
             }
             
             Spacer(modifier = Modifier.height(24.dp))

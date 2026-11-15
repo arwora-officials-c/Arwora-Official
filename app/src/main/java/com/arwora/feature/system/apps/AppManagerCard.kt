@@ -29,14 +29,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.arwora.feature.system.apps.capability.AppManagerCapability
 import com.arwora.feature.system.apps.model.AppItem
 import com.arwora.feature.system.apps.revert.RevertSheet
+import com.arwora.ui.components.ArworaAnimatedSwitch
 import com.arwora.ui.navigation.Screen
 import com.arwora.ui.screens.SystemFeatureCard
+import com.arwora.utils.ShizukuConnectionManager
 import com.arwora.utils.SoundEffectManager
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -76,6 +81,26 @@ fun AppManagerCard(
     var privilegeDialogPackage by remember { mutableStateOf<String?>(null) }
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf(AppFilter.ALL) }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner) {
+        viewModel.refreshCapability()
+        val listeners = ShizukuConnectionManager.registerListeners(
+            onBinderChanged = { viewModel.refreshCapability() },
+            onPermissionResult = { _, _ -> viewModel.refreshCapability() }
+        )
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshCapability()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            ShizukuConnectionManager.unregisterListeners(listeners)
+        }
+    }
 
     LaunchedEffect(Unit) {
         viewModel.snackbarMessage.collectLatest { msg ->
@@ -177,7 +202,12 @@ fun AppManagerCard(
                         FilledTonalButton(
                             onClick = {
                                 SoundEffectManager.playClick()
-                                viewModel.requestShizukuPermission()
+                                ShizukuConnectionManager.connect(
+                                    context = context,
+                                    requestCode = 1001,
+                                    onConnected = { viewModel.refreshCapability() },
+                                    onPermissionRequested = { viewModel.refreshCapability() }
+                                )
                             },
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             modifier = Modifier.height(34.dp)
@@ -539,12 +569,10 @@ private fun AppRowItem(
                         )
                     }
                 } else {
-                    Switch(
+                    ArworaAnimatedSwitch(
                         checked = app.isEnabled,
                         onCheckedChange = { onToggle() },
-                        thumbContent = if (!app.isEnabled) {
-                            { Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(12.dp)) }
-                        } else null,
+                        uncheckedIcon = Icons.Default.Close,
                         modifier = Modifier.scale(0.85f)
                     )
                 }

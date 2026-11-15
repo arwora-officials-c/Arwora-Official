@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Notifications
@@ -20,16 +21,23 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.arwora.NameGenApplication
 import com.arwora.data.db.NotificationEntity
 import com.arwora.utils.SoundEffectManager
+import com.arwora.utils.WirelessPairingManager
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -38,11 +46,26 @@ import java.util.*
 @Composable
 fun NotificationHistoryScreen(navController: NavController) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val clipboardManager = LocalClipboardManager.current
     val repository = (context.applicationContext as NameGenApplication).notificationRepository
     val notifications by repository.allNotifications.collectAsState(initial = emptyList())
+    val hasNotificationAccess by WirelessPairingManager.notificationAccessGranted.collectAsStateWithLifecycle()
     val coroutineScope = rememberCoroutineScope()
     val dateFormat = remember { SimpleDateFormat("MMM dd, HH:mm:ss", Locale.getDefault()) }
+
+    DisposableEffect(lifecycleOwner, context) {
+        WirelessPairingManager.checkNotificationPermissionStatus(context)
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                WirelessPairingManager.checkNotificationPermissionStatus(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     var selectedTab by remember { mutableIntStateOf(0) } // 0: Active / Recent, 1: Dismissed History
     var showClearDialog by remember { mutableStateOf(false) }
@@ -107,35 +130,78 @@ fun NotificationHistoryScreen(navController: NavController) {
                 .padding(padding)
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            // Notification Access Permission Banner
+            // Notification Access Permission Banner (live ON_RESUME sync)
+            val isLight = MaterialTheme.colorScheme.background.red > 0.8f
+            val cardOutlineAlpha = if (isLight) 0.25f else 0.4f
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                    .padding(16.dp)
+                    .testTag("notification_history_permission_banner"),
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isLight) {
+                        MaterialTheme.colorScheme.surface
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)
+                    }
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = cardOutlineAlpha)),
+                elevation = CardDefaults.cardElevation(defaultElevation = if (isLight) 1.dp else 0.dp)
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Icon(
+                        imageVector = if (hasNotificationAccess) Icons.Default.CheckCircle else Icons.Default.NotificationsActive,
+                        contentDescription = null,
+                        tint = if (hasNotificationAccess) Color(0xFF10B981) else Color(0xFFF59E0B),
+                        modifier = Modifier.size(22.dp)
+                    )
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Notification Listener", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        Text("Enable access to capture system notifications", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            text = if (hasNotificationAccess) "Notification Access Active" else "Notification Access Required",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = if (hasNotificationAccess) {
+                                "Capturing notifications and pairing alerts automatically"
+                            } else {
+                                "Enable access to capture system notifications"
+                            },
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                     Button(
                         onClick = {
                             SoundEffectManager.playClick()
-                            val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-                            context.startActivity(intent)
+                            WirelessPairingManager.openNotificationAccessSettings(context)
                         },
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        modifier = Modifier
+                            .heightIn(min = 40.dp)
+                            .testTag("notification_history_permission_button"),
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (hasNotificationAccess) {
+                                MaterialTheme.colorScheme.secondary
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            }
+                        )
                     ) {
-                        Text("Settings", fontSize = 12.sp)
+                        Text(
+                            text = if (hasNotificationAccess) "Manage" else "Grant",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }

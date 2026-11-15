@@ -3,6 +3,7 @@ package com.arwora.feature.system.dns.hide
 import android.graphics.drawable.Drawable
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -31,8 +32,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.arwora.ui.components.ArworaAnimatedSwitch
+import com.arwora.ui.components.GoogleStyleLoadingView
+import com.arwora.utils.ShizukuConnectionManager
 import com.arwora.utils.SoundEffectManager
 
 /**
@@ -100,6 +107,26 @@ fun HidePrivateDnsScreen(
 
     val isShizukuAvailable by viewModel.isShizukuAvailable.collectAsStateWithLifecycle()
     val hasShizukuPermission by viewModel.hasShizukuPermission.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner) {
+        viewModel.checkShizukuStatus()
+        val listeners = ShizukuConnectionManager.registerListeners(
+            onBinderChanged = { viewModel.checkShizukuStatus() },
+            onPermissionResult = { _, _ -> viewModel.checkShizukuStatus() }
+        )
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.checkShizukuStatus()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            ShizukuConnectionManager.unregisterListeners(listeners)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -138,7 +165,7 @@ fun HidePrivateDnsScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(end = 8.dp)
                     ) {
-                        Switch(
+                        ArworaAnimatedSwitch(
                             checked = isMasterEnabled,
                             onCheckedChange = { enabled ->
                                 SoundEffectManager.playClick()
@@ -195,16 +222,19 @@ fun HidePrivateDnsScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        if (isShizukuAvailable) {
-                            TextButton(
-                                onClick = {
-                                    SoundEffectManager.playClick()
-                                    viewModel.requestShizukuPermission()
-                                },
-                                modifier = Modifier.testTag("hide_dns_grant_shizuku_button")
-                            ) {
-                                Text("Grant", fontWeight = FontWeight.Bold)
-                            }
+                        TextButton(
+                            onClick = {
+                                SoundEffectManager.playClick()
+                                ShizukuConnectionManager.connect(
+                                    context = context,
+                                    requestCode = 1005,
+                                    onConnected = { viewModel.checkShizukuStatus() },
+                                    onPermissionRequested = { viewModel.checkShizukuStatus() }
+                                )
+                            },
+                            modifier = Modifier.testTag("hide_dns_grant_shizuku_button")
+                        ) {
+                            Text(if (isShizukuAvailable) "Grant" else "Connect", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -257,78 +287,92 @@ fun HidePrivateDnsScreen(
             )
 
             // Content Area
-            if (isLoading) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .weight(1f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(modifier = Modifier.size(36.dp))
-                }
-            } else {
-                val currentList = if (selectedTab == HideDnsTab.VISIBLE) visibleApps else hiddenApps
+            val currentList = if (selectedTab == HideDnsTab.VISIBLE) visibleApps else hiddenApps
+            val contentState = when {
+                isLoading -> 0
+                currentList.isEmpty() -> 1
+                else -> 2
+            }
 
-                if (currentList.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .weight(1f)
-                            .padding(24.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
+            AnimatedContent(
+                targetState = contentState,
+                transitionSpec = {
+                    fadeIn(animationSpec = tween(220)) togetherWith fadeOut(animationSpec = tween(180))
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                label = "hide_dns_content_state"
+            ) { state ->
+                when (state) {
+                    0 -> {
+                        GoogleStyleLoadingView(
+                            title = "Scanning installed applications",
+                            subtitle = "Loading per-app Private DNS isolation rules...",
+                            icon = Icons.Default.Shield,
+                            showSkeletonRows = true,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                    1 -> {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(24.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = if (selectedTab == HideDnsTab.HIDDEN) Icons.Default.VisibilityOff else Icons.Default.SearchOff,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                modifier = Modifier.size(56.dp)
-                            )
-                            Spacer(modifier = Modifier.height(14.dp))
-                            Text(
-                                text = if (selectedTab == HideDnsTab.HIDDEN) {
-                                    if (searchQuery.isNotEmpty()) "No hidden apps match \"$searchQuery\"." else "Nothing hidden."
-                                } else {
-                                    if (searchQuery.isNotEmpty()) "No visible apps match \"$searchQuery\"." else "No apps available."
-                                },
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center
-                            )
-                            if (selectedTab == HideDnsTab.HIDDEN && hiddenCount == 0 && searchQuery.isEmpty()) {
-                                Spacer(modifier = Modifier.height(6.dp))
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (selectedTab == HideDnsTab.HIDDEN) Icons.Default.VisibilityOff else Icons.Default.SearchOff,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(56.dp)
+                                )
+                                Spacer(modifier = Modifier.height(14.dp))
                                 Text(
-                                    text = "Toggle an app switch on the Visible tab to hide Private DNS for that app.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                                    text = if (selectedTab == HideDnsTab.HIDDEN) {
+                                        if (searchQuery.isNotEmpty()) "No hidden apps match \"$searchQuery\"." else "Nothing hidden."
+                                    } else {
+                                        if (searchQuery.isNotEmpty()) "No visible apps match \"$searchQuery\"." else "No apps available."
+                                    },
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     textAlign = TextAlign.Center
                                 )
+                                if (selectedTab == HideDnsTab.HIDDEN && hiddenCount == 0 && searchQuery.isEmpty()) {
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = "Toggle an app switch on the Visible tab to hide Private DNS for that app.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
                             }
                         }
                     }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .weight(1f),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        items(
-                            items = currentList,
-                            key = { it.packageName }
-                        ) { appItem ->
-                            HideDnsAppCard(
-                                app = appItem,
-                                onToggleHidden = {
-                                    SoundEffectManager.playClick()
-                                    viewModel.toggleAppHidden(appItem.packageName)
-                                }
-                            )
+                    else -> {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            items(
+                                items = currentList,
+                                key = { it.packageName }
+                            ) { appItem ->
+                                HideDnsAppCard(
+                                    app = appItem,
+                                    onToggleHidden = {
+                                        SoundEffectManager.playClick()
+                                        viewModel.toggleAppHidden(appItem.packageName)
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -577,7 +621,7 @@ private fun HideDnsAppCard(
             Spacer(modifier = Modifier.width(10.dp))
 
             // Toggle Switch
-            Switch(
+            ArworaAnimatedSwitch(
                 checked = app.isHidden,
                 onCheckedChange = { onToggleHidden() },
                 modifier = Modifier.testTag("hide_dns_toggle_${app.packageName}")

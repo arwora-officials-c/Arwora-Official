@@ -31,6 +31,7 @@ import androidx.core.content.FileProvider
 import com.arwora.NameGenApplication
 import com.arwora.data.db.LocationLogEntity
 import com.arwora.feature.system.location.LocationTrackerManager
+import com.arwora.ui.components.ArworaAnimatedSwitch
 import androidx.compose.runtime.collectAsState
 import kotlinx.coroutines.launch
 import java.io.File
@@ -153,7 +154,7 @@ fun LocationHistoryScreen(
                             )
                         }
 
-                        Switch(
+                        ArworaAnimatedSwitch(
                             checked = isTrackingActive,
                             onCheckedChange = { active ->
                                 if (active) {

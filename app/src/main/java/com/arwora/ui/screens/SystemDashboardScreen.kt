@@ -61,6 +61,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import com.arwora.service.MockLocationService
 import com.arwora.ui.AppManagerViewModel
+import com.arwora.ui.navigation.LocalMainTabNavigator
 import com.arwora.ui.navigation.Screen
 import com.arwora.ui.components.FakeDeviceDialog
 import com.arwora.feature.system.shell.ShellCommandCard
@@ -214,8 +215,9 @@ fun SystemDashboardScreen(
 
     // Animation & Refresh state
     var animScale by remember { mutableStateOf(AnimationTweakManager.getCurrentAnimationScale(context)) }
-    var isShizukuAvailable by remember { mutableStateOf(false) }
-    var hasShizukuPerm by remember { mutableStateOf(false) }
+    var isShizukuAvailable by remember { mutableStateOf(ShizukuConnectionManager.isShizukuRunning()) }
+    var hasShizukuPerm by remember { mutableStateOf(ShizukuConnectionManager.hasShizukuPermission()) }
+    val hasNotificationAccess by WirelessPairingManager.notificationAccessGranted.collectAsStateWithLifecycle()
 
     // Fake Device State
     val defaultDeviceName = remember {
@@ -242,6 +244,38 @@ fun SystemDashboardScreen(
     var showMockHelpDialog by remember { mutableStateOf(false) }
 
     val lifecycleOwner = LocalLifecycleOwner.current
+
+    fun checkNotificationPermissionStatus() {
+        WirelessPairingManager.checkNotificationPermissionStatus(context)
+    }
+
+    fun refreshDashboardStatuses() {
+        checkNotificationPermissionStatus()
+        isShizukuAvailable = ShizukuConnectionManager.isShizukuRunning()
+        hasShizukuPerm = ShizukuConnectionManager.hasShizukuPermission()
+        animScale = AnimationTweakManager.getCurrentAnimationScale(context)
+        selectedDnsProvider = DnsManager.getSelectedDns(context)
+        shellViewModel.refreshStatus()
+    }
+
+    DisposableEffect(lifecycleOwner, context) {
+        refreshDashboardStatuses()
+        val shizukuListeners = ShizukuConnectionManager.registerListeners(
+            onBinderChanged = { refreshDashboardStatuses() },
+            onPermissionResult = { _, _ -> refreshDashboardStatuses() }
+        )
+        val resumeObserver = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                refreshDashboardStatuses()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(resumeObserver)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(resumeObserver)
+            ShizukuConnectionManager.unregisterListeners(shizukuListeners)
+        }
+    }
+
     LaunchedEffect(Unit) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             appManagerViewModel.onVisible()
@@ -249,8 +283,8 @@ fun SystemDashboardScreen(
                 FakeGpsManager.init(context)
                 val dns = DnsManager.getSelectedDns(context)
                 val scale = AnimationTweakManager.getCurrentAnimationScale(context)
-                val shizukuAvail = AnimationTweakManager.isShizukuAvailable()
-                val shizukuP = AnimationTweakManager.hasShizukuPermission()
+                val shizukuAvail = ShizukuConnectionManager.isShizukuRunning()
+                val shizukuP = ShizukuConnectionManager.hasShizukuPermission()
                 val preset = FakeGpsManager.getSavedPresetName(context)
                 val spoof = prefs.getString("selected_device", null) ?: defaultDeviceName
                 withContext(Dispatchers.Main) {
@@ -260,6 +294,7 @@ fun SystemDashboardScreen(
                     hasShizukuPerm = shizukuP
                     currentPresetName = preset
                     currentSpoof = spoof
+                    checkNotificationPermissionStatus()
                     shellViewModel.refreshStatus()
                 }
             }
@@ -417,9 +452,10 @@ fun SystemDashboardScreen(
                         )
                     ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        @OptIn(ExperimentalLayoutApi::class)
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Surface(
                                 shape = RoundedCornerShape(8.dp),
@@ -441,6 +477,85 @@ fun SystemDashboardScreen(
                                         text = "System Status: Online",
                                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                                         color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+
+                            val notifChipColor = if (hasNotificationAccess) Color(0xFF10B981) else Color(0xFFF59E0B)
+                            Surface(
+                                onClick = {
+                                    SoundEffectManager.playClick()
+                                    if (!hasNotificationAccess) {
+                                        WirelessPairingManager.openNotificationAccessSettings(context)
+                                    } else {
+                                        navigateGuarded(Screen.NotificationHistory.route) {
+                                            navController.navigate(Screen.NotificationHistory.route)
+                                        }
+                                    }
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                color = notifChipColor.copy(alpha = 0.10f),
+                                border = BorderStroke(1.dp, notifChipColor.copy(alpha = 0.25f)),
+                                modifier = Modifier.testTag("hero_notification_status_chip")
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(notifChipColor)
+                                    )
+                                    Text(
+                                        text = if (hasNotificationAccess) "Notifications: Granted" else "Notifications: Off",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = notifChipColor
+                                    )
+                                }
+                            }
+
+                            val shizukuChipColor = when {
+                                hasShizukuPerm && isShizukuAvailable -> Color(0xFF10B981)
+                                isShizukuAvailable -> Color(0xFFF59E0B)
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                            Surface(
+                                onClick = {
+                                    SoundEffectManager.playClick()
+                                    ShizukuConnectionManager.connect(
+                                        context = context,
+                                        requestCode = 1001,
+                                        onConnected = { refreshDashboardStatuses() },
+                                        onPermissionRequested = { refreshDashboardStatuses() }
+                                    )
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                color = shizukuChipColor.copy(alpha = 0.10f),
+                                border = BorderStroke(1.dp, shizukuChipColor.copy(alpha = 0.25f)),
+                                modifier = Modifier.testTag("hero_shizuku_status_chip")
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(shizukuChipColor)
+                                    )
+                                    Text(
+                                        text = when {
+                                            hasShizukuPerm && isShizukuAvailable -> "Shizuku: Connected"
+                                            isShizukuAvailable -> "Shizuku: Authorize"
+                                            else -> "Shizuku: Inactive"
+                                        },
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = shizukuChipColor
                                     )
                                 }
                             }
@@ -958,11 +1073,6 @@ fun SystemDashboardScreen(
                 }
             }
 
-            // VOICE CHANGER & AUDIO FX CARD
-            item {
-                com.arwora.feature.system.voice.VoiceChangerCard()
-            }
-
             // APP LOCKER CARD
             item {
                 val isLockerEnabled by com.arwora.utils.AppLockerManager.isLockerEnabled.collectAsStateWithLifecycle()
@@ -1122,17 +1232,22 @@ fun SystemDashboardScreen(
             item {
                 SystemActionRowCard(
                     title = "Notification History Log",
-                    subtitle = "View recently dismissed notifications",
-                    icon = Icons.Default.Notifications,
-                    iconColor = MaterialTheme.colorScheme.primary,
-                    badge = "New",
-                    badgeColor = MaterialTheme.colorScheme.primary,
+                    subtitle = if (hasNotificationAccess) {
+                        "Notification Access Active • View captured logs"
+                    } else {
+                        "Notification Access Required • Tap to configure"
+                    },
+                    icon = if (hasNotificationAccess) Icons.Default.NotificationsActive else Icons.Default.Notifications,
+                    iconColor = if (hasNotificationAccess) Color(0xFF10B981) else MaterialTheme.colorScheme.primary,
+                    badge = if (hasNotificationAccess) "Active" else "Grant",
+                    badgeColor = if (hasNotificationAccess) Color(0xFF10B981) else Color(0xFFF59E0B),
                     onClick = {
                         SoundEffectManager.playClick()
                         navigateGuarded(Screen.NotificationHistory.route) {
                             navController.navigate(Screen.NotificationHistory.route)
                         }
-                    }
+                    },
+                    modifier = Modifier.testTag("system_notification_history_card")
                 )
             }
 
@@ -2021,55 +2136,55 @@ fun SystemDashboardScreen(
                     }
                 }
 
-                // Retrieve active wireless adb port from global settings if available (Android 11+)
-                val adbPort = try {
-                    android.provider.Settings.Global.getInt(context.contentResolver, "adb_wifi_server_port", -1)
-                } catch (e: Exception) {
-                    -1
-                }
+                // Retrieve active wireless adb port & Developer ADB toggle from global settings (Android 11+)
+                var adbPort by remember { mutableIntStateOf(-1) }
+                var isWirelessAdbEnabled by remember { mutableStateOf(false) }
 
-                val isWirelessAdbEnabled = try {
-                    android.provider.Settings.Global.getInt(context.contentResolver, "adb_enabled", 0) == 1 ||
-                    android.provider.Settings.Global.getInt(context.contentResolver, "adb_wifi_enabled", 0) == 1
-                } catch (e: Exception) {
-                    false
-                }
-
+                val cardLifecycleOwner = LocalLifecycleOwner.current
                 val updateShizukuStatus = {
-                    val avail = try { rikka.shizuku.Shizuku.pingBinder() } catch (e: Exception) { false }
-                    val perm = try { avail && rikka.shizuku.Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED } catch (e: Exception) { false }
-                    val ver = try { if (avail) rikka.shizuku.Shizuku.getLatestServiceVersion() else 0 } catch (e: Exception) { 0 }
+                    val avail = ShizukuConnectionManager.isShizukuRunning()
+                    val perm = ShizukuConnectionManager.hasShizukuPermission()
+                    val ver = try { if (avail) rikka.shizuku.Shizuku.getLatestServiceVersion() else 0 } catch (_: Throwable) { 0 }
+                    adbPort = try {
+                        android.provider.Settings.Global.getInt(context.contentResolver, "adb_wifi_server_port", -1)
+                    } catch (_: Exception) {
+                        -1
+                    }
+                    isWirelessAdbEnabled = try {
+                        android.provider.Settings.Global.getInt(context.contentResolver, "adb_enabled", 0) == 1 ||
+                        android.provider.Settings.Global.getInt(context.contentResolver, "adb_wifi_enabled", 0) == 1
+                    } catch (_: Exception) {
+                        false
+                    }
                     shizukuAvailable = avail
                     shizukuPermGranted = perm
                     shizukuServiceVersion = ver
+                    isShizukuAvailable = avail
+                    hasShizukuPerm = perm
+                    checkNotificationPermissionStatus()
                 }
 
-                DisposableEffect(Unit) {
+                DisposableEffect(cardLifecycleOwner) {
                     updateShizukuStatus()
-                    val binderListener = rikka.shizuku.Shizuku.OnBinderReceivedListener { updateShizukuStatus() }
-                    val binderDeadListener = rikka.shizuku.Shizuku.OnBinderDeadListener { updateShizukuStatus() }
-                    val permListener = rikka.shizuku.Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
-                        if (requestCode == 1001) {
-                            shizukuPermGranted = (grantResult == android.content.pm.PackageManager.PERMISSION_GRANTED)
-                            if (shizukuPermGranted) {
-                                Toast.makeText(context, "Shizuku Permission Granted", Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(context, "Shizuku Permission Denied", Toast.LENGTH_SHORT).show()
+                    val listeners = ShizukuConnectionManager.registerListeners(
+                        onBinderChanged = { updateShizukuStatus() },
+                        onPermissionResult = { requestCode, granted ->
+                            if (requestCode == 1001) {
+                                shizukuPermGranted = granted
                             }
+                            updateShizukuStatus()
+                        }
+                    )
+                    val lifecycleObserver = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                        if (event == Lifecycle.Event.ON_RESUME) {
+                            updateShizukuStatus()
                         }
                     }
-                    try {
-                        rikka.shizuku.Shizuku.addBinderReceivedListener(binderListener)
-                        rikka.shizuku.Shizuku.addBinderDeadListener(binderDeadListener)
-                        rikka.shizuku.Shizuku.addRequestPermissionResultListener(permListener)
-                    } catch (e: Exception) {}
+                    cardLifecycleOwner.lifecycle.addObserver(lifecycleObserver)
 
                     onDispose {
-                        try {
-                            rikka.shizuku.Shizuku.removeBinderReceivedListener(binderListener)
-                            rikka.shizuku.Shizuku.removeBinderDeadListener(binderDeadListener)
-                            rikka.shizuku.Shizuku.removeRequestPermissionResultListener(permListener)
-                        } catch (e: Exception) {}
+                        cardLifecycleOwner.lifecycle.removeObserver(lifecycleObserver)
+                        ShizukuConnectionManager.unregisterListeners(listeners)
                     }
                 }
 
@@ -2193,14 +2308,8 @@ fun SystemDashboardScreen(
                             ) {
                                 OutlinedButton(
                                     onClick = {
-                                           SoundEffectManager.playClick()
-                                        try {
-                                            val intent = context.packageManager.getLaunchIntentForPackage("rikka.shizuku.manager")
-                                                ?: Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=rikka.shizuku.manager"))
-                                            context.startActivity(intent)
-                                        } catch (e: Exception) {
-                                            Toast.makeText(context, "Unable to open Shizuku manager", Toast.LENGTH_SHORT).show()
-                                        }
+                                        SoundEffectManager.playClick()
+                                        ShizukuConnectionManager.launchShizukuApp(context)
                                     },
                                     modifier = Modifier.weight(1f),
                                     shape = RoundedCornerShape(12.dp)
@@ -2210,22 +2319,22 @@ fun SystemDashboardScreen(
                                     Text("Open Shizuku", fontSize = 11.sp)
                                 }
 
-                                if (!shizukuPermGranted && shizukuAvailable) {
+                                if (!shizukuPermGranted) {
                                     Button(
                                         onClick = {
                                             SoundEffectManager.playClick()
-                                            try {
-                                                rikka.shizuku.Shizuku.requestPermission(1001)
-                                                Toast.makeText(context, "Requested Shizuku permission...", Toast.LENGTH_SHORT).show()
-                                            } catch (e: Throwable) {
-                                                Toast.makeText(context, "Failed: ${e.message}", Toast.LENGTH_SHORT).show()
-                                            }
+                                            ShizukuConnectionManager.connect(
+                                                context = context,
+                                                requestCode = 1001,
+                                                onConnected = { updateShizukuStatus() },
+                                                onPermissionRequested = { updateShizukuStatus() }
+                                            )
                                         },
                                         modifier = Modifier.weight(1f),
                                         shape = RoundedCornerShape(12.dp),
                                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
                                     ) {
-                                        Text("Authorize ADB", fontSize = 11.sp)
+                                        Text(if (shizukuAvailable) "Authorize ADB" else "Connect", fontSize = 11.sp)
                                     }
                                 } else {
                                     OutlinedButton(
@@ -2250,12 +2359,8 @@ fun SystemDashboardScreen(
                         com.arwora.ui.components.WirelessPairingWizard(
                             onPairingSuccess = {
                                 Toast.makeText(context, "Pairing successful! Re-checking connection...", Toast.LENGTH_SHORT).show()
-                                try {
-                                    if (rikka.shizuku.Shizuku.pingBinder()) {
-                                        shizukuAvailable = true
-                                        shizukuPermGranted = rikka.shizuku.Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED
-                                    }
-                                } catch (_: Throwable) {}
+                                updateShizukuStatus()
+                                refreshDashboardStatuses()
                             }
                         )
 
@@ -2276,16 +2381,7 @@ fun SystemDashboardScreen(
                                     Button(
                                         onClick = {
                                             showShizukuInfoDialog = false
-                                            try {
-                                                val intent = context.packageManager.getLaunchIntentForPackage("rikka.shizuku.manager")
-                                                if (intent != null) {
-                                                    context.startActivity(intent)
-                                                } else {
-                                                    Toast.makeText(context, "Shizuku app not found", Toast.LENGTH_SHORT).show()
-                                                }
-                                            } catch (e: Exception) {
-                                                Toast.makeText(context, "Could not open Shizuku", Toast.LENGTH_SHORT).show()
-                                            }
+                                            ShizukuConnectionManager.launchShizukuApp(context)
                                         }
                                     ) {
                                         Text("Open Shizuku App")
@@ -2435,6 +2531,7 @@ fun SystemDashboardScreen(
             }
 
             item {
+                val tabNavigator = LocalMainTabNavigator.current
                 SystemActionRowCard(
                     title = "Social Hub",
                     subtitle = "Download reels & social videos",
@@ -2444,7 +2541,9 @@ fun SystemDashboardScreen(
                     badgeColor = MaterialTheme.colorScheme.primary,
                     onClick = {
                         SoundEffectManager.playClick()
-                        navController.navigate(Screen.Social.route)
+                        if (tabNavigator?.invoke(Screen.Social.route) != true) {
+                            navController.navigate(Screen.Social.route)
+                        }
                     }
                 )
             }

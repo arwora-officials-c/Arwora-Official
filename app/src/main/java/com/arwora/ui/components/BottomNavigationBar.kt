@@ -1,5 +1,7 @@
 package com.arwora.ui.components
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -16,6 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,11 +64,27 @@ val bottomNavItems = listOf(
     BottomNavItem("Settings", Screen.Settings.route, Icons.Filled.Settings, Icons.Outlined.Settings)
 )
 
+internal fun indexOfMainTabRoute(route: String?): Int {
+    if (route == null) return -1
+    return bottomNavItems.indexOfFirst { it.route == route }
+}
+
+internal fun computeHopPageBeforeAnimate(currentPage: Int, targetPage: Int): Int? {
+    val distance = kotlin.math.abs(targetPage - currentPage)
+    return if (distance > 1) {
+        if (targetPage > currentPage) targetPage - 1 else targetPage + 1
+    } else {
+        null
+    }
+}
+
 @Composable
 fun CustomBottomNavigationBar(
     navController: NavController,
     currentDestination: NavDestination?,
-    isDarkTheme: Boolean
+    isDarkTheme: Boolean,
+    selectedTabIndex: Int? = null,
+    onTabSelected: ((Int, BottomNavItem) -> Unit)? = null
 ) {
     Box(
         modifier = Modifier
@@ -89,8 +108,12 @@ fun CustomBottomNavigationBar(
                     .height(64.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                bottomNavItems.forEach { item ->
-                    val isSelected = currentDestination?.hierarchy?.any { it.route == item.route } == true
+                bottomNavItems.forEachIndexed { index, item ->
+                    val isSelected = if (selectedTabIndex != null) {
+                        selectedTabIndex == index
+                    } else {
+                        currentDestination?.hierarchy?.any { it.route == item.route } == true
+                    }
                     val selectedPillColor = if (isDarkTheme) {
                         MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
                     } else {
@@ -98,6 +121,22 @@ fun CustomBottomNavigationBar(
                     }
                     val selectedTintColor = MaterialTheme.colorScheme.primary
                     val unselectedTintColor = MaterialTheme.colorScheme.onSurfaceVariant
+
+                    val pillBgColor by animateColorAsState(
+                        targetValue = if (isSelected) selectedPillColor else Color.Transparent,
+                        animationSpec = tween(durationMillis = 180),
+                        label = "nav_pill_bg"
+                    )
+                    val pillBorderColor by animateColorAsState(
+                        targetValue = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else Color.Transparent,
+                        animationSpec = tween(durationMillis = 180),
+                        label = "nav_pill_border"
+                    )
+                    val contentTint by animateColorAsState(
+                        targetValue = if (isSelected) selectedTintColor else unselectedTintColor,
+                        animationSpec = tween(durationMillis = 180),
+                        label = "nav_content_tint"
+                    )
 
                     Column(
                         modifier = Modifier
@@ -109,7 +148,11 @@ fun CustomBottomNavigationBar(
                                 indication = ripple(bounded = true, color = selectedTintColor)
                             ) {
                                 com.arwora.utils.SoundEffectManager.playClick()
-                                navController.navigateSingleTopWithRestore(item.route)
+                                if (onTabSelected != null) {
+                                    onTabSelected(index, item)
+                                } else {
+                                    navController.navigateSingleTopWithRestore(item.route)
+                                }
                             },
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
@@ -118,14 +161,14 @@ fun CustomBottomNavigationBar(
                             modifier = Modifier
                                 .size(width = 52.dp, height = 28.dp)
                                 .background(
-                                    if (isSelected) selectedPillColor else Color.Transparent,
+                                    pillBgColor,
                                     RoundedCornerShape(percent = 50)
                                 )
                                 .then(
                                     if (isSelected) {
                                         Modifier.border(
                                             width = 1.dp,
-                                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                                            color = pillBorderColor,
                                             shape = RoundedCornerShape(percent = 50)
                                         )
                                     } else {
@@ -138,14 +181,14 @@ fun CustomBottomNavigationBar(
                                 imageVector = if (isSelected) item.selectedIcon else item.unselectedIcon,
                                 contentDescription = item.title,
                                 modifier = Modifier.size(20.dp),
-                                tint = if (isSelected) selectedTintColor else unselectedTintColor
+                                tint = contentTint
                             )
                         }
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = item.title,
                             fontSize = 11.sp,
-                            color = if (isSelected) selectedTintColor else unselectedTintColor,
+                            color = contentTint,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis

@@ -41,6 +41,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import androidx.core.content.FileProvider
+import com.arwora.ui.components.ArworaAnimatedSwitch
 import com.arwora.utils.MediaDownloadUtils
 import com.arwora.utils.SoundEffectManager
 import kotlinx.coroutines.delay
@@ -579,7 +580,7 @@ fun HtmlToApkBottomSheet(
                             text = "Enable JavaScript Engine",
                             style = MaterialTheme.typography.bodyMedium
                         )
-                        Switch(
+                        ArworaAnimatedSwitch(
                             checked = enableJs,
                             onCheckedChange = { enableJs = it },
                             enabled = !isBuilding
@@ -595,7 +596,7 @@ fun HtmlToApkBottomSheet(
                             text = "Enable DOM Storage & Caching",
                             style = MaterialTheme.typography.bodyMedium
                         )
-                        Switch(
+                        ArworaAnimatedSwitch(
                             checked = enableDomStorage,
                             onCheckedChange = { enableDomStorage = it },
                             enabled = !isBuilding
@@ -611,7 +612,7 @@ fun HtmlToApkBottomSheet(
                             text = "Fullscreen Web View Mode",
                             style = MaterialTheme.typography.bodyMedium
                         )
-                        Switch(
+                        ArworaAnimatedSwitch(
                             checked = fullScreenMode,
                             onCheckedChange = { fullScreenMode = it },
                             enabled = !isBuilding

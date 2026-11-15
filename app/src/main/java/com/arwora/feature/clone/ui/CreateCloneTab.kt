@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.arwora.ui.components.ArworaAnimatedSwitch
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 
@@ -284,16 +285,16 @@ fun CloneConfigurationSheet(
         Text("Privacy", style = MaterialTheme.typography.labelLarge)
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Text("Lock with PIN/Biometric", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-            Switch(checked = isLocked, onCheckedChange = { isLocked = it })
+            ArworaAnimatedSwitch(checked = isLocked, onCheckedChange = { isLocked = it })
         }
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Text("Hide notifications", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-            Switch(checked = hideNotifications, onCheckedChange = { hideNotifications = it })
+            ArworaAnimatedSwitch(checked = hideNotifications, onCheckedChange = { hideNotifications = it })
         }
 
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Text("Create home screen shortcut", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-            Switch(checked = createShortcut, onCheckedChange = { createShortcut = it })
+            ArworaAnimatedSwitch(checked = createShortcut, onCheckedChange = { createShortcut = it })
         }
 
         Spacer(modifier = Modifier.height(8.dp))

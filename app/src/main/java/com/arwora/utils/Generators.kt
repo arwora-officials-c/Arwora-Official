@@ -163,7 +163,10 @@ data class RandomProfile(
 
 object ProfileGenerator {
     fun generateProfile(country: String = "International", gender: String = "Male"): RandomProfile {
-        val name = "${NameGenerator.generateName(country, gender)} ${CountryData.getLastNames(country).random()}"
+        val first = NameGenerator.generateName(country, gender)
+        val surnames = CountryData.getLastNames(country, gender)
+        val last = surnames.filter { !it.equals(first, ignoreCase = true) }.ifEmpty { surnames }.random()
+        val name = "$first $last"
         val username = UsernameGenerator.generateUsername("Random", true, false, false, false, false, false, country, gender)
         val nickname = NicknameGenerator.generateNickname("Random", country, gender)
         val bio = BioGenerator.generateBio("Random", "Short", true)

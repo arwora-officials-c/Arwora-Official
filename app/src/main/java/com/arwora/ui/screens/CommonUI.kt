@@ -36,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arwora.ui.MainViewModel
+import com.arwora.ui.components.ArworaAnimatedSwitch
 
 @Composable
 fun SwitchRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
@@ -48,10 +49,9 @@ fun SwitchRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Uni
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-            Switch(
-                checked = checked, 
-                onCheckedChange = onCheckedChange,
-                colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary)
+            ArworaAnimatedSwitch(
+                checked = checked,
+                onCheckedChange = onCheckedChange
             )
         }
         HorizontalDivider(

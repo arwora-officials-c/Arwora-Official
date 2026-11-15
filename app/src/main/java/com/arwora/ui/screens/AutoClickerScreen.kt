@@ -42,6 +42,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.arwora.service.AutoClickerAccessibilityService
 import com.arwora.service.AutoClickerOverlayService
+import com.arwora.ui.components.ArworaAnimatedSwitch
 import com.arwora.utils.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -788,7 +789,7 @@ fun IntervalSettingsCard(
                     Text("Randomize Interval (Anti-Detection)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                     Text("Adds slight ±15% natural jitter to click intervals and positions", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Switch(
+                ArworaAnimatedSwitch(
                     checked = randomize,
                     onCheckedChange = {
                         SoundEffectManager.playClick()

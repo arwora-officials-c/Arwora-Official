@@ -33,7 +33,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.arwora.utils.ShizukuConnectionManager
 import com.arwora.utils.SoundEffectManager
 import java.text.SimpleDateFormat
 import java.util.*
@@ -55,8 +59,24 @@ fun ShellCommandSheet(
     val pendingDangerousCommand by viewModel.pendingDangerousCommand.collectAsStateWithLifecycle()
     val showHelpDialog by viewModel.showHelpDialog.collectAsStateWithLifecycle()
 
-    LaunchedEffect(Unit) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner) {
         viewModel.refreshStatus()
+        val listeners = ShizukuConnectionManager.registerListeners(
+            onBinderChanged = { viewModel.refreshStatus() },
+            onPermissionResult = { _, _ -> viewModel.refreshStatus() }
+        )
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshStatus()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            ShizukuConnectionManager.unregisterListeners(listeners)
+        }
     }
 
     ModalBottomSheet(
@@ -224,17 +244,20 @@ fun ShellCommandSheet(
                         )
                         Spacer(modifier = Modifier.height(14.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            if (status == ShellStatus.PERMISSION_DENIED) {
-                                Button(
-                                    onClick = {
-                                        SoundEffectManager.playClick()
-                                        viewModel.requestShizukuPermission()
-                                    },
-                                    shape = RoundedCornerShape(10.dp),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text("Grant Access")
-                                }
+                            Button(
+                                onClick = {
+                                    SoundEffectManager.playClick()
+                                    ShizukuConnectionManager.connect(
+                                        context = context,
+                                        requestCode = 1002,
+                                        onConnected = { viewModel.refreshStatus() },
+                                        onPermissionRequested = { viewModel.refreshStatus() }
+                                    )
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(if (status == ShellStatus.PERMISSION_DENIED) "Grant Access" else "Connect")
                             }
                             OutlinedButton(
                                 onClick = {
@@ -838,11 +861,16 @@ fun ShellCommandSheet(
                 Button(
                     onClick = {
                         SoundEffectManager.playClick()
-                        viewModel.requestShizukuPermission()
                         viewModel.dismissHelp()
+                        ShizukuConnectionManager.connect(
+                            context = context,
+                            requestCode = 1002,
+                            onConnected = { viewModel.refreshStatus() },
+                            onPermissionRequested = { viewModel.refreshStatus() }
+                        )
                     }
                 ) {
-                    Text("Request Permission")
+                    Text("Connect")
                 }
             },
             dismissButton = {

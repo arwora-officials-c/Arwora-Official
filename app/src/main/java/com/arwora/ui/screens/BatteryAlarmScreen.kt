@@ -42,6 +42,7 @@ import com.arwora.NameGenApplication
 import com.arwora.service.BatteryAlarmService
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arwora.feature.system.battery.service.BatteryMonitorManager
+import com.arwora.ui.components.ArworaAnimatedSwitch
 import com.arwora.utils.BatteryDrainTracker
 import com.arwora.utils.SoundEffectManager
 import kotlin.math.roundToInt
@@ -350,7 +351,7 @@ fun BatteryAlarmScreen(navController: NavController) {
                                 Text("Alert when charging reaches target", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
-                        Switch(
+                        ArworaAnimatedSwitch(
                             checked = chargingAlarmEnabled,
                             onCheckedChange = { value ->
                                 SoundEffectManager.playClick(context)
@@ -416,7 +417,7 @@ fun BatteryAlarmScreen(navController: NavController) {
                                 Text("Alert when level drops below target", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
-                        Switch(
+                        ArworaAnimatedSwitch(
                             checked = lowAlarmEnabled,
                             onCheckedChange = { value ->
                                 SoundEffectManager.playClick(context)
@@ -502,7 +503,7 @@ fun BatteryAlarmScreen(navController: NavController) {
                                 Text("Alarm repeats continuously until action taken", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
-                        Switch(
+                        ArworaAnimatedSwitch(
                             checked = repeatAlarm,
                             onCheckedChange = { value ->
                                 SoundEffectManager.playClick(context)
@@ -833,7 +834,7 @@ fun BatteryAlarmScreen(navController: NavController) {
                         )
                     }
                 }
-                Switch(
+                ArworaAnimatedSwitch(
                     checked = alarmVolumeBoost,
                     onCheckedChange = { value ->
                         SoundEffectManager.playClick(context)

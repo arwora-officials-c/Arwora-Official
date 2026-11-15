@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -41,6 +42,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.arwora.feature.system.appops.data.AppOpsManager
@@ -48,8 +52,9 @@ import com.arwora.feature.system.appops.model.AppOpsFilter
 import com.arwora.feature.system.appops.model.AppOpsItem
 import com.arwora.feature.system.appops.model.AppOpsSort
 import com.arwora.feature.system.appops.model.StandbyBucketMode
+import com.arwora.ui.components.GoogleStyleLoadingView
+import com.arwora.utils.ShizukuConnectionManager
 import com.arwora.utils.SoundEffectManager
-import rikka.shizuku.Shizuku
 
 @Composable
 fun AppOpsContainerCard(
@@ -110,6 +115,30 @@ fun AppOpsScreen(
     val selectedApp by vm.selectedApp.collectAsStateWithLifecycle()
 
     var showSortMenu by remember { mutableStateOf(false) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner) {
+        vm.checkShizuku()
+        val shizukuListeners = ShizukuConnectionManager.registerListeners(
+            onBinderChanged = { vm.checkShizuku() },
+            onPermissionResult = { _, granted ->
+                vm.checkShizuku()
+                if (granted) {
+                    vm.loadApps()
+                }
+            }
+        )
+        val lifecycleObserver = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                vm.checkShizuku()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(lifecycleObserver)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(lifecycleObserver)
+            ShizukuConnectionManager.unregisterListeners(shizukuListeners)
+        }
+    }
 
     BackHandler(enabled = selectedApp != null) {
         SoundEffectManager.playClick()
@@ -272,11 +301,18 @@ fun AppOpsScreen(
                         }
                     },
                     onRequestShizuku = {
-                        try {
-                            Shizuku.requestPermission(100)
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "Shizuku not available", Toast.LENGTH_SHORT).show()
-                        }
+                        SoundEffectManager.playClick()
+                        ShizukuConnectionManager.connect(
+                            context = context,
+                            requestCode = 100,
+                            onConnected = {
+                                vm.checkShizuku()
+                                vm.loadApps()
+                            },
+                            onPermissionRequested = {
+                                vm.checkShizuku()
+                            }
+                        )
                     }
                 )
             } else {
@@ -318,14 +354,20 @@ fun AppOpsScreen(
                                 }
                                 TextButton(
                                     onClick = {
-                                        try {
-                                            Shizuku.requestPermission(100)
-                                            vm.checkShizuku()
-                                            Toast.makeText(context, "Requested Shizuku permission", Toast.LENGTH_SHORT).show()
-                                        } catch (e: Exception) {
-                                            Toast.makeText(context, "Shizuku not found", Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
+                                        SoundEffectManager.playClick()
+                                        ShizukuConnectionManager.connect(
+                                            context = context,
+                                            requestCode = 100,
+                                            onConnected = {
+                                                vm.checkShizuku()
+                                                vm.loadApps()
+                                            },
+                                            onPermissionRequested = {
+                                                vm.checkShizuku()
+                                            }
+                                        )
+                                    },
+                                    modifier = Modifier.testTag("app_ops_connect_button")
                                 ) {
                                     Text("Connect", fontWeight = FontWeight.Bold)
                                 }
@@ -438,74 +480,81 @@ fun AppOpsScreen(
                         }
                     }
 
-                    if (isLoading) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                CircularProgressIndicator()
-                                Text(
-                                    text = "Scanning installed applications...",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    val contentPhase = when {
+                        isLoading -> 0
+                        filteredApps.isEmpty() -> 1
+                        else -> 2
+                    }
+
+                    AnimatedContent(
+                        targetState = contentPhase,
+                        transitionSpec = {
+                            fadeIn(animationSpec = tween(220)) togetherWith fadeOut(animationSpec = tween(180))
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        label = "app_ops_content_state"
+                    ) { phase ->
+                        when (phase) {
+                            0 -> {
+                                GoogleStyleLoadingView(
+                                    title = "Scanning installed applications",
+                                    subtitle = "Inspecting package metadata, standby buckets, and permissions",
+                                    icon = Icons.Default.AdminPanelSettings,
+                                    showSkeletonRows = true,
+                                    modifier = Modifier.fillMaxSize()
                                 )
                             }
-                        }
-                    } else if (filteredApps.isEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f)
-                                .padding(24.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.SearchOff,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.outline,
-                                    modifier = Modifier.size(56.dp)
-                                )
-                                Text(
-                                    text = "No matching applications found",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "Try adjusting your search query or filter chip.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f),
-                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            items(
-                                items = filteredApps,
-                                key = { it.packageName }
-                            ) { app ->
-                                AppOpsRowCard(
-                                    app = app,
-                                    onClick = {
-                                        SoundEffectManager.playClick()
-                                        vm.selectApp(app)
+                            1 -> {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(24.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.SearchOff,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.outline,
+                                            modifier = Modifier.size(56.dp)
+                                        )
+                                        Text(
+                                            text = "No matching applications found",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "Try adjusting your search query or filter chip.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
                                     }
-                                )
+                                }
+                            }
+                            else -> {
+                                LazyColumn(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    items(
+                                        items = filteredApps,
+                                        key = { it.packageName }
+                                    ) { app ->
+                                        AppOpsRowCard(
+                                            app = app,
+                                            onClick = {
+                                                SoundEffectManager.playClick()
+                                                vm.selectApp(app)
+                                            }
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -710,7 +759,10 @@ fun AppOpsDetailView(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    TextButton(onClick = onRequestShizuku) {
+                    TextButton(
+                        onClick = onRequestShizuku,
+                        modifier = Modifier.testTag("app_ops_detail_connect_button")
+                    ) {
                         Text("Connect", fontWeight = FontWeight.Bold)
                     }
                 }

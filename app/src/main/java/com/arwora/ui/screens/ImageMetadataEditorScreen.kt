@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.arwora.ui.MainViewModel
+import com.arwora.ui.components.ArworaAnimatedSwitch
 import com.arwora.ui.navigation.Screen
 import com.arwora.utils.ExifEditorUtils
 import com.arwora.utils.ExifMetadata
@@ -1456,7 +1457,7 @@ fun ExportFormatAndQualityCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Switch(
+                    ArworaAnimatedSwitch(
                         checked = preserveLossless,
                         onCheckedChange = onPreserveLosslessChange
                     )
@@ -1718,7 +1719,7 @@ fun RemoveLocationDataCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Switch(
+                ArworaAnimatedSwitch(
                     checked = removeLocation,
                     onCheckedChange = onRemoveLocationChanged,
                     enabled = enabled
@@ -1772,7 +1773,7 @@ fun RemoveDeviceInfoCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Switch(
+                ArworaAnimatedSwitch(
                     checked = removeDevice,
                     onCheckedChange = onRemoveDeviceChanged,
                     enabled = enabled
@@ -1822,10 +1823,9 @@ fun RemoveAllMetadataCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Switch(
+                ArworaAnimatedSwitch(
                     checked = removeAll,
-                    onCheckedChange = onRemoveAllChanged,
-                    colors = SwitchDefaults.colors(checkedThumbColor = MaterialTheme.colorScheme.primary)
+                    onCheckedChange = onRemoveAllChanged
                 )
             }
 

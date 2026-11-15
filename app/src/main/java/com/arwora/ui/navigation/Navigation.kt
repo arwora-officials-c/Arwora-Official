@@ -1,14 +1,21 @@
 package com.arwora.ui.navigation
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerDefaults
+import androidx.compose.foundation.pager.PagerSnapDistance
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -19,9 +26,17 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -39,10 +54,21 @@ import androidx.navigation.compose.rememberNavController
 import com.arwora.ui.MainViewModel
 import com.arwora.ui.components.CustomBottomNavigationBar
 import com.arwora.ui.components.bottomNavItems
+import com.arwora.ui.components.computeHopPageBeforeAnimate
+import com.arwora.ui.components.indexOfMainTabRoute
+import com.arwora.ui.components.rememberBottomBarScrollController
 import com.arwora.ui.screens.*
+import kotlinx.coroutines.launch
+
+/**
+ * Allows nested screens (e.g., Home quick actions, System Social Hub card) to switch directly
+ * to any main HorizontalPager tab by route, returning true if handled by the pager.
+ */
+val LocalMainTabNavigator = staticCompositionLocalOf<((String) -> Boolean)?> { null }
 
 sealed class Screen(val route: String) {
     object Splash : Screen("splash")
+    object MainTabs : Screen("main_tabs")
     object Home : Screen("home")
     object GenerateDashboard : Screen("generate_dashboard")
     
@@ -76,6 +102,7 @@ sealed class Screen(val route: String) {
     object Favorites : Screen("favorites")
     object Settings : Screen("settings")
     object About : Screen("about")
+    object PrivacyPolicy : Screen("privacy_policy")
     object DownloadHistory : Screen("download_history")
     object NotificationHistory : Screen("notification_history")
     object BatteryAlarm : Screen("battery_alarm")
@@ -111,36 +138,115 @@ sealed class Screen(val route: String) {
 }
 
 @Composable
-fun MainAppScreen(viewModel: MainViewModel) {
+fun MainAppScreen(
+    viewModel: MainViewModel,
+    skipSplash: Boolean = false
+) {
     val navController = rememberNavController()
     val darkModeState by viewModel.darkMode.collectAsStateWithLifecycle()
     val whiteThemeState by viewModel.whiteTheme.collectAsStateWithLifecycle()
     val isDarkTheme = (darkModeState ?: isSystemInDarkTheme()) && !whiteThemeState
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        NameGenNavHost(
-            navController = navController,
-            viewModel = viewModel,
-            modifier = Modifier.fillMaxSize()
-        )
+    val pagerState = rememberPagerState(initialPage = 0, pageCount = { bottomNavItems.size })
+    val coroutineScope = rememberCoroutineScope()
+    val bottomBarScrollController = rememberBottomBarScrollController()
 
-        val navBackStackEntry by navController.currentBackStackEntryAsState()
-        val currentDestination = navBackStackEntry?.destination
-        val showBottomBar = bottomNavItems.any { it.route == currentDestination?.route }
+    // Always reveal the bottom navigation bar automatically when switching tabs via swipe gestures
+    LaunchedEffect(pagerState.currentPage, pagerState.targetPage, pagerState.isScrollInProgress) {
+        bottomBarScrollController.reveal(animate = true)
+    }
 
-        if (showBottomBar) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .zIndex(10f)
-            ) {
-                CustomBottomNavigationBar(
-                    navController = navController,
-                    currentDestination = currentDestination,
-                    isDarkTheme = isDarkTheme
+    fun selectMainTab(tabIndex: Int, animate: Boolean = true) {
+        val clamped = tabIndex.coerceIn(0, bottomNavItems.lastIndex)
+        bottomBarScrollController.reveal(animate = animate)
+        if (navController.currentDestination?.route != Screen.MainTabs.route) {
+            navController.popBackStack(Screen.MainTabs.route, inclusive = false)
+        }
+        coroutineScope.launch {
+            if (!animate) {
+                pagerState.scrollToPage(clamped)
+            } else {
+                val hopPage = computeHopPageBeforeAnimate(pagerState.currentPage, clamped)
+                if (hopPage != null) {
+                    pagerState.scrollToPage(hopPage)
+                }
+                pagerState.animateScrollToPage(
+                    page = clamped,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMediumLow
+                    )
                 )
             }
         }
+    }
+
+    val navigateToRouteOrTab: (String) -> Boolean = remember(navController, pagerState) {
+        { route ->
+            val tabIdx = indexOfMainTabRoute(route)
+            if (tabIdx >= 0) {
+                selectMainTab(tabIdx, animate = true)
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    CompositionLocalProvider(LocalMainTabNavigator provides navigateToRouteOrTab) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            NameGenNavHost(
+                navController = navController,
+                viewModel = viewModel,
+                pagerState = pagerState,
+                skipSplash = skipSplash,
+                onSelectMainTab = { index, animate -> selectMainTab(index, animate) },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .nestedScroll(bottomBarScrollController.nestedScrollConnection)
+            )
+
+            val navBackStackEntry by navController.currentBackStackEntryAsState()
+            val currentDestination = navBackStackEntry?.destination
+            val currentRoute = currentDestination?.route
+            val isOnMainTabs = currentRoute == Screen.MainTabs.route
+            val showBottomBar = isOnMainTabs || bottomNavItems.any { it.route == currentRoute }
+
+            LaunchedEffect(showBottomBar) {
+                if (showBottomBar) {
+                    bottomBarScrollController.reveal(animate = true)
+                }
+            }
+
+            if (showBottomBar) {
+                val activeTabIndex = if (isOnMainTabs) {
+                    pagerState.targetPage
+                } else {
+                    indexOfMainTabRoute(currentRoute).takeIf { it >= 0 }
+                }
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .zIndex(10f)
+                        .onSizeChanged { size ->
+                            bottomBarScrollController.updateMaxOffsetPx(size.height.toFloat())
+                        }
+                        .graphicsLayer {
+                            translationY = bottomBarScrollController.offsetPx
+                        }
+                        .testTag("bottom_navigation_container")
+                ) {
+                    CustomBottomNavigationBar(
+                        navController = navController,
+                        currentDestination = currentDestination,
+                        isDarkTheme = isDarkTheme,
+                        selectedTabIndex = activeTabIndex,
+                        onTabSelected = { index, _ ->
+                            selectMainTab(index, animate = true)
+                        }
+                    )
+                }
+            }
 
         // Animated custom floating toast notification
         val floatingToastMessage by viewModel.floatingToastMessage.collectAsStateWithLifecycle()
@@ -212,8 +318,7 @@ fun MainAppScreen(viewModel: MainViewModel) {
                 }
             }
         }
-
-
+        }
     }
 }
 
@@ -221,6 +326,9 @@ fun MainAppScreen(viewModel: MainViewModel) {
 fun NameGenNavHost(
     navController: NavHostController,
     viewModel: MainViewModel,
+    pagerState: PagerState,
+    skipSplash: Boolean = false,
+    onSelectMainTab: (index: Int, animate: Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val springSpec = spring<androidx.compose.ui.unit.IntOffset>(
@@ -231,10 +339,28 @@ fun NameGenNavHost(
         dampingRatio = Spring.DampingRatioNoBouncy,
         stiffness = Spring.StiffnessLow
     )
+    val pagerScope = rememberCoroutineScope()
+
+    // Prevent horizontal child scrollables (LazyRow / horizontalScroll cards) from leaking
+    // edge overscroll/flings into HorizontalPager and triggering unintended tab switches.
+    val antiConflictPagerNestedScroll = remember {
+        object : NestedScrollConnection {
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset = Offset.Zero
+
+            override suspend fun onPostFling(
+                consumed: Velocity,
+                available: Velocity
+            ): Velocity = Velocity.Zero
+        }
+    }
 
     NavHost(
         navController = navController,
-        startDestination = Screen.Home.route,
+        startDestination = if (skipSplash) Screen.MainTabs.route else Screen.Splash.route,
         modifier = modifier,
         enterTransition = {
             slideInHorizontally(initialOffsetX = { it }, animationSpec = springSpec) +
@@ -253,20 +379,97 @@ fun NameGenNavHost(
                     fadeOut(animationSpec = fadeSpringSpec)
         }
     ) {
-        composable(Screen.Splash.route) {
+        composable(
+            route = Screen.Splash.route,
+            enterTransition = { EnterTransition.None },
+            exitTransition = { fadeOut(animationSpec = tween(durationMillis = 250)) }
+        ) {
             SplashScreen(
                 onSplashFinished = {
-                    navController.navigate(Screen.Home.route) {
+                    navController.navigate(Screen.MainTabs.route) {
                         popUpTo(Screen.Splash.route) { inclusive = true }
+                        launchSingleTop = true
                     }
                 }
             )
         }
-        composable(Screen.Home.route) {
-            HomeScreen(navController = navController, viewModel = viewModel)
+
+        composable(
+            route = Screen.MainTabs.route,
+            enterTransition = {
+                if (initialState.destination.route == Screen.Splash.route) {
+                    fadeIn(animationSpec = tween(durationMillis = 260))
+                } else {
+                    EnterTransition.None
+                }
+            },
+            exitTransition = {
+                slideOutHorizontally(targetOffsetX = { -it / 3 }, animationSpec = springSpec) +
+                        fadeOut(animationSpec = fadeSpringSpec)
+            },
+            popEnterTransition = {
+                slideInHorizontally(initialOffsetX = { -it / 3 }, animationSpec = springSpec) +
+                        fadeIn(animationSpec = fadeSpringSpec)
+            }
+        ) {
+            BackHandler(enabled = pagerState.currentPage != 0) {
+                pagerScope.launch {
+                    val hopPage = computeHopPageBeforeAnimate(pagerState.currentPage, 0)
+                    if (hopPage != null) {
+                        pagerState.scrollToPage(hopPage)
+                    }
+                    pagerState.animateScrollToPage(
+                        page = 0,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessMediumLow
+                        )
+                    )
+                }
+            }
+
+            HorizontalPager(
+                state = pagerState,
+                beyondViewportPageCount = 1,
+                key = { bottomNavItems[it].route },
+                flingBehavior = PagerDefaults.flingBehavior(
+                    state = pagerState,
+                    pagerSnapDistance = PagerSnapDistance.atMost(1),
+                    snapPositionalThreshold = 0.35f,
+                    snapAnimationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMediumLow
+                    )
+                ),
+                pageNestedScrollConnection = antiConflictPagerNestedScroll,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .testTag("main_tab_pager")
+            ) { page ->
+                when (page) {
+                    0 -> HomeScreen(navController = navController, viewModel = viewModel)
+                    1 -> GenerateDashboardScreen(navController = navController, viewModel = viewModel)
+                    2 -> SocialScreen(navController = navController, viewModel = viewModel)
+                    3 -> {
+                        val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as com.arwora.NameGenApplication
+                        SystemDashboardScreen(navController = navController, appManagerViewModel = app.appManagerViewModel)
+                    }
+                    4 -> SettingsScreen(navController = navController, viewModel = viewModel)
+                }
+            }
         }
-        composable(Screen.GenerateDashboard.route) {
-            GenerateDashboardScreen(navController = navController, viewModel = viewModel)
+
+        // Seamless compatibility routes for any direct navController.navigate(Screen.<Tab>.route)
+        bottomNavItems.forEachIndexed { tabIndex, tabItem ->
+            composable(
+                route = tabItem.route,
+                enterTransition = { EnterTransition.None },
+                exitTransition = { ExitTransition.None }
+            ) {
+                LaunchedEffect(Unit) {
+                    onSelectMainTab(tabIndex, true)
+                }
+            }
         }
         composable(Screen.NameGen.route) {
             NameGenScreen(navController = navController, viewModel = viewModel)
@@ -307,21 +510,17 @@ fun NameGenNavHost(
         composable(Screen.CoinToss.route) {
             CoinTossScreen(navController = navController, viewModel = viewModel)
         }
-        composable(Screen.SystemDashboard.route) {
-            val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as com.arwora.NameGenApplication
-            SystemDashboardScreen(navController = navController, appManagerViewModel = app.appManagerViewModel)
-        }
         composable(Screen.History.route) {
             HistoryScreen(navController = navController, viewModel = viewModel)
         }
         composable(Screen.Favorites.route) {
             FavoritesScreen(navController = navController, viewModel = viewModel)
         }
-        composable(Screen.Settings.route) {
-            SettingsScreen(navController = navController, viewModel = viewModel)
-        }
         composable(Screen.About.route) {
             AboutScreen(navController = navController)
+        }
+        composable(Screen.PrivacyPolicy.route) {
+            PrivacyPolicyScreen(navController = navController)
         }
         composable(Screen.Calculator.route) {
             CalculatorScreen(onBack = { navController.popBackStack() })
@@ -372,9 +571,6 @@ fun NameGenNavHost(
         }
         composable(Screen.FakeGps.route) {
             FakeGpsMapScreen(navController = navController)
-        }
-        composable(Screen.Social.route) {
-            SocialScreen(navController = navController, viewModel = viewModel)
         }
         composable(Screen.DeepScanner.route) {
             com.arwora.ui.screens.DeepScannerScreen(onBack = { navController.popBackStack() })

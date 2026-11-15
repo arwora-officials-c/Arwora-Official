@@ -115,11 +115,18 @@ object ModernGenerators {
         excludeDuplicates: Boolean,
         noRepeatSession: Boolean
     ): List<NameResult> {
+        val isFullNameMode = mode == "Full Name"
+        val isLastNameMode = mode == "Last Name" || mode == "Surname"
+        val isFirstMiddleMode = mode == "First + Middle" || mode == "First & Middle"
+
+        val countrySurnames = CountryData.getLastNames(country, gender)
+        val surnameTokenSet = countrySurnames.map { it.lowercase() }.toSet()
+
         // Pre-fetch candidate pools once
         var firstPool: List<String> = if (customFirst.isNotBlank()) {
             listOf(customFirst.trim())
         } else {
-            val pool = when(gender) {
+            val pool = when (gender) {
                 "Male" -> CountryData.getMaleNames(country)
                 "Female" -> CountryData.getFemaleNames(country)
                 else -> CountryData.getUnisexNames(country)
@@ -131,24 +138,30 @@ object ModernGenerators {
             }
         }
 
-        var middlePool: List<String> = if ((mode == "Full Name" && includeMiddle) || mode == "Middle Name") {
-            if (customMiddle.isNotBlank() && mode == "Full Name") {
+        var middlePool: List<String> = if ((isFullNameMode && includeMiddle) || mode == "Middle Name" || isFirstMiddleMode) {
+            if (customMiddle.isNotBlank() && (isFullNameMode || isFirstMiddleMode)) {
                 listOf(customMiddle.trim())
             } else {
-                val pool = CountryData.getMiddleNames(country, gender)
+                val rawPool = CountryData.getMiddleNames(country, gender)
+                // Guarantee middle-name candidates are never also surnames in Full Name mode
+                val cleanPool = if (isFullNameMode) {
+                    rawPool.filter { it.lowercase() !in surnameTokenSet }.ifEmpty { rawPool }
+                } else {
+                    rawPool
+                }
                 when (lengthPref) {
-                    "Short" -> pool.filter { it.length <= 4 }.ifEmpty { pool }
-                    "Long" -> pool.filter { it.length >= 7 }.ifEmpty { pool }
-                    else -> pool
+                    "Short" -> cleanPool.filter { it.length <= 4 }.ifEmpty { cleanPool }
+                    "Long" -> cleanPool.filter { it.length >= 7 }.ifEmpty { cleanPool }
+                    else -> cleanPool
                 }
             }
         } else emptyList()
 
-        var lastPool: List<String> = if (mode == "Full Name" || mode == "Last Name") {
-            if (customLast.isNotBlank() && mode == "Full Name") {
+        var lastPool: List<String> = if (isFullNameMode || isLastNameMode) {
+            if (customLast.isNotBlank() && isFullNameMode) {
                 listOf(customLast.trim())
             } else {
-                CountryData.getLastNames(country)
+                countrySurnames
             }
         } else emptyList()
 
@@ -172,29 +185,55 @@ object ModernGenerators {
 
         while (results.size < count && attempts < maxAttempts) {
             attempts++
-            
+
             val first = if (fSize > 0) firstPool[Random.nextInt(fSize)] else ""
-            val middle = if (mSize > 0) middlePool[Random.nextInt(mSize)] else ""
-            val last = if (lSize > 0) lastPool[Random.nextInt(lSize)] else ""
-            
-            val finalName = when(mode) {
-                "Full Name" -> {
+
+            val last = if (lSize > 0) {
+                val candidate = lastPool[Random.nextInt(lSize)]
+                if (lSize > 1 && candidate.equals(first, ignoreCase = true)) {
+                    lastPool.firstOrNull { !it.equals(first, ignoreCase = true) } ?: candidate
+                } else {
+                    candidate
+                }
+            } else ""
+
+            val middle = if (mSize > 0) {
+                val candidate = middlePool[Random.nextInt(mSize)]
+                val collidesWithFirstOrLast = candidate.equals(first, ignoreCase = true) ||
+                    (last.isNotEmpty() && candidate.equals(last, ignoreCase = true))
+                if (mSize > 1 && collidesWithFirstOrLast) {
+                    middlePool.firstOrNull {
+                        !it.equals(first, ignoreCase = true) &&
+                            (last.isEmpty() || !it.equals(last, ignoreCase = true))
+                    } ?: candidate
+                } else {
+                    candidate
+                }
+            } else ""
+
+            val finalName = when {
+                isFullNameMode -> {
                     when {
-                        middle.isNotEmpty() && last.isNotEmpty() -> "$first $middle $last"
+                        includeMiddle && middle.isNotEmpty() && last.isNotEmpty() -> {
+                            // Strictly [First Name] [Middle Name] [Single Surname]
+                            if (middle.equals(last, ignoreCase = true)) "$first $last"
+                            else "$first $middle $last"
+                        }
                         last.isNotEmpty() -> "$first $last"
-                        middle.isNotEmpty() -> "$first $middle"
+                        includeMiddle && middle.isNotEmpty() -> "$first $middle"
                         else -> first
                     }
                 }
-                "First Name" -> first
-                "Middle Name" -> middle.ifEmpty { first }
-                "Last Name" -> last.ifEmpty { first }
-                "Username" -> UsernameGenerator.generateUsername(style, true, false, false, false, false, false, country, gender)
+                mode == "First Name" -> first
+                mode == "Middle Name" -> middle.ifEmpty { first }
+                isLastNameMode -> last.ifEmpty { first }
+                isFirstMiddleMode -> if (middle.isNotEmpty()) "$first $middle" else first
+                mode == "Username" -> UsernameGenerator.generateUsername(style, true, false, false, false, false, false, country, gender)
                 else -> first
             }
 
             if (finalName.isBlank()) continue
-            
+
             if (noRepeatSession) {
                 if (mode == "Middle Name") {
                     if (!SessionCache.generatedMiddleNames.contains(finalName)) {
@@ -217,7 +256,7 @@ object ModernGenerators {
                 }
             }
         }
-        
+
         return results.take(count).map { name ->
             val firstToken = name.split(" ").firstOrNull() ?: name
             NameResult(name, Datasets.getMeaning(firstToken), style, lengthPref)

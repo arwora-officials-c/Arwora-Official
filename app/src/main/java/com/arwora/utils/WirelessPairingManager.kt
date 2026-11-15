@@ -1,5 +1,6 @@
 package com.arwora.utils
 
+import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -8,7 +9,9 @@ import android.net.nsd.NsdServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
+import android.service.notification.NotificationListenerService
 import android.util.Log
+import android.widget.Toast
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -49,27 +52,85 @@ object WirelessPairingManager {
     private val _lastCapturedCode = MutableStateFlow<String?>(null)
     val lastCapturedCode: StateFlow<String?> = _lastCapturedCode.asStateFlow()
 
+    private val _notificationAccessGranted = MutableStateFlow(false)
+    val notificationAccessGranted: StateFlow<Boolean> = _notificationAccessGranted.asStateFlow()
+
     private var nsdManager: NsdManager? = null
     private var discoveryListener: NsdManager.DiscoveryListener? = null
     private var listeningScope: CoroutineScope? = null
     private var timeoutJob: Job? = null
 
     /**
-     * Check if the app has Notification Listener permission granted
+     * Pure parser for Settings.Secure "enabled_notification_listeners" colon-separated entries.
      */
-    fun isNotificationAccessGranted(context: Context): Boolean {
-        val packageName = context.packageName
-        val flat = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
-        if (!flat.isNullOrEmpty()) {
-            val names = flat.split(":")
-            for (name in names) {
-                val cn = ComponentName.unflattenFromString(name)
-                if (cn != null && cn.packageName == packageName) {
-                    return true
-                }
+    internal fun isPackageInEnabledNotificationListeners(flat: String?, targetPackage: String): Boolean {
+        if (flat.isNullOrBlank() || targetPackage.isBlank()) return false
+        val entries = flat.split(":")
+        for (entry in entries) {
+            val trimmed = entry.trim()
+            if (trimmed.isEmpty()) continue
+            val slashIdx = trimmed.indexOf('/')
+            val entryPackage = if (slashIdx > 0) trimmed.substring(0, slashIdx) else trimmed
+            if (entryPackage == targetPackage) {
+                return true
             }
         }
         return false
+    }
+
+    /**
+     * Check if the app has Notification Listener permission granted.
+     */
+    fun isNotificationAccessGranted(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            try {
+                val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                val component = ComponentName(context, com.arwora.service.NotificationHistoryService::class.java)
+                if (nm?.isNotificationListenerAccessGranted(component) == true) {
+                    return true
+                }
+            } catch (e: Throwable) {
+                Log.w(TAG, "NotificationManager listener check failed, falling back to Settings.Secure", e)
+            }
+        }
+
+        return try {
+            val packageName = context.packageName
+            val flat = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
+            if (!flat.isNullOrEmpty()) {
+                val names = flat.split(":")
+                for (name in names) {
+                    val cn = ComponentName.unflattenFromString(name)
+                    if (cn != null && cn.packageName == packageName) {
+                        return true
+                    }
+                }
+            }
+            isPackageInEnabledNotificationListeners(flat, packageName)
+        } catch (e: Throwable) {
+            Log.w(TAG, "Settings.Secure listener check failed", e)
+            false
+        }
+    }
+
+    /**
+     * Dynamically re-evaluate Notification Access status and push it to listeners/UI.
+     * Also requests listener rebind on API 24+ when transitioning from revoked -> granted.
+     */
+    fun checkNotificationPermissionStatus(context: Context): Boolean {
+        val wasGranted = _notificationAccessGranted.value
+        val granted = isNotificationAccessGranted(context)
+        _notificationAccessGranted.value = granted
+        if (granted && !wasGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            try {
+                NotificationListenerService.requestRebind(
+                    ComponentName(context, com.arwora.service.NotificationHistoryService::class.java)
+                )
+            } catch (e: Throwable) {
+                Log.w(TAG, "NotificationListenerService.requestRebind skipped", e)
+            }
+        }
+        return granted
     }
 
     /**
@@ -83,6 +144,11 @@ object WirelessPairingManager {
             context.startActivity(intent)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to open notification listener settings", e)
+            Toast.makeText(
+                context,
+                "Please enable Notification Access for this app in System Settings.",
+                Toast.LENGTH_LONG
+            ).show()
         }
     }
 
@@ -359,7 +425,7 @@ object WirelessPairingManager {
             }
 
             // Launch Shizuku manager to refresh status if installed
-            val launchIntent = context.packageManager.getLaunchIntentForPackage("rikka.shizuku.manager")
+            val launchIntent = context.packageManager.getLaunchIntentForPackage(ShizukuConnectionManager.SHIZUKU_PACKAGE_NAME)
             if (launchIntent != null) {
                 launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 // Do not steal focus abruptly, but post a small delay or notification

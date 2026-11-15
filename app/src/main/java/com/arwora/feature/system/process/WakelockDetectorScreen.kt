@@ -2,7 +2,12 @@ package com.arwora.feature.system.process
 
 import android.content.Context
 import android.widget.Toast
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -31,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import androidx.navigation.NavController
+import com.arwora.ui.components.GoogleStyleLoadingView
 import com.arwora.utils.ProcessInfo
 import com.arwora.utils.ProcessWakelockManager
 import com.arwora.utils.SoundEffectManager
@@ -295,66 +301,82 @@ fun WakelockDetectorScreen(
                 }
             }
 
-            if (isLoading) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(32.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(modifier = Modifier.size(36.dp))
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text("Analyzing background processes & wakelocks...")
-                    }
-                }
-            } else if (filteredProcesses.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(32.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(48.dp)
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = "No matching processes found",
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Text(
-                            text = "System is running clean and optimized",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+            val contentState = when {
+                isLoading -> 0
+                filteredProcesses.isEmpty() -> 1
+                else -> 2
+            }
+
+            AnimatedContent(
+                targetState = contentState,
+                transitionSpec = {
+                    fadeIn(animationSpec = tween(220)) togetherWith fadeOut(animationSpec = tween(180))
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                label = "wakelock_content_state"
+            ) { state ->
+                when (state) {
+                    0 -> {
+                        GoogleStyleLoadingView(
+                            title = "Scanning active processes",
+                            subtitle = "Analyzing background tasks, memory usage, and wakelocks",
+                            icon = Icons.Default.Memory,
+                            showSkeletonRows = true,
+                            modifier = Modifier.fillMaxSize()
                         )
                     }
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    items(filteredProcesses, key = { "${it.pid}_${it.packageName}" }) { proc ->
-                        ProcessItemCard(
-                            process = proc,
-                            onKill = {
-                                coroutineScope.launch {
-                                    ProcessWakelockManager.killBackgroundProcess(context, proc.packageName)
-                                    Toast.makeText(context, "Trimmed ${proc.appName}", Toast.LENGTH_SHORT).show()
-                                    refresh()
-                                }
-                            },
-                            onOpenDetails = {
-                                ProcessWakelockManager.openAppDetails(context, proc.packageName)
+                    1 -> {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(48.dp)
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    text = "No matching processes found",
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    text = "System is running clean and optimized",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
-                        )
+                        }
+                    }
+                    else -> {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            items(filteredProcesses, key = { "${it.pid}_${it.packageName}" }) { proc ->
+                                ProcessItemCard(
+                                    process = proc,
+                                    onKill = {
+                                        coroutineScope.launch {
+                                            ProcessWakelockManager.killBackgroundProcess(context, proc.packageName)
+                                            Toast.makeText(context, "Trimmed ${proc.appName}", Toast.LENGTH_SHORT).show()
+                                            refresh()
+                                        }
+                                    },
+                                    onOpenDetails = {
+                                        ProcessWakelockManager.openAppDetails(context, proc.packageName)
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
             }

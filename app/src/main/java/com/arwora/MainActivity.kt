@@ -51,6 +51,15 @@ class MainActivity : ComponentActivity(), Shizuku.OnRequestPermissionResultListe
         }
     }
 
+    fun checkNotificationPermissionStatus() {
+        com.arwora.utils.WirelessPairingManager.checkNotificationPermissionStatus(this)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        checkNotificationPermissionStatus()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         try {
@@ -62,6 +71,9 @@ class MainActivity : ComponentActivity(), Shizuku.OnRequestPermissionResultListe
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
+        splashScreen.setOnExitAnimationListener { splashScreenViewProvider ->
+            splashScreenViewProvider.remove()
+        }
         super.onCreate(savedInstanceState)
         com.arwora.feature.common.metrics.StartupMetrics.onActivityCreate()
         
@@ -78,8 +90,7 @@ class MainActivity : ComponentActivity(), Shizuku.OnRequestPermissionResultListe
 
         val app = application as NameGenApplication
         val viewModel = app.sharedViewModel
-
-
+        val skipSplash = (intent?.action == Intent.ACTION_SEND)
 
         handleIncomingIntent(intent, viewModel)
 
@@ -126,7 +137,10 @@ class MainActivity : ComponentActivity(), Shizuku.OnRequestPermissionResultListe
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    com.arwora.ui.navigation.MainAppScreen(viewModel = viewModel)
+                    com.arwora.ui.navigation.MainAppScreen(
+                        viewModel = viewModel,
+                        skipSplash = skipSplash
+                    )
                 }
             }
         }

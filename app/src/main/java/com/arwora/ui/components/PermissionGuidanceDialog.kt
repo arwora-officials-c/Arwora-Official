@@ -19,15 +19,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.arwora.utils.DnsSecureSettingsHelper
+import com.arwora.utils.ShizukuConnectionManager
 
 @Composable
 fun ShizukuGuidanceDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    val isRunning = DnsSecureSettingsHelper.isShizukuAvailable()
-    val isGranted = DnsSecureSettingsHelper.hasShizukuPermission()
+    val isRunning = ShizukuConnectionManager.isShizukuRunning()
+    val isGranted = ShizukuConnectionManager.hasShizukuPermission()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -93,25 +93,13 @@ fun ShizukuGuidanceDialog(
             Button(
                 onClick = {
                     onDismiss()
-                    if (isRunning && !isGranted) {
-                        DnsSecureSettingsHelper.requestShizukuPermission(1001)
-                    } else {
-                        val launchIntent = context.packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api")
-                        if (launchIntent != null) {
-                            context.startActivity(launchIntent)
-                        } else {
-                            try {
-                                context.startActivity(
-                                    Intent(Intent.ACTION_VIEW, Uri.parse("https://shizuku.rikka.app"))
-                                )
-                            } catch (_: Exception) {
-                                Toast.makeText(context, "Could not open browser", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    }
+                    ShizukuConnectionManager.connect(
+                        context = context,
+                        requestCode = 1001
+                    )
                 }
             ) {
-                Text(if (isRunning && !isGranted) "Authorize Permission" else "Open Shizuku App")
+                Text(if (isRunning && !isGranted) "Authorize Permission" else "Connect Shizuku")
             }
         },
         dismissButton = {

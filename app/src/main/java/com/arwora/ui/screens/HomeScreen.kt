@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontStyle
@@ -57,6 +58,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.arwora.ui.components.AppLogo
 import com.arwora.ui.MainViewModel
+import com.arwora.ui.navigation.LocalMainTabNavigator
 import com.arwora.ui.navigation.Screen
 import com.arwora.utils.HighRiskApp
 import com.arwora.utils.SoundEffectManager
@@ -213,18 +215,11 @@ fun HomeScreen(
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
+    val tabNavigator = LocalMainTabNavigator.current
     var homeTimeframe by remember { mutableStateOf(UsageTimeframe.TODAY) }
     var wellbeingSummary by remember { mutableStateOf<WellbeingSummary?>(null) }
     var hasUsagePermission by remember { mutableStateOf(false) }
     var isWellbeingLoading by remember { mutableStateOf(true) }
-
-    val savedLimits = remember(context) { getSavedAppLimits(context) }
-    val activeTimersCount = remember(wellbeingSummary, savedLimits) {
-        wellbeingSummary?.appUsageList?.count { it.timerLimitMinutes > 0 } ?: savedLimits.size
-    }
-    val exceededTimersCount = remember(wellbeingSummary) {
-        wellbeingSummary?.appUsageList?.count { it.isTimerExceeded } ?: 0
-    }
 
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -388,15 +383,15 @@ fun HomeScreen(
             AnimatedListItem(index = 2) {
                 CompactWellbeingDashboardCard(
                     summary = wellbeingSummary ?: WellbeingSummary(),
-                    activeTimersCount = activeTimersCount,
-                    exceededTimersCount = exceededTimersCount,
                     selectedTimeframe = homeTimeframe,
                     onTimeframeSelected = { tf ->
                         homeTimeframe = tf
                     },
+                    modifier = Modifier.testTag("home_app_usage_stats_card"),
                     cardTitle = "App Usage Stats",
                     hasPermission = hasUsagePermission,
                     isLoading = isWellbeingLoading,
+                    showExtendedTelemetry = false,
                     onCardClick = {
                         navController.navigate(Screen.AppUsageStats.route)
                     }
@@ -564,7 +559,9 @@ fun HomeScreen(
                             .fillMaxWidth(),
                         onClick = {
                             SoundEffectManager.playClick()
-                            navController.navigate(tool.route)
+                            if (tabNavigator?.invoke(tool.route) != true) {
+                                navController.navigate(tool.route)
+                            }
                         },
                         shape = cardShape,
                         colors = CardDefaults.cardColors(containerColor = cardBgColor),
@@ -650,7 +647,9 @@ fun HomeScreen(
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.clickable {
                                 SoundEffectManager.playClick()
-                                navController.navigate(Screen.GenerateDashboard.route)
+                                if (tabNavigator?.invoke(Screen.GenerateDashboard.route) != true) {
+                                    navController.navigate(Screen.GenerateDashboard.route)
+                                }
                             }
                         )
                     }
@@ -672,7 +671,9 @@ fun HomeScreen(
                                     .weight(1f),
                                 onClick = {
                                     SoundEffectManager.playClick()
-                                    navController.navigate(feature.route)
+                                    if (tabNavigator?.invoke(feature.route) != true) {
+                                        navController.navigate(feature.route)
+                                    }
                                 },
                                 shape = cardShape,
                                 colors = CardDefaults.cardColors(containerColor = cardBgColor),
@@ -720,7 +721,8 @@ fun HomeScreen(
     }
 
     item {
-        Spacer(modifier = Modifier.height(80.dp))
+        Spacer(modifier = Modifier.height(92.dp))
+        Spacer(modifier = Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
     }
 }
 

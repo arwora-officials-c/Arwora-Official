@@ -7,6 +7,7 @@ import android.graphics.drawable.BitmapDrawable
 import android.os.Build
 import android.widget.Toast
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -33,6 +34,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.ui.text.font.FontWeight
@@ -44,8 +46,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arwora.ui.MainViewModel
 import com.arwora.utils.*
-
-@OptIn(ExperimentalMaterial3Api::class)
 
 fun Modifier.zeroSize() = layout { measurable, constraints ->
     val placeable = measurable.measure(constraints)
@@ -104,12 +104,13 @@ fun InlineDropdownMenuItem(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SystemOverlayContent(
     viewModel: MainViewModel,
     onDragDelta: (dx: Float, dy: Float) -> Unit,
     onMinimize: () -> Unit = {},
-    onTogglePanel: () -> Unit = {},
+    onTogglePanel: (Boolean) -> Unit = {},
     onLaunchApp: () -> Unit = {},
     onClose: () -> Unit = {}
 ) {
@@ -117,6 +118,8 @@ fun SystemOverlayContent(
     var showToolMenu by remember { mutableStateOf(false) }
     var showCountryDropdown by remember { mutableStateOf(false) }
     var smartQuery by remember { mutableStateOf("popular modern name") }
+    var showFloatingUsernameChecker by remember { mutableStateOf(false) }
+    var checkedFloatingUsername by remember { mutableStateOf("") }
     
     var isCustomFirstFocused by remember { mutableStateOf(false) }
     var isCustomLastFocused by remember { mutableStateOf(false) }
@@ -148,6 +151,24 @@ fun SystemOverlayContent(
     val generatedNames by viewModel.generatedNames.collectAsStateWithLifecycle()
     val isGenerating by viewModel.isGenerating.collectAsStateWithLifecycle()
     val fontStyle by viewModel.fontStyle.collectAsStateWithLifecycle()
+
+    LaunchedEffect(activeTool, currentResultText) {
+        if (activeTool != "Username" || currentResultText != checkedFloatingUsername) {
+            showFloatingUsernameChecker = false
+        }
+    }
+
+    val toggleFloatingUsernameCheck = {
+        if (activeTool == "Username" && currentResultText.isNotBlank()) {
+            SoundEffectManager.playClick(context)
+            if (showFloatingUsernameChecker && checkedFloatingUsername == currentResultText) {
+                showFloatingUsernameChecker = false
+            } else {
+                checkedFloatingUsername = currentResultText
+                showFloatingUsernameChecker = true
+            }
+        }
+    }
 
     // Tool specific shared states
     val userStyle by viewModel.usernameStyle.collectAsStateWithLifecycle()
@@ -221,17 +242,17 @@ fun SystemOverlayContent(
     }
 
     if (!isExpanded) {
-        // Compact Floating Window
+        // Compact Floating Window (fills dynamically resized WindowManager bounds)
         Card(
             modifier = Modifier
-                .width(330.dp)
+                .fillMaxSize()
                 .shadow(12.dp, RoundedCornerShape(16.dp))
                 .clip(RoundedCornerShape(16.dp)),
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
         ) {
-            Column(modifier = Modifier.padding(10.dp)) {
+            Column(modifier = Modifier.fillMaxSize().padding(10.dp)) {
                 // Dedicated Drag Header
                 Row(
                     modifier = Modifier
@@ -289,8 +310,9 @@ fun SystemOverlayContent(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(
                             onClick = {
-                                isExpanded = !isExpanded
-                                onTogglePanel()
+                                val nextExpanded = !isExpanded
+                                isExpanded = nextExpanded
+                                onTogglePanel(nextExpanded)
                             },
                             modifier = Modifier.size(28.dp)
                         ) {
@@ -314,7 +336,7 @@ fun SystemOverlayContent(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f, fill = false)
+                        .weight(1f)
                 ) {
                     when (activeTool) {
                         "Calculator" -> {
@@ -325,12 +347,11 @@ fun SystemOverlayContent(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .verticalScroll(rememberScrollState())
+                                    .padding(bottom = 18.dp)
                             ) {
                     // Male / Female / Unisex Chips
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                     listOf("Male", "Female", "Unisex").forEach { g ->
@@ -346,9 +367,11 @@ fun SystemOverlayContent(
                                     when(g) {
                                         "Male" -> "♂ Male"
                                         "Female" -> "♀ Female"
-                                        else -> "⚥ Unisex"
+                                        else -> "⚥ Mix"
                                     },
                                     fontSize = 11.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                 )
                             },
@@ -370,75 +393,119 @@ fun SystemOverlayContent(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                activeTool.uppercase(),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.sp
-                            )
-                            Text(
-                                FontStyles.apply(currentResultText, fontStyle),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.ExtraBold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            TextButton(
-                                onClick = { copyText(currentResultText) },
-                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
-                                modifier = Modifier.height(30.dp)
-                            ) {
-                                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(12.dp))
-                                Spacer(Modifier.width(2.dp))
-                                Text("Copy", fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                            }
-                            
-                            IconButton(
-                                onClick = {
-                                    if (isFav.value) viewModel.removeFavorite(activeTool.uppercase(), currentResultText)
-                                    else viewModel.addFavorite(activeTool.uppercase(), currentResultText)
-                                },
-                                modifier = Modifier.size(28.dp)
-                            ) {
-                                Icon(
-                                    if (isFav.value) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                                    contentDescription = "Favorite",
-                                    modifier = Modifier.size(14.dp),
-                                    tint = if (isFav.value) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    activeTool.uppercase(),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 1.sp
+                                )
+                                Text(
+                                    FontStyles.apply(currentResultText, fontStyle),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
-                            
-                            TextButton(
-                                onClick = { viewModel.generateCurrentTool() },
-                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
-                                modifier = Modifier.height(30.dp)
+
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                if (isGenerating) {
-                                    CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
-                                } else {
-                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                                TextButton(
+                                    onClick = { copyText(currentResultText) },
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(30.dp)
+                                ) {
+                                    Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(12.dp))
                                     Spacer(Modifier.width(2.dp))
-                                    Text("Regen", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                    Text("Copy", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                }
+
+                                IconButton(
+                                    onClick = {
+                                        if (isFav.value) viewModel.removeFavorite(activeTool.uppercase(), currentResultText)
+                                        else viewModel.addFavorite(activeTool.uppercase(), currentResultText)
+                                    },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        if (isFav.value) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                                        contentDescription = "Favorite",
+                                        modifier = Modifier.size(14.dp),
+                                        tint = if (isFav.value) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                    )
+                                }
+
+                                TextButton(
+                                    onClick = { viewModel.generateCurrentTool() },
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(30.dp)
+                                ) {
+                                    if (isGenerating) {
+                                        CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
+                                    } else {
+                                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        Spacer(Modifier.width(2.dp))
+                                        Text("Regen", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             }
                         }
+
+                        if (activeTool == "Username" && currentResultText.isNotBlank()) {
+                            val isCompactCheckerOpen = showFloatingUsernameChecker && checkedFloatingUsername == currentResultText
+                            FilledTonalButton(
+                                onClick = toggleFloatingUsernameCheck,
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(38.dp)
+                                    .testTag("floating_compact_username_check_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Public,
+                                    contentDescription = "Check Username Availability",
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    text = if (isCompactCheckerOpen) "Hide Availability" else "Check Availability",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
                     }
+                }
+
+                if (activeTool == "Username") {
+                    InlineUsernameAvailabilityCard(
+                        visible = showFloatingUsernameChecker && checkedFloatingUsername == currentResultText,
+                        username = currentResultText,
+                        onCollapse = { showFloatingUsernameChecker = false },
+                        viewModel = viewModel,
+                        compactMode = true,
+                        onExternalLinkOpened = onMinimize,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
                 }
                 }
                 }
@@ -520,8 +587,9 @@ fun SystemOverlayContent(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             IconButton(
                                 onClick = {
-                                    isExpanded = !isExpanded
-                                    onTogglePanel()
+                                    val nextExpanded = !isExpanded
+                                    isExpanded = nextExpanded
+                                    onTogglePanel(nextExpanded)
                                 },
                                 modifier = Modifier.size(30.dp)
                             ) {
@@ -639,10 +707,10 @@ fun SystemOverlayContent(
                             )
                             
                             Spacer(modifier = Modifier.height(10.dp))
-                            Row(
+                            FlowRow(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End,
-                                verticalAlignment = Alignment.CenterVertically
+                                horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
+                                verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically)
                             ) {
                                 var showFontMenu by remember { mutableStateOf(false) }
                                 Box {
@@ -679,7 +747,6 @@ fun SystemOverlayContent(
                                     }
                                 }
 
-                                Spacer(modifier = Modifier.width(2.dp))
                                 TextButton(
                                     onClick = { copyText(FontStyles.apply(currentResultText, fontStyle)) },
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
@@ -688,7 +755,7 @@ fun SystemOverlayContent(
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text("Copy", fontSize = 12.sp)
                                 }
-                                
+
                                 IconButton(
                                     onClick = {
                                         val styledText = FontStyles.apply(currentResultText, fontStyle)
@@ -705,7 +772,28 @@ fun SystemOverlayContent(
                                     )
                                 }
 
-                                Spacer(modifier = Modifier.width(4.dp))
+                                if (activeTool == "Username" && currentResultText.isNotBlank()) {
+                                    val isExpandedCheckerOpen = showFloatingUsernameChecker && checkedFloatingUsername == currentResultText
+                                    FilledTonalButton(
+                                        onClick = toggleFloatingUsernameCheck,
+                                        shape = RoundedCornerShape(10.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                        modifier = Modifier.testTag("floating_expanded_username_check_button")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Public,
+                                            contentDescription = "Check Username Availability",
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = if (isExpandedCheckerOpen) "Hide" else "Check",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+
                                 Button(
                                     onClick = { viewModel.generateCurrentTool() },
                                     shape = RoundedCornerShape(10.dp),
@@ -722,6 +810,17 @@ fun SystemOverlayContent(
                             }
                         }
                     }
+                }
+
+                if (activeTool == "Username") {
+                    InlineUsernameAvailabilityCard(
+                        visible = showFloatingUsernameChecker && checkedFloatingUsername == currentResultText,
+                        username = currentResultText,
+                        onCollapse = { showFloatingUsernameChecker = false },
+                        viewModel = viewModel,
+                        compactMode = true,
+                        onExternalLinkOpened = onMinimize
+                    )
                 }
 
                 // Controls based on activeTool
@@ -915,7 +1014,7 @@ fun SystemOverlayContent(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text("Include Middle Name", style = MaterialTheme.typography.bodySmall)
-                            Switch(checked = includeMiddle, onCheckedChange = { viewModel.setIncludeMiddle(it); viewModel.generateCurrentTool() }, modifier = Modifier.scale(0.8f))
+                            ArworaAnimatedSwitch(checked = includeMiddle, onCheckedChange = { viewModel.setIncludeMiddle(it); viewModel.generateCurrentTool() }, modifier = Modifier.scale(0.8f))
                         }
 
                         Row(
@@ -924,7 +1023,7 @@ fun SystemOverlayContent(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text("No Repeat Session", style = MaterialTheme.typography.bodySmall)
-                            Switch(checked = noRepeat, onCheckedChange = { viewModel.setNoRepeat(it) }, modifier = Modifier.scale(0.8f))
+                            ArworaAnimatedSwitch(checked = noRepeat, onCheckedChange = { viewModel.setNoRepeat(it) }, modifier = Modifier.scale(0.8f))
                         }
 
                         // 7. Results list
@@ -1076,7 +1175,7 @@ fun SystemOverlayContent(
 
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Text("No Repeat Session", style = MaterialTheme.typography.bodySmall)
-                                Switch(checked = noRepeat, onCheckedChange = { viewModel.setNoRepeat(it) }, modifier = Modifier.scale(0.8f))
+                                ArworaAnimatedSwitch(checked = noRepeat, onCheckedChange = { viewModel.setNoRepeat(it) }, modifier = Modifier.scale(0.8f))
                             }
                         }
                     }
@@ -1098,7 +1197,7 @@ fun SystemOverlayContent(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text("Uppercase (A-Z)", style = MaterialTheme.typography.bodyMedium)
-                                Switch(checked = pwdUpper, onCheckedChange = { viewModel.setPasswordUpper(it); viewModel.generateCurrentTool() })
+                                ArworaAnimatedSwitch(checked = pwdUpper, onCheckedChange = { viewModel.setPasswordUpper(it); viewModel.generateCurrentTool() })
                             }
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -1106,7 +1205,7 @@ fun SystemOverlayContent(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text("Numbers (0-9)", style = MaterialTheme.typography.bodyMedium)
-                                Switch(checked = pwdNums, onCheckedChange = { viewModel.setPasswordNums(it); viewModel.generateCurrentTool() })
+                                ArworaAnimatedSwitch(checked = pwdNums, onCheckedChange = { viewModel.setPasswordNums(it); viewModel.generateCurrentTool() })
                             }
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -1114,7 +1213,7 @@ fun SystemOverlayContent(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text("Symbols (!@#)", style = MaterialTheme.typography.bodyMedium)
-                                Switch(checked = pwdSyms, onCheckedChange = { viewModel.setPasswordSyms(it); viewModel.generateCurrentTool() })
+                                ArworaAnimatedSwitch(checked = pwdSyms, onCheckedChange = { viewModel.setPasswordSyms(it); viewModel.generateCurrentTool() })
                             }
 
                             Row(
@@ -1123,7 +1222,7 @@ fun SystemOverlayContent(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text("Exclude Similar (i, l, 1, o, 0)", style = MaterialTheme.typography.bodySmall)
-                                Switch(checked = pwdExcludeSimilar, onCheckedChange = { viewModel.setPasswordExcludeSimilar(it); viewModel.generateCurrentTool() }, modifier = Modifier.scale(0.8f))
+                                ArworaAnimatedSwitch(checked = pwdExcludeSimilar, onCheckedChange = { viewModel.setPasswordExcludeSimilar(it); viewModel.generateCurrentTool() }, modifier = Modifier.scale(0.8f))
                             }
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -1131,7 +1230,7 @@ fun SystemOverlayContent(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text("Exclude Ambiguous ({}, [], (), /)", style = MaterialTheme.typography.bodySmall)
-                                Switch(checked = pwdExcludeAmbiguous, onCheckedChange = { viewModel.setPasswordExcludeAmbiguous(it); viewModel.generateCurrentTool() }, modifier = Modifier.scale(0.8f))
+                                ArworaAnimatedSwitch(checked = pwdExcludeAmbiguous, onCheckedChange = { viewModel.setPasswordExcludeAmbiguous(it); viewModel.generateCurrentTool() }, modifier = Modifier.scale(0.8f))
                             }
                         }
                     }
@@ -1266,7 +1365,7 @@ fun SystemOverlayContent(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text("Include Emojis", style = MaterialTheme.typography.bodyMedium)
-                                Switch(checked = bioEmoji, onCheckedChange = { viewModel.setBioEmoji(it); viewModel.generateCurrentTool() })
+                                ArworaAnimatedSwitch(checked = bioEmoji, onCheckedChange = { viewModel.setBioEmoji(it); viewModel.generateCurrentTool() })
                             }
                         }
                     }
@@ -1443,6 +1542,7 @@ fun SystemOverlayContent(
                         com.arwora.ui.screens.CalculatorView()
                     }
                 }
+                Spacer(modifier = Modifier.height(22.dp))
             }
         }
     }

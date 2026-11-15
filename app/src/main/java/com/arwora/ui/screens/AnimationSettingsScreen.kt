@@ -21,8 +21,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.arwora.utils.AnimationTweakManager
 import com.arwora.utils.RefreshRateManager
+import com.arwora.utils.ShizukuConnectionManager
 import com.arwora.utils.SoundEffectManager
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -43,16 +47,34 @@ fun AnimationSettingsScreen(
     var customPeak by remember { mutableStateOf(currentPeakRate) }
     var customMin by remember { mutableStateOf(currentMinRate) }
 
-    LaunchedEffect(Unit) {
-        val shizAvailable = AnimationTweakManager.isShizukuAvailable()
-        val shizPerm = AnimationTweakManager.hasShizukuPermission()
-        isShizukuRunning = shizAvailable
-        hasShizukuPerm = shizPerm
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    fun refreshShizukuAndMetrics() {
+        isShizukuRunning = ShizukuConnectionManager.isShizukuRunning()
+        hasShizukuPerm = ShizukuConnectionManager.hasShizukuPermission()
         currentScale = AnimationTweakManager.getCurrentAnimationScale(context)
         currentPeakRate = RefreshRateManager.getCurrentPeakRefreshRate(context)
         currentMinRate = RefreshRateManager.getCurrentMinRefreshRate(context)
         customPeak = currentPeakRate
         customMin = currentMinRate
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        refreshShizukuAndMetrics()
+        val listeners = ShizukuConnectionManager.registerListeners(
+            onBinderChanged = { refreshShizukuAndMetrics() },
+            onPermissionResult = { _, _ -> refreshShizukuAndMetrics() }
+        )
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                refreshShizukuAndMetrics()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            ShizukuConnectionManager.unregisterListeners(listeners)
+        }
     }
 
     Scaffold(
@@ -130,15 +152,17 @@ fun AnimationSettingsScreen(
                         Spacer(modifier = Modifier.height(12.dp))
                         Button(
                             onClick = {
-                                if (!isShizukuRunning) {
-                                    showPermissionDialog = true
-                                } else {
-                                    AnimationTweakManager.requestShizukuPermission(1002)
-                                }
+                                SoundEffectManager.playClick(context)
+                                ShizukuConnectionManager.connect(
+                                    context = context,
+                                    requestCode = 1002,
+                                    onConnected = { refreshShizukuAndMetrics() },
+                                    onPermissionRequested = { refreshShizukuAndMetrics() }
+                                )
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                         ) {
-                            Text("Grant Shizuku Permission")
+                            Text("Connect Shizuku")
                         }
                     }
                 }
@@ -435,19 +459,15 @@ fun AnimationSettingsScreen(
                 Button(
                     onClick = {
                         showPermissionDialog = false
-                        try {
-                            val intent = context.packageManager.getLaunchIntentForPackage("rikka.shizuku.manager")
-                            if (intent != null) {
-                                context.startActivity(intent)
-                            } else {
-                                android.widget.Toast.makeText(context, "Shizuku app not found", android.widget.Toast.LENGTH_SHORT).show()
-                            }
-                        } catch (e: Exception) {
-                            android.widget.Toast.makeText(context, "Could not open Shizuku", android.widget.Toast.LENGTH_SHORT).show()
-                        }
+                        ShizukuConnectionManager.connect(
+                            context = context,
+                            requestCode = 1002,
+                            onConnected = { refreshShizukuAndMetrics() },
+                            onPermissionRequested = { refreshShizukuAndMetrics() }
+                        )
                     }
                 ) {
-                    Text("Open Shizuku")
+                    Text("Connect Shizuku")
                 }
             },
             dismissButton = {

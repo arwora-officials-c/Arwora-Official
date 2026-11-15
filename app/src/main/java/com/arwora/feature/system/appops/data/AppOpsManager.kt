@@ -29,11 +29,7 @@ object AppOpsManager {
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
 
     fun isShizukuAvailable(): Boolean {
-        return try {
-            Shizuku.pingBinder() && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-        } catch (e: Exception) {
-            false
-        }
+        return com.arwora.utils.ShizukuConnectionManager.hasShizukuPermission()
     }
 
     fun runShellCommand(command: String): String {

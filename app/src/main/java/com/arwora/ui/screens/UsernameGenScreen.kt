@@ -96,6 +96,7 @@ fun UsernameGenScreen(navController: NavController, viewModel: MainViewModel) {
             )
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                 generatedUsernames = results
+                showAvailabilityChecker = false
                 if (results.isNotEmpty()) {
                     viewModel.addHistory("USERNAME", com.arwora.utils.FontStyles.apply(results.first(), fontStyle))
                 }
@@ -221,10 +222,15 @@ fun UsernameGenScreen(navController: NavController, viewModel: MainViewModel) {
                                 )
                                 HeroActionButton(
                                     icon = Icons.Default.Public,
-                                    label = "Check",
+                                    label = if (showAvailabilityChecker && selectedHandleForChecker == heroResult) "Hide" else "Check",
+                                    tint = if (showAvailabilityChecker && selectedHandleForChecker == heroResult) MaterialTheme.colorScheme.primary else LocalContentColor.current,
                                     onClick = {
-                                        selectedHandleForChecker = heroResult
-                                        showAvailabilityChecker = true
+                                        if (showAvailabilityChecker && selectedHandleForChecker == heroResult) {
+                                            showAvailabilityChecker = false
+                                        } else {
+                                            selectedHandleForChecker = heroResult
+                                            showAvailabilityChecker = true
+                                        }
                                     }
                                 )
                                 HeroActionButton(
@@ -235,6 +241,15 @@ fun UsernameGenScreen(navController: NavController, viewModel: MainViewModel) {
                             }
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    com.arwora.ui.components.InlineUsernameAvailabilityCard(
+                        visible = showAvailabilityChecker && selectedHandleForChecker == heroResult,
+                        username = heroResult,
+                        onCollapse = { showAvailabilityChecker = false },
+                        viewModel = viewModel
+                    )
                 }
             }
 
@@ -365,12 +380,5 @@ fun UsernameGenScreen(navController: NavController, viewModel: MainViewModel) {
         onDismissRequest = { showFontSelector = false },
         currentStyle = fontStyle,
         onStyleSelected = { viewModel.setFontStyle(it) }
-    )
-
-    com.arwora.ui.components.UsernameAvailabilityBottomSheet(
-        visible = showAvailabilityChecker,
-        username = selectedHandleForChecker,
-        onDismissRequest = { showAvailabilityChecker = false },
-        viewModel = viewModel
     )
 }

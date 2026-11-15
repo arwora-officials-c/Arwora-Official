@@ -275,31 +275,33 @@ object CountryData {
     // Country-specific datasets
     private val countryMap = mapOf(
         "Bangladesh" to CountryDetails(
-            male = Datasets.cleanList(listOf("Aarav", "Abeer", "Ahsan", "Akash", "Aman", "Anik", "Arafat", "Arif", "Arnab", "Aryan", "Ashiq", "Asif", "Ayan", "Azmain", "Fahad", "Faisal", "Farhan", "Hasan", "Hasib", "Ibrahim", "Imran", "Imtiaz", "Jahid", "Jamil", "Jihad", "Kabir", "Mahbub", "Mahdi", "Mahfuz", "Mahmud", "Mamun", "Maruf", "Masud", "Mehedi", "Minhaz", "Mizan", "Monir", "Nabil", "Nahid", "Naim", "Najmul", "Nasim", "Nazim", "Nazmul", "Niaz", "Nihal", "Niloy", "Noman", "Noor", "Parvez", "Pavel", "Rafi", "Rafiq", "Rahat", "Rahim", "Rahman", "Raihan", "Rajib", "Rakib", "Ratul", "Rayan", "Rayhan", "Reza", "Rifat", "Riyad", "Rohan", "Rubel", "Sabbir", "Sadat", "Sadi", "Sadik", "Safwan", "Sajib", "Sajid", "Salman", "Sami", "Samir", "Saqib", "Shafi", "Shahriar", "Shakil", "Shamim", "Shanto", "Shawon", "Sohel", "Sumon", "Tanvir", "Tariq", "Taufiq", "Touhid", "Zayed", "Zayen", "Zishan")),
-            female = Datasets.cleanList(listOf("Aafia", "Aaliyah", "Aamina", "Adiba", "Adila", "Afsana", "Afshin", "Aisha", "Alifa", "Alina", "Aliya", "Amira", "Anan", "Ananya", "Anika", "Anila", "Anjum", "Anusha", "Aqila", "Ariba", "Arifa", "Arisha", "Arpita", "Asha", "Asma", "Atia", "Ayesha", "Aziza", "Barsha", "Bela", "Bithi", "Brishti", "Bushra", "Chaity", "Dalia", "Dania", "Deepa", "Dina", "Diya", "Ema", "Esha", "Eva", "Fabiha", "Fadia", "Fahmida", "Faiza", "Fariha", "Farjana", "Farzana", "Fatima", "Fawzia", "Fayza", "Ferdous", "Firoza", "Fiza", "Habiba", "Hafsa", "Halima", "Hana", "Hania", "Hasina", "Hena", "Hera", "Hiba", "Hima", "Hira", "Hoor", "Humaira", "Iffat", "Inaya", "Iqra", "Irin", "Ishita", "Ishrat", "Ismat", "Ivy", "Jahan", "Jahanara", "Jamila", "Jannat", "Jarin", "Jasmin", "Jeba", "Jesmin", "Jinia", "Joya", "Juhi", "Jui", "Julekha", "Kajal", "Kakoli", "Kalpana", "Kaniz", "Karima", "Kashfia", "Khadija", "Khatun", "Keya", "Kiran", "Koly", "Lamia", "Lamisa", "Latifa", "Lia", "Liza", "Lopa", "Lubna", "Luna", "Madiha", "Mahia", "Maliha", "Marium", "Mehnaz", "Mihika", "Mitu", "Momena", "Moumita", "Moushumi", "Mst", "Munira", "Muskan", "Nabila", "Nadia", "Nafisa", "Naila", "Naima", "Najia", "Namira", "Nanziba", "Nasrin", "Nastaran", "Natasha", "Nazifa", "Naznin", "Nabila", "Nigar", "Nila", "Nilufa", "Nisha", "Nishat", "Noshin", "Novera", "Nusrat", "Orpi", "Popy", "Priya", "Puja", "Rabeya", "Radiya", "Rafia", "Rahima", "Raila", "Raisa", "Raka", "Rakhi", "Rania", "Rashida", "Rawnak", "Razia", "Rebeka", "Reema", "Reshma", "Rifa", "Rimi", "Ripa", "Ritu", "Riya", "Roksana", "Ruma", "Rumana", "Ruquaiya", "Sabah", "Sabiha", "Sabina", "Sabrina", "Sadia", "Safa", "Safia", "Saima", "Salsabil", "Salsi", "Salma", "Samia", "Samira", "Sanjida", "Sanya", "Sara", "Sarika", "Sayma", "Sejuti", "Selina", "Shaila", "Shahnaz", "Shaila", "Shakira", "Shamima", "Sharmin", "Shefa", "Sheuly", "Shifa", "Shirin", "Shohag", "Shormi", "Shrabonti", "Shreya", "Shuchi", "Sifat", "Simin", "Sinthia", "Sirajum", "Smriti", "Sohana", "Sonia", "Subha", "Subrina", "Suchi", "Sultana", "Sumaiya", "Sumita", "Suraiya", "Susmita", "Swarnali", "Tahia", "Tahmina", "Tahsin", "Tania", "Tanjila", "Tanmya", "Tanzila", "Tasfia", "Tasmia", "Tasnia", "Tasnim", "Tasnova", "Tazrin", "Tehreem", "Tina", "Tithi", "Trisha", "Umme", "Urmila", "Warda", "Zahra", "Zainab", "Zakia", "Zarin", "Zeba", "Zenia", "Zerin", "Zohra")),
+            male = Datasets.cleanList(listOf("Aarav", "Abeer", "Ahsan", "Akash", "Aman", "Anik", "Arafat", "Arif", "Arnab", "Aryan", "Ashiq", "Asif", "Ayan", "Azmain", "Fahad", "Faisal", "Farhan", "Hasan", "Hasib", "Ibrahim", "Imran", "Imtiaz", "Jahid", "Jamil", "Jihad", "Kabir", "Mahbub", "Mahdi", "Mahfuz", "Mahmud", "Mamun", "Maruf", "Masud", "Mehedi", "Minhaz", "Mizan", "Monir", "Nabil", "Nahid", "Naim", "Najmul", "Nasim", "Nazim", "Nazmul", "Niaz", "Nihal", "Niloy", "Noman", "Noor", "Parvez", "Pavel", "Rafi", "Rafiq", "Rahat", "Rahim", "Raihan", "Rajib", "Rakib", "Ratul", "Rayan", "Rayhan", "Reza", "Rifat", "Riyad", "Rohan", "Rubel", "Sabbir", "Sadat", "Sadi", "Sadik", "Safwan", "Sajib", "Sajid", "Salman", "Sami", "Samir", "Saqib", "Shafi", "Shahriar", "Shakil", "Shamim", "Shanto", "Shawon", "Sohel", "Sumon", "Tanvir", "Tariq", "Taufiq", "Touhid", "Zayed", "Zayen", "Zishan")),
+            female = Datasets.cleanList(listOf("Aafia", "Aaliyah", "Aamina", "Adiba", "Adila", "Afsana", "Afshin", "Aisha", "Alifa", "Alina", "Aliya", "Amira", "Anan", "Ananya", "Anika", "Anila", "Anjum", "Anusha", "Aqila", "Ariba", "Arifa", "Arisha", "Arpita", "Asha", "Asma", "Atia", "Ayesha", "Aziza", "Barsha", "Bela", "Bithi", "Brishti", "Bushra", "Chaity", "Dalia", "Dania", "Deepa", "Dina", "Diya", "Ema", "Esha", "Eva", "Fabiha", "Fadia", "Fahmida", "Faiza", "Fariha", "Farjana", "Farzana", "Fatima", "Fawzia", "Fayza", "Ferdous", "Firoza", "Fiza", "Habiba", "Hafsa", "Halima", "Hana", "Hania", "Hasina", "Hena", "Hera", "Hiba", "Hima", "Hira", "Hoor", "Humaira", "Iffat", "Inaya", "Iqra", "Irin", "Ishita", "Ishrat", "Ismat", "Ivy", "Jahan", "Jahanara", "Jamila", "Jannat", "Jarin", "Jasmin", "Jeba", "Jesmin", "Jinia", "Joya", "Juhi", "Jui", "Julekha", "Kajal", "Kakoli", "Kalpana", "Kaniz", "Karima", "Kashfia", "Khadija", "Keya", "Kiran", "Koly", "Lamia", "Lamisa", "Latifa", "Lia", "Liza", "Lopa", "Lubna", "Luna", "Madiha", "Mahia", "Maliha", "Marium", "Mehnaz", "Mihika", "Mitu", "Momena", "Moumita", "Moushumi", "Munira", "Muskan", "Nabila", "Nadia", "Nafisa", "Naila", "Naima", "Najia", "Namira", "Nanziba", "Nasrin", "Nastaran", "Natasha", "Nazifa", "Naznin", "Nigar", "Nila", "Nilufa", "Nisha", "Nishat", "Noshin", "Novera", "Nusrat", "Orpi", "Popy", "Priya", "Puja", "Rabeya", "Radiya", "Rafia", "Rahima", "Raila", "Raisa", "Raka", "Rakhi", "Rania", "Rashida", "Rawnak", "Razia", "Rebeka", "Reema", "Reshma", "Rifa", "Rimi", "Ripa", "Ritu", "Riya", "Roksana", "Ruma", "Rumana", "Ruquaiya", "Sabah", "Sabiha", "Sabina", "Sabrina", "Sadia", "Safa", "Safia", "Saima", "Salsabil", "Salsi", "Salma", "Samia", "Samira", "Sanjida", "Sanya", "Sara", "Sarika", "Sayma", "Sejuti", "Selina", "Shaila", "Shahnaz", "Shakira", "Shamima", "Sharmin", "Shefa", "Sheuly", "Shifa", "Shirin", "Shohag", "Shormi", "Shrabonti", "Shreya", "Shuchi", "Sifat", "Simin", "Sinthia", "Sirajum", "Smriti", "Sohana", "Sonia", "Subha", "Subrina", "Suchi", "Sumaiya", "Sumita", "Suraiya", "Susmita", "Swarnali", "Tahia", "Tahmina", "Tahsin", "Tania", "Tanjila", "Tanmya", "Tanzila", "Tasfia", "Tasmia", "Tasnia", "Tasnim", "Tasnova", "Tazrin", "Tehreem", "Tina", "Tithi", "Trisha", "Urmila", "Warda", "Zahra", "Zainab", "Zakia", "Zarin", "Zeba", "Zenia", "Zerin", "Zohra")),
             unisex = Datasets.cleanList(listOf("Noor", "Kiran", "Nasim", "Anwar", "Amin", "Rayan", "Sami", "Sakin")),
-            middle = Datasets.cleanList(listOf("Hasan", "Ahmed", "Ali", "Uddin", "Hossain", "Rahman", "Islam", "Chowdhury", "Jahan", "Banu", "Ara", "Sultana")),
-            last = Datasets.cleanList(listOf("Rahman", "Islam", "Hossain", "Ahmed", "Chowdhury", "Talukder", "Sarker", "Uddin", "Khan", "Ali", "Mia", "Talukdar", "Bhuiyan", "Miah", "Siddique", "Haque", "Karim", "Mollah", "Biswas", "Roy", "Das", "Sen", "Paul", "Barua")),
-            maleMiddle = Datasets.cleanList(listOf("Hasan", "Ahmed", "Ali", "Uddin", "Hossain", "Rahman", "Islam", "Chowdhury")),
-            femaleMiddle = Datasets.cleanList(listOf("Hasan", "Ahmed", "Ali", "Uddin", "Hossain", "Rahman", "Islam", "Chowdhury", "Jahan", "Banu", "Ara", "Sultana")),
-            maleLast = Datasets.cleanList(listOf("Rahman", "Islam", "Hossain", "Ahmed", "Chowdhury", "Talukder", "Sarker", "Uddin", "Khan", "Ali", "Mia", "Talukdar", "Bhuiyan", "Miah", "Siddique", "Haque", "Karim", "Mollah", "Biswas", "Roy", "Das", "Sen", "Paul", "Barua")),
-            femaleLast = Datasets.cleanList(listOf("Rahman", "Islam", "Hossain", "Ahmed", "Chowdhury", "Talukder", "Sarker", "Uddin", "Khan", "Ali", "Mia", "Talukdar", "Bhuiyan", "Miah", "Siddique", "Haque", "Karim", "Mollah", "Biswas", "Roy", "Das", "Sen", "Paul", "Barua"))
+            middle = Datasets.cleanList(listOf("Hasan", "Alam", "Amin", "Anwar", "Aziz", "Jahan", "Kabir", "Noor")),
+            last = Datasets.cleanList(listOf("Rahman", "Islam", "Hossain", "Ahmed", "Chowdhury", "Talukder", "Sarker", "Khan", "Mia", "Talukdar", "Bhuiyan", "Miah", "Siddique", "Haque", "Mollah", "Biswas", "Roy", "Das", "Sen", "Paul", "Barua", "Majumder", "Patwary", "Howlader", "Sikder")),
+            maleMiddle = Datasets.cleanList(listOf("Hasan", "Uddin", "Alam", "Amin", "Anwar", "Aziz", "Habib", "Kabir", "Karim", "Mahmud", "Rashid", "Sadiq", "Tariq", "Zahid")),
+            femaleMiddle = Datasets.cleanList(listOf("Akter", "Ara", "Banu", "Begum", "Jahan", "Khatun", "Nessa", "Parvin", "Sultana", "Yasmin")),
+            maleLast = Datasets.cleanList(listOf("Rahman", "Islam", "Hossain", "Ahmed", "Chowdhury", "Talukder", "Sarker", "Khan", "Mia", "Talukdar", "Bhuiyan", "Miah", "Siddique", "Haque", "Mollah", "Biswas", "Roy", "Das", "Sen", "Paul", "Barua", "Majumder", "Patwary", "Howlader", "Sikder")),
+            femaleLast = Datasets.cleanList(listOf("Rahman", "Islam", "Hossain", "Ahmed", "Chowdhury", "Talukder", "Sarker", "Khan", "Mia", "Talukdar", "Bhuiyan", "Miah", "Siddique", "Haque", "Mollah", "Biswas", "Roy", "Das", "Sen", "Paul", "Barua", "Majumder", "Patwary", "Howlader", "Sikder"))
         ),
         "India" to CountryDetails(
             male = Datasets.cleanList(listOf("Aarav", "Vivaan", "Aditya", "Vihaan", "Arjun", "Sai", "Reyansh", "Ayaan", "Krishna", "Ishaan", "Dhruv", "Kian", "Kabir", "Rudra", "Advik", "Darsh", "Ahaan", "Ryaan", "Veer", "Pranav", "Karthik", "Rohan", "Siddharth", "Shivam", "Aayush", "Ayush", "Dev", "Yash", "Raghav", "Ansh", "Abhinav", "Aryan", "Atharv", "Harsh", "Kunal", "Manav", "Nakul", "Om", "Parth", "Rahul", "Sahil", "Samarth", "Tanmay", "Vedant", "Abhi", "Akash", "Amit", "Aniket", "Ankit", "Anurag", "Ashish", "Avinash", "Bharat", "Chetan", "Deepak", "Dinesh", "Gaurav", "Girish", "Hemant", "Jatin", "Kamal", "Karan", "Lokesh", "Manoj", "Mayur", "Mohit", "Mukesh", "Naveen", "Nikhil", "Nitin", "Pankaj", "Piyush", "Prakash", "Pradeep", "Pramod", "Pratik", "Praveen", "Rajesh", "Rakesh", "Ramesh", "Ranjit", "Ravi", "Sachin", "Sandeep", "Sanjay", "Saurabh", "Shailesh", "Shashank", "Shubham", "Sunil", "Suraj", "Suresh", "Tarun", "Tushar", "Varun", "Vikas", "Vinay", "Vineet", "Vipan", "Vishal", "Vivek")),
-            female = Datasets.cleanList(listOf("Saanvi", "Aanya", "Aadhya", "Kiara", "Diya", "Pari", "Ananya", "Rhea", "Pihu", "Avni", "Ahana", "Navya", "Meera", "Myra", "Ridhima", "Shanaya", "Trisha", "Anika", "Kavya", "Ishita", "Anvi", "Prisha", "Riya", "Sneha", "Tanvi", "Aditi", "Akshara", "Amaya", "Amrita", "Ananya", "Anushka", "Archana", "Bhavna", "Deepika", "Disha", "Divya", "Geeta", "Harshita", "Isha", "Jaya", "Jyoti", "Kajal", "Kavita", "Komal", "Kriti", "Lakshmi", "Madhuri", "Mahi", "Mamta", "Manju", "Meenakshi", "Monika", "Namrata", "Neha", "Nidhi", "Nikita", "Nisha", "Pallavi", "Pooja", " Poonam", "Pragati", "Priyanka", "Radha", "Rajni", "Rashmi", "Rekha", "Ritu", "Ruchi", "Rupal", "Sakshi", "Sangeeta", "Sarita", "Seema", "Shalini", "Shikha", "Shivani", "Shruti", "Simran", "Smita", "Sonal", "Sonam", "Suman", "Sunita", "Swati", "Tanvi", "Trupti", "Usha", "Vaishali", "Vandana", "Varsha", "Vidya", "Yamini")),
-            unisex = Datasets.cleanList(listOf("Krishna", "Arya", "Kiran", "Samir", "Amrit", "Jasmin", "Devi", "Prasad")),
-            maleMiddle = Datasets.cleanList(listOf("Raj", "Kumar", "Singh", "Prasad", "Lal", "Nath", "Chandra")),
-            femaleMiddle = Datasets.cleanList(listOf("Raj", "Kumar", "Singh", "Prasad", "Devi", "Kumari", "Kaur", "Bai", "Lal", "Nath", "Chandra")),
-            maleLast = Datasets.cleanList(listOf("Patel", "Singh", "Kumar", "Sharma", "Gupta", "Verma", "Reddy", "Mehta", "Joshi", "Choudhury", "Das", "Bose", "Sen", "Iyer", "Nair", "Rao", "Pillai", "Menon", "Deshmukh", "Patil", "Shinde", "Kulkarni", "Desai", "Chavan", "Jadhav", "Bansal", "Aggarwal", "Mittal", "Goyal", "Singhal", "Saxena", "Tiwari", "Mishra", "Pandey", "Dubey", "Shukla", "Tripathi", "Upadhyay", "Thakur", "Chauhan", "Rana", "Yadav", "Verma", "Sinha", "Jha", "Choudhary")),
-            femaleLast = Datasets.cleanList(listOf("Patel", "Singh", "Kumar", "Sharma", "Gupta", "Verma", "Reddy", "Mehta", "Joshi", "Choudhury", "Das", "Bose", "Sen", "Iyer", "Nair", "Rao", "Pillai", "Menon", "Deshmukh", "Patil", "Shinde", "Kulkarni", "Desai", "Chavan", "Jadhav", "Bansal", "Aggarwal", "Mittal", "Goyal", "Singhal", "Saxena", "Tiwari", "Mishra", "Pandey", "Dubey", "Shukla", "Tripathi", "Upadhyay", "Thakur", "Chauhan", "Rana", "Yadav", "Verma", "Sinha", "Jha", "Choudhary"))
+            female = Datasets.cleanList(listOf("Saanvi", "Aanya", "Aadhya", "Kiara", "Diya", "Pari", "Ananya", "Rhea", "Pihu", "Avni", "Ahana", "Navya", "Meera", "Myra", "Ridhima", "Shanaya", "Trisha", "Anika", "Kavya", "Ishita", "Anvi", "Prisha", "Riya", "Sneha", "Tanvi", "Aditi", "Akshara", "Amaya", "Amrita", "Anushka", "Archana", "Bhavna", "Deepika", "Disha", "Divya", "Geeta", "Harshita", "Isha", "Jaya", "Jyoti", "Kajal", "Kavita", "Komal", "Kriti", "Lakshmi", "Madhuri", "Mahi", "Mamta", "Manju", "Meenakshi", "Monika", "Namrata", "Neha", "Nidhi", "Nikita", "Nisha", "Pallavi", "Pooja", "Poonam", "Pragati", "Priyanka", "Radha", "Rajni", "Rashmi", "Rekha", "Ritu", "Ruchi", "Rupal", "Sakshi", "Sangeeta", "Sarita", "Seema", "Shalini", "Shikha", "Shivani", "Shruti", "Simran", "Smita", "Sonal", "Sonam", "Suman", "Sunita", "Swati", "Trupti", "Usha", "Vaishali", "Vandana", "Varsha", "Vidya", "Yamini")),
+            unisex = Datasets.cleanList(listOf("Krishna", "Arya", "Kiran", "Samir", "Amrit", "Jasmin")),
+            middle = Datasets.cleanList(listOf("Raj", "Prasad", "Lal", "Nath", "Chandra", "Dev")),
+            maleMiddle = Datasets.cleanList(listOf("Raj", "Prasad", "Lal", "Nath", "Chandra", "Dev", "Shankar")),
+            femaleMiddle = Datasets.cleanList(listOf("Devi", "Kumari", "Kaur", "Bai", "Lata", "Rani", "Bala")),
+            maleLast = Datasets.cleanList(listOf("Patel", "Singh", "Kumar", "Sharma", "Gupta", "Verma", "Reddy", "Mehta", "Joshi", "Choudhury", "Das", "Bose", "Sen", "Iyer", "Nair", "Rao", "Pillai", "Menon", "Deshmukh", "Patil", "Shinde", "Kulkarni", "Desai", "Chavan", "Jadhav", "Bansal", "Aggarwal", "Mittal", "Goyal", "Singhal", "Saxena", "Tiwari", "Mishra", "Pandey", "Dubey", "Shukla", "Tripathi", "Upadhyay", "Thakur", "Chauhan", "Rana", "Yadav", "Sinha", "Jha", "Choudhary")),
+            femaleLast = Datasets.cleanList(listOf("Patel", "Singh", "Kumar", "Sharma", "Gupta", "Verma", "Reddy", "Mehta", "Joshi", "Choudhury", "Das", "Bose", "Sen", "Iyer", "Nair", "Rao", "Pillai", "Menon", "Deshmukh", "Patil", "Shinde", "Kulkarni", "Desai", "Chavan", "Jadhav", "Bansal", "Aggarwal", "Mittal", "Goyal", "Singhal", "Saxena", "Tiwari", "Mishra", "Pandey", "Dubey", "Shukla", "Tripathi", "Upadhyay", "Thakur", "Chauhan", "Rana", "Yadav", "Sinha", "Jha", "Choudhary"))
         ),
         "Pakistan" to CountryDetails(
             male = Datasets.cleanList(listOf("Ali", "Hamza", "Bilal", "Usman", "Omar", "Hassan", "Hussain", "Abdullah", "Ahmed", "Zayn", "Zain", "Fahad", "Faisal", "Farhan", "Haris", "Ibrahim", "Imran", "Junaid", "Kamran", "Kashif", "Khurram", "Nabeel", "Nadir", "Nasir", "Noman", "Qasim", "Rashid", "Rehan", "Saad", "Salman", "Samir", "Shahbaz", "Shahid", "Shakeel", "Shoaib", "Sohail", "Sufyan", "Sultan", "Talha", "Tariq", "Touseef", "Umar", "Wajahat", "Waqas", "Waseem", "Yasir", "Zafar", "Zahid", "Zeeshan")),
             female = Datasets.cleanList(listOf("Zara", "Hira", "Sana", "Mariam", "Rabia", "Ayesha", "Fatima", "Zainab", "Khadija", "Amna", "Anum", "Aqsa", "Areeba", "Asma", "Bushra", "Dania", "Erum", "Fauzia", "Fiza", "Ghazal", "Gul", "Hafsa", "Haleema", "Hania", "Hina", "Humaira", "Iffat", "Iqra", "Iram", "Kanwal", "Kiran", "Mahnoor", "Maliha", "Mehwish", "Momena", "Munazza", "Nabila", "Nadia", "Naila", "Neelam", "Nida", "Nosheen", "Palwasha", "Quratulain", "Rida", "Sadia", "Safia", "Saima", "Saira", "Salma")),
             unisex = Datasets.cleanList(listOf("Noor", "Kiran", "Nasim", "Anwar", "Zeeshan", "Daniyal")),
-            maleMiddle = Datasets.cleanList(listOf("Hasan", "Ahmed", "Ali", "Uddin", "Hossain", "Khan")),
-            femaleMiddle = Datasets.cleanList(listOf("Hasan", "Ahmed", "Ali", "Uddin", "Hossain", "Khan", "Shah", "Malik")),
+            middle = Datasets.cleanList(listOf("Hasan", "Uddin", "Raza", "Nawaz", "Jahan", "Noor")),
+            maleMiddle = Datasets.cleanList(listOf("Hasan", "Uddin", "Hussain", "Raza", "Nawaz", "Akram", "Tariq", "Javed", "Azam", "Rashid")),
+            femaleMiddle = Datasets.cleanList(listOf("Bano", "Jahan", "Begum", "Sultana", "Khatoon", "Parveen", "Nisa", "Yasmin")),
             maleLast = Datasets.cleanList(listOf("Khan", "Syed", "Shah", "Malik", "Ali", "Ahmed", "Butt", "Chaudhry", "Sheikh", "Qureshi", "Ansari", "Mirza", "Awan", "Rajput", "Mughal", "Baloch", "Pathan", "Siddiqui", "Farooqi", "Hashmi")),
             femaleLast = Datasets.cleanList(listOf("Khan", "Syed", "Shah", "Malik", "Ali", "Ahmed", "Butt", "Chaudhry", "Sheikh", "Qureshi", "Ansari", "Mirza", "Awan", "Rajput", "Mughal", "Baloch", "Pathan", "Siddiqui", "Farooqi", "Hashmi"))
         ),
@@ -307,6 +309,7 @@ object CountryData {
             male = masterMale,
             female = masterFemale,
             unisex = masterUnisex,
+            middle = masterMiddle,
             maleMiddle = masterMiddle,
             femaleMiddle = masterMiddle,
             maleLast = masterSurnames,
@@ -316,6 +319,7 @@ object CountryData {
             male = Datasets.cleanList(listOf("Oliver", "George", "Arthur", "Noah", "Muhammad", "Leo", "Oscar", "Harry", "Archie", "Jack", "Henry", "Charlie", "Freddie", "Alfie", "Lucas", "Thomas", "Mason", "Logan", "Teddy", "Theodore", "Alexander", "Arlo", "Elijah", "William", "James", "Benjamin", "Lucas", "Daniel", "Logan", "Sebastian", "Jackson", "Aiden", "Matthew", "Samuel", "David", "Joseph", "Carter", "Owen", "Wyatt", "John", "Luke", "Gabriel", "Anthony", "Isaac", "Grayson", "Julian", "Levi", "Aria", "Lincoln", "Jaxon", "Mateo", "Maverick", "Josiah", "Isaiah", "Charles", "Caleb", "Enzo", "Miles", "Theodore", "Nathan", "Adrian", "Cameron", "Santiago", "Eli", "Aaron", "Christian", "Landon", "Connor", "Hunter", "Ezra", "Easton", "Colton", "Jordan", "Angel", "Brayden", "Asher", "Dominic", "Austin", "Ian", "Adam", "Elias", "Jaxson", "Greyson", "Jose", "Ezekiel", "Carson", "Evan", "Maverick", "Bryson", "Jace", "Cooper", "Xavier", "Carson", "Leonardo", "Easton", "Ezra", "Sawyer")),
             female = Datasets.cleanList(listOf("Olivia", "Amelia", "Isla", "Ava", "Ivy", "Freya", "Lily", "Florence", "Mia", "Willow", "Harper", "Evelyn", "Phoebe", "Violet", "Elsie", "Emily", "Sofia", "Grace", "Isabella", "Ella", "Charlotte", "Rose", "Daisy", "Sienna", "Alice", "Luna", "Maya", "Penelope", "Layla", "Clara", "Evie", "Matilda", "Mila", "Aria", "Aurora", "Hazel", "Eleanor", "Hannah", "Lucy", "Ellie", "Bella", "Zoe", "Stella", "Scarlett", "Savannah", "Audrey", "Skylar", "Paisley", "Everly", "Nora", "Caroline", "Nova", "Genesis", "Emilia", "Kennedy", "Samantha", "Maya", "Willow", "Kinsley", "Naomi", "Aaliyah", "Elena", "Sarah", "Ariana", "Allison", "Gabriella", "Alice", "Madelyn", "Cora", "Ruby", "Eva", "Serenity", "Autumn", "Adeline", "Hailey", "Gianna", "Valentina", "Isla", "Eliana", "Quinn", "Nevaeh", "Ivy", "Sadie", "Piper", "Lydia", "Alexa", "Josephine", "Emery", "Julia", "Delilah", "Arianna", "Vivian", "Kaylee", "Sophie", "Brielle", "Madeline", "Phoebe", "Clara", "Hadley", "Vivian", "Emersyn", "Mackenzie", "Reagan")),
             unisex = Datasets.cleanList(listOf("Charlie", "Riley", "Rowan", "Finley", "Logan", "Harper", "Rory", "Frankie", "Eden", "Reese")),
+            middle = masterMiddle,
             maleMiddle = masterMiddle,
             femaleMiddle = masterMiddle,
             maleLast = Datasets.cleanList(listOf("Smith", "Jones", "Taylor", "Brown", "Williams", "Wilson", "Johnson", "Davies", "Patel", "Wright", "Robinson", "Thompson", "Evans", "Hughes", "Roberts", "Green", "Hall", "Wood", "Harris", "Martin", "Jackson", "Clarke", "Clark", "Lewis", "Turner", "Carter", "Hill", "Baker", "Allsop", "Walker", "Scott", "Young", "Allen", "King", "Wright", "Scott", "Torres", "Hill", "Flores", "Green")),
@@ -325,6 +329,7 @@ object CountryData {
             male = Datasets.cleanList(listOf("Liam", "Noah", "Jackson", "Lucas", "Oliver", "William", "Benjamin", "Elijah", "Levi", "Theodore", "Jack", "Mason", "Ethan", "Logan", "Owen", "Caleb", "Ryan", "Leo", "Thomas", "Nathan")),
             female = Datasets.cleanList(listOf("Olivia", "Emma", "Charlotte", "Amelia", "Sophia", "Chloe", "Mia", "Harper", "Mila", "Hannah", "Ella", "Aria", "Abigail", "Lily", "Scarlett", "Victoria", "Zoey", "Penelope", "Riley", "Leah")),
             unisex = Datasets.cleanList(listOf("Logan", "Riley", "Charlie", "Avery", "Quinn", "Parker", "Peyton", "Rowan")),
+            middle = masterMiddle,
             maleMiddle = masterMiddle,
             femaleMiddle = masterMiddle,
             maleLast = Datasets.cleanList(listOf("Smith", "Brown", "Tremblay", "Martin", "Roy", "Gagnon", "Lee", "Wilson", "MacDonald", "Taylor", "Anderson", "Thomas", "Johnson", "White", "Harris", "Campbell", "Gauthier", "Morin", "Lavoie", "Fortin")),
@@ -376,7 +381,7 @@ object CountryData {
             male = Datasets.cleanList(listOf("Miguel", "Arthur", "Gael", "Théo", "Heitor", "Davi", "Bernardo", "Gabriel", "Ravi", "Noah", "Samuel", "Pedro", "Benício", "Benjamin", "Matheus", "Lucas", "Nicolas", "Joaquim", "Vicente", "Rafael")),
             female = Datasets.cleanList(listOf("Helena", "Alice", "Laura", "Sophia", "Manuela", "Maitê", "Liz", "Cicero", "Heloísa", "Julia", "Cecília", "Pietra", "Aurora", "Antonella", "Isis", "Maya", "Luna", "Agatha", "Esther", "Melina")),
             unisex = Datasets.cleanList(listOf("Alex", "Taylor", "Jordan", "Cris", "Kai", "Eden")),
-            middle = Datasets.cleanList(listOf("Silva", "Santos", "Oliveira", "Souza", "Rodrigues", "Ferreira", "Alves", "Pereira", "Lima", "Gomes")),
+            middle = Datasets.cleanList(listOf("José", "João", "Pedro", "Lucas", "Gabriel", "Rafael", "Maria", "Ana", "Clara", "Luísa", "Sofia", "Beatriz")),
             last = Datasets.cleanList(listOf("Silva", "Santos", "Oliveira", "Souza", "Rodrigues", "Ferreira", "Alves", "Pereira", "Lima", "Gomes", "Costa", "Ribeiro", "Martins", "Carvalho", "Rocha", "Almeida", "Araújo", "Barbosa", "Cardoso", "Cavalcanti"))
         ),
         "Mexico" to CountryDetails(
@@ -404,21 +409,21 @@ object CountryData {
             male = Datasets.cleanList(listOf("Rashid", "Mohammed", "Hamdan", "Zayed", "Khalifa", "Saeed", "Butt", "Sultan", "Mansoor", "Ahmed", "Ali", "Tariq", "Marwan", "Faisal", "Abdullah", "Majid", "Obaid", "Matar", "Salim", "Tahnoun")),
             female = Datasets.cleanList(listOf("Latifah", "Shamma", "Meera", "Fatima", "Maitha", "Salama", "Alya", "Al Reem", "Mariam", "Mera", "Hessa", "Wadha", "Shaikha", "Amna", "Hoor", "Noor", "Sara", "Dana", "Reem", "Aisha")),
             unisex = Datasets.cleanList(listOf("Noor", "Dana", "Rayan", "Bakhit")),
-            middle = Datasets.cleanList(listOf("Bin", "Mohammed", "Ahmed", "Ali", "Saeed", "Rashid")),
+            middle = Datasets.cleanList(listOf("Bin", "Saeed", "Rashid", "Hamdan", "Salim")),
             last = Datasets.cleanList(listOf("Al Mazrouei", "Al Nuaimi", "Al Shamsi", "Al Ketbi", "Al Suwaidi", "Al Ali", "Al Marzooqi", "Al Mheiri", "Al Kaabi", "Al Baloushi", "Al Hammadi", "Al Dhaheri", "Al Qemzi", "Al Shehhi", "Al Sharqi"))
         ),
         "Indonesia" to CountryDetails(
             male = Datasets.cleanList(listOf("Althaf", "Arka", "Bagas", "Bima", "Dimas", "Eko", "Fajar", "Galang", "Gilang", "Hadi", "Irfan", "Joko", "Krisna", "Lukman", "Muhammad", "Naufal", "Pratama", "Putra", "Rama", "Reza", "Rian", "Rizky", "Satria", "Tio", "Wahyu", "Yuda", "Zaki")),
             female = Datasets.cleanList(listOf("Ayu", "Bunga", "Citra", "Dewi", "Diah", "Fitri", "Intan", "Kartika", "Lestari", "Melati", "Nabila", "Nisa", "Putri", "Rahma", "Ratna", "Sari", "Siti", "Sri", "Utami", "Wulandari", "Zahra")),
             unisex = Datasets.cleanList(listOf("Dara", "Rian", "Tegar", "Bayu", "Krisna")),
-            middle = Datasets.cleanList(listOf("Pratama", "Putra", "Putri", "Kusuma", "Wijaya", "Wijoyo", "Santoso", "Sari")),
+            middle = Datasets.cleanList(listOf("Adi", "Agung", "Bagus", "Budi", "Cahya", "Dwi", "Eka", "Indah", "Nur", "Tri")),
             last = Datasets.cleanList(listOf("Pratama", "Putra", "Wibowo", "Saputra", "Santoso", "Hidayat", "Nugroho", "Setiawan", "Kusuma", "Wijaya", "Susanto", "Utomo", "Ramadhan", "Prasetyo", "Saputri", "Lestari", "Pertiwi", "Anggraini", "Wulandari", "Kusuma"))
         ),
         "Malaysia" to CountryDetails(
             male = Datasets.cleanList(listOf("Amirul", "Aiman", "Farhan", "Haikal", "Irfan", "Luqman", "Ziqri", "Daniel", "Adam", "Rayyan", "Aqil", "Haris", "Zarif", "Imran", "Syahiran", "Azim", "Faris", "Hazim", "Zul", "Khairul")),
             female = Datasets.cleanList(listOf("Nur", "Aina", "Amira", "Dania", "Fatin", "Hana", "Izzah", "Maisarah", "Nabilah", "Qistina", "Salsabila", "Sofea", "Syazwani", "Warda", "Zahra", "Aliah", "Balqis", "Batrisyia", "Farhah", "Insyirah")),
             unisex = Datasets.cleanList(listOf("Nur", "Danial", "Aiman", "Azim", "Irfan")),
-            middle = Datasets.cleanList(listOf("Bin", "Binti", "Mohd", "Abdul", "Ahmad", "Bin", "Muhammad")),
+            middle = Datasets.cleanList(listOf("Bin", "Binti", "Mohd", "Abdul", "Nur", "Aziz", "Hafiz")),
             last = Datasets.cleanList(listOf("Abdullah", "Ahmad", "Ali", "Azman", "Fadzil", "Hassan", "Hussin", "Ismail", "Ibrahim", "Johari", "Kamal", "Karim", "Latif", "Mahmud", "Mansor", "Musa", "Noor", "Omar", "Osman", "Rahman", "Ramli", "Razak", "Rosli", "Saad", "Salleh", "Shamsudin", "Sulaiman", "Tahir", "Yusof", "Zainal"))
         ),
         "Japan" to CountryDetails(
@@ -439,7 +444,7 @@ object CountryData {
             male = Datasets.cleanList(listOf("Yichen", "Haoyu", "Yifei", "Zihan", "Yixuan", "Ruixiang", "Ming", "Jing", "Wei", "Hao", "Long", "Chen", "Jun", "Feng", "Lei", "Peng", "Tao", "Qiang", "Bo", "Gang")),
             female = Datasets.cleanList(listOf("Yixuan", "Xinyi", "Zixin", "Shiqi", "Yutong", "Yixin", "Mei", "Fang", "Jing", "Li", "Na", "Yan", "Xia", "Qing", "Hui", "Lan", "Ju", "Hua", "Chun", "Meilian")),
             unisex = Datasets.cleanList(listOf("Yang", "Wen", "Jing", "Chen", "Lin", "Qing")),
-            middle = Datasets.cleanList(listOf("Guo", "Wang", "Li", "Zhang", "Liu", "Chen", "Yang", "Huang", "Zhao", "Wu")),
+            middle = Datasets.cleanList(listOf("Wei", "Min", "Hao", "Jie", "Lei", "Yu", "Xin", "Zhi", "Wen", "Rui")),
             last = Datasets.cleanList(listOf("Wang", "Li", "Zhang", "Liu", "Chen", "Yang", "Huang", "Zhao", "Wu", "Zhou", "Xu", "Sun", "Ma", "Zhu", "Hu", "Guo", "He", "Gao", "Lin", "Luo"))
         ),
         "Russia" to CountryDetails(
@@ -454,7 +459,7 @@ object CountryData {
             female = Datasets.cleanList(listOf("Adedayo", "Adeola", "Adunni", "Aisha", "Amaka", "Anike", "Ayomide", "Bolanle", "Chioma", "Chinyere", "Ejiro", "Eniola", "Evelyn", "Fatima", "Folake", "Funmilayo", "Ifeoma", "Kikelomo", "Modupe", "Nkechi", "Nneka", "Olamide", "Oluwafunmilayo", "Omolara", "Omowunmi", "Temitope", "Titilayo", "Yetunde", "Zainab", "Zuwaira")),
             unisex = Datasets.cleanList(listOf("Ayomide", "Oluwatosin", "Damilola", "Opeyemi", "Taiwo", "Kehinde")),
             middle = Datasets.cleanList(listOf("Oluwaseun", "Chinedu", "Ade", "Olumide", "Adewale", "Ifeanyi", "Folake", "Chioma")),
-            last = Datasets.cleanList(listOf("Okafor", "Okonkwo", "Adebayo", "Adeleke", "Oluwaseun", "Nwosu", "Eze", "Balogun", "Ojo", "Bakare", "Ogundipe", "Onwuachi", "Adichie", "Obi", "Igwe", "Okoro", "Abubakar", "Danjuma", "Garba", "Bello"))
+            last = Datasets.cleanList(listOf("Okafor", "Okonkwo", "Adebayo", "Adeleke", "Nwosu", "Eze", "Balogun", "Ojo", "Bakare", "Ogundipe", "Onwuachi", "Adichie", "Obi", "Igwe", "Okoro", "Abubakar", "Danjuma", "Garba", "Bello"))
         ),
         "South Africa" to CountryDetails(
             male = Datasets.cleanList(listOf("Sipho", "Lethabo", "Banele", "Kabelo", "Thabo", "Jabulani", "Tshepo", "Mandla", "Lungile", "Bongani", "Willem", "Johan", "Pieter", "Hendrik", "Jacobus", "Andries", "Jan", "Charl", "Francois", "Liam")),
@@ -494,18 +499,22 @@ object CountryData {
 
     fun getMiddleNames(country: String, gender: String = "Unisex"): List<String> {
         val details = countryMap[country]
-        if (details != null) {
-            return when (gender) {
-                "Male" -> details.maleMiddle ?: details.middle
-                "Female" -> details.femaleMiddle ?: details.middle
-                else -> details.middle
+        val raw = if (details != null) {
+            when (gender) {
+                "Male" -> details.maleMiddle?.takeIf { it.isNotEmpty() } ?: details.middle.ifEmpty { masterMaleMiddle }
+                "Female" -> details.femaleMiddle?.takeIf { it.isNotEmpty() } ?: details.middle.ifEmpty { masterFemaleMiddle }
+                else -> details.middle.ifEmpty { masterMiddle }
+            }
+        } else {
+            when (gender) {
+                "Male" -> masterMaleMiddle
+                "Female" -> masterFemaleMiddle
+                else -> masterMiddle
             }
         }
-        return when (gender) {
-            "Male" -> masterMaleMiddle
-            "Female" -> masterFemaleMiddle
-            else -> masterMiddle
-        }
+        val surnameSet = getLastNames(country, gender).map { it.lowercase() }.toSet()
+        val filtered = raw.filter { it.lowercase() !in surnameSet }
+        return filtered.ifEmpty { masterMiddle.filter { it.lowercase() !in surnameSet }.ifEmpty { raw } }
     }
 }
 

@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.arwora.ui.MainViewModel
+import com.arwora.ui.components.ArworaAnimatedSwitch
 import com.arwora.utils.SoundEffectManager
 
 enum class SeparatorType(val displayName: String) {
@@ -264,14 +265,13 @@ fun TextRepeatScreen(navController: NavController, viewModel: MainViewModel) {
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text("Add Indexing", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
-                                Switch(
-                                    checked = addIndex, 
-                                    onCheckedChange = { 
+                                ArworaAnimatedSwitch(
+                                    checked = addIndex,
+                                    onCheckedChange = {
                                         SoundEffectManager.playClick()
-                                        addIndex = it 
+                                        addIndex = it
                                     },
-                                    modifier = Modifier.scale(0.85f),
-                                    colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary)
+                                    modifier = Modifier.scale(0.85f)
                                 )
                             }
                             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.08f))
@@ -281,14 +281,13 @@ fun TextRepeatScreen(navController: NavController, viewModel: MainViewModel) {
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text("Add Blank Line", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
-                                Switch(
-                                    checked = addBlankLine, 
-                                    onCheckedChange = { 
+                                ArworaAnimatedSwitch(
+                                    checked = addBlankLine,
+                                    onCheckedChange = {
                                         SoundEffectManager.playClick()
-                                        addBlankLine = it 
+                                        addBlankLine = it
                                     },
-                                    modifier = Modifier.scale(0.85f),
-                                    colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary)
+                                    modifier = Modifier.scale(0.85f)
                                 )
                             }
                         }

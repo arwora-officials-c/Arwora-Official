@@ -20,19 +20,12 @@ object ShellExecutor {
      */
     fun checkShizukuStatus(context: Context): ShellStatus {
         return try {
-            if (!Shizuku.pingBinder()) {
+            if (!com.arwora.utils.ShizukuConnectionManager.isShizukuRunning()) {
                 ShellStatus.SHIZUKU_REQUIRED
+            } else if (com.arwora.utils.ShizukuConnectionManager.hasShizukuPermission()) {
+                ShellStatus.READY
             } else {
-                val hasPermission = if (Shizuku.getLatestServiceVersion() >= 11) {
-                    Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-                } else {
-                    true
-                }
-                if (hasPermission) {
-                    ShellStatus.READY
-                } else {
-                    ShellStatus.PERMISSION_DENIED
-                }
+                ShellStatus.PERMISSION_DENIED
             }
         } catch (e: Throwable) {
             Log.e(TAG, "Failed checking Shizuku status", e)
@@ -41,11 +34,11 @@ object ShellExecutor {
     }
 
     /**
-     * Request Shizuku permission.
+     * Request Shizuku permission when binder is running.
      */
     fun requestPermission(requestCode: Int = 1002) {
         try {
-            if (Shizuku.pingBinder()) {
+            if (com.arwora.utils.ShizukuConnectionManager.isShizukuRunning()) {
                 Shizuku.requestPermission(requestCode)
             }
         } catch (e: Throwable) {

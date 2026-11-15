@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.arwora.ui.components.ArworaAnimatedSwitch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -104,7 +105,7 @@ fun CloneSettingsTab(viewModel: CloneViewModel) {
                 Text("Show Advanced (Repackage) mode", style = MaterialTheme.typography.titleMedium)
                 Text("Requires REQUEST_INSTALL_PACKAGES", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             }
-            Switch(
+            ArworaAnimatedSwitch(
                 checked = isAdvancedMode,
                 onCheckedChange = { viewModel.setAdvancedMode(it) }
             )

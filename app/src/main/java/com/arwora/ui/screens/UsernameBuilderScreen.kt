@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.arwora.ui.MainViewModel
+import com.arwora.ui.components.ArworaAnimatedSwitch
 import com.arwora.utils.UsernameGenerator
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -149,19 +150,19 @@ fun UsernameBuilderScreen(navController: NavController, viewModel: MainViewModel
             
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text("Add Numbers", style = MaterialTheme.typography.bodyLarge)
-                Switch(checked = addNumbers, onCheckedChange = { viewModel.setBuilderAddNumbers(it) })
+                ArworaAnimatedSwitch(checked = addNumbers, onCheckedChange = { viewModel.setBuilderAddNumbers(it) })
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text("Add Underscore (_)", style = MaterialTheme.typography.bodyLarge)
-                Switch(checked = addUnderscore, onCheckedChange = { viewModel.setBuilderAddUnderscore(it) })
+                ArworaAnimatedSwitch(checked = addUnderscore, onCheckedChange = { viewModel.setBuilderAddUnderscore(it) })
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text("Add Dot (.)", style = MaterialTheme.typography.bodyLarge)
-                Switch(checked = addDot, onCheckedChange = { viewModel.setBuilderAddDot(it) })
+                ArworaAnimatedSwitch(checked = addDot, onCheckedChange = { viewModel.setBuilderAddDot(it) })
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text("Random Letters", style = MaterialTheme.typography.bodyLarge)
-                Switch(checked = randomLetters, onCheckedChange = { viewModel.setBuilderRandomLetters(it) })
+                ArworaAnimatedSwitch(checked = randomLetters, onCheckedChange = { viewModel.setBuilderRandomLetters(it) })
             }
             
             Spacer(modifier = Modifier.height(32.dp))

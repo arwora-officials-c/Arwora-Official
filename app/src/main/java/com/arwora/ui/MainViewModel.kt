@@ -874,7 +874,7 @@ class MainViewModel(
                         country = curCountry,
                         style = curStyle,
                         lastNameCategory = "Random",
-                        includeMiddle = true,
+                        includeMiddle = _includeMiddle.value,
                         customFirst = _customFirst.value,
                         customMiddle = _customMiddle.value,
                         customLast = _customLast.value,

@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import com.arwora.feature.system.wifi.DeviceAlert
 import com.arwora.feature.system.wifi.DeviceInfo
 import com.arwora.feature.system.wifi.ScanMode
+import com.arwora.ui.components.ArworaAnimatedSwitch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -205,7 +206,7 @@ fun ConnectedDevicesSection(
                             }
                         }
 
-                        Switch(
+                        ArworaAnimatedSwitch(
                             checked = alertsEnabled,
                             onCheckedChange = onToggleAlerts,
                             modifier = Modifier.height(28.dp)
