@@ -279,16 +279,40 @@ class MainViewModel(
         initialValue = ""
     )
 
+    private val initialDarkMode: Boolean? = runBlocking {
+        try {
+            settingsRepository.darkModeFlow.first()
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private val initialWhiteTheme: Boolean = runBlocking {
+        try {
+            settingsRepository.whiteThemeFlow.first()
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private val initialAnimationsEnabled: Boolean = runBlocking {
+        try {
+            settingsRepository.animationsFlow.first()
+        } catch (_: Exception) {
+            true
+        }
+    }
+
     val darkMode: StateFlow<Boolean?> = settingsRepository.darkModeFlow.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = null
+        started = SharingStarted.Eagerly,
+        initialValue = initialDarkMode
     )
     
     val whiteTheme: StateFlow<Boolean> = settingsRepository.whiteThemeFlow.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = false
+        started = SharingStarted.Eagerly,
+        initialValue = initialWhiteTheme
     )
     
     val hapticFeedback: StateFlow<Boolean> = settingsRepository.hapticFeedbackFlow.stateIn(
@@ -330,8 +354,8 @@ class MainViewModel(
 
     val animationsEnabled: StateFlow<Boolean> = settingsRepository.animationsFlow.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = true
+        started = SharingStarted.Eagerly,
+        initialValue = initialAnimationsEnabled
     )
 
     val floatingModeEnabled: StateFlow<Boolean> = settingsRepository.floatingModeFlow.stateIn(
@@ -380,17 +404,27 @@ class MainViewModel(
         }
     }
 
-    val uiColor: StateFlow<Long> = settingsRepository.uiColorFlow.stateIn(
+    private val _liveAccentPreview = MutableStateFlow<Long?>(null)
+
+    val uiColor: StateFlow<Long> = combine(settingsRepository.uiColorFlow, _liveAccentPreview) { saved, preview ->
+        preview ?: saved
+    }.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
+        started = SharingStarted.Eagerly,
         initialValue = initialUiColor
     )
 
-    val buttonColor: StateFlow<Long> = settingsRepository.buttonColorFlow.stateIn(
+    val buttonColor: StateFlow<Long> = combine(settingsRepository.buttonColorFlow, _liveAccentPreview) { saved, preview ->
+        preview ?: saved
+    }.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
+        started = SharingStarted.Eagerly,
         initialValue = initialButtonColor
     )
+
+    fun setLiveAccentPreview(color: Long?) {
+        _liveAccentPreview.value = color
+    }
     
     fun setFontStyle(style: String) {
         viewModelScope.launch {
@@ -437,10 +471,12 @@ class MainViewModel(
     fun setAccentColors(uiColor: Long, buttonColor: Long) {
         viewModelScope.launch {
             settingsRepository.setAccentColors(uiColor, buttonColor)
+            _liveAccentPreview.value = null
         }
     }
 
     fun resetColors() {
+        _liveAccentPreview.value = null
         viewModelScope.launch {
             settingsRepository.resetColors()
         }

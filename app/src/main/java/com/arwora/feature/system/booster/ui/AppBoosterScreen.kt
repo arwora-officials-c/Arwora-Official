@@ -29,6 +29,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.arwora.feature.system.booster.service.AppBoosterManager
 import com.arwora.ui.components.ArworaAnimatedSwitch
+import com.arwora.ui.components.GooglePlayCompactLinearProgress
+import com.arwora.ui.components.GooglePlayLinearProgressBar
 import com.arwora.utils.SoundEffectManager
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -99,7 +101,7 @@ fun AppBoosterScreen(
                         enabled = !isScanning
                     ) {
                         if (isScanning) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            GooglePlayCompactLinearProgress(width = 24.dp, height = 3.5.dp)
                         } else {
                             Icon(Icons.Default.Refresh, contentDescription = "Refresh Stats")
                         }
@@ -192,19 +194,16 @@ fun AppBoosterScreen(
                             }
                         }
 
-                        // Circular Progress / Gauge Meter with smooth animation
-                        Box(
-                            modifier = Modifier.size(160.dp),
-                            contentAlignment = Alignment.Center
+                        // Sleek Google Play Style Linear RAM Usage Meter
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            CircularProgressIndicator(
-                                progress = animatedGaugeProgress,
-                                modifier = Modifier.fillMaxSize(),
-                                strokeWidth = 14.dp,
-                                color = if (ramPercent > 80) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                                trackColor = MaterialTheme.colorScheme.surfaceVariant
-                            )
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.Bottom
+                            ) {
                                 Text(
                                     text = "$ramPercent%",
                                     style = MaterialTheme.typography.headlineLarge,
@@ -213,10 +212,18 @@ fun AppBoosterScreen(
                                 )
                                 Text(
                                     text = "RAM Used",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(bottom = 6.dp)
                                 )
                             }
+                            GooglePlayLinearProgressBar(
+                                progress = animatedGaugeProgress,
+                                modifier = Modifier.fillMaxWidth(),
+                                height = 10.dp,
+                                color = if (ramPercent > 80) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                                trackColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
                         }
 
                         // Active Boost Stage Feedback during optimization
@@ -230,12 +237,10 @@ fun AppBoosterScreen(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                LinearProgressIndicator(
+                                GooglePlayLinearProgressBar(
                                     progress = boostProgress,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(6.dp)
-                                        .clip(RoundedCornerShape(3.dp)),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    height = 6.dp,
                                     color = MaterialTheme.colorScheme.primary,
                                     trackColor = MaterialTheme.colorScheme.surfaceVariant
                                 )
@@ -301,7 +306,11 @@ fun AppBoosterScreen(
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             if (isBoosting) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                                GooglePlayCompactLinearProgress(
+                                    width = 30.dp,
+                                    height = 4.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("Optimizing RAM...", fontWeight = FontWeight.Bold)
                             } else {

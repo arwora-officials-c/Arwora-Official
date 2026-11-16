@@ -157,21 +157,21 @@ object LanScanner {
 
         // Thread-safe deduplication set of discovered IP addresses
         val discoveredIps = ConcurrentHashMap.newKeySet<String>()
-        val foundHosts = ConcurrentHashMap<String, Pair<String?, Long>>()
+        val foundHosts = ConcurrentHashMap<String, Pair<String?, Long?>>()
 
-        // Stage 1: Read ARP table first and emit immediate entries
+        // Stage 1: Read ARP / Neighbor table first and emit immediate entries
         val arpTable = readArpTable()
         arpTable.forEach { (ip, mac) ->
             if (ip.startsWith(prefix)) {
                 if (discoveredIps.add(ip)) {
-                    val cleanMac = mac.takeIf { it.isNotBlank() }
-                    foundHosts[ip] = Pair(cleanMac, 4L)
-                    send(DeviceEvent.OnHostFound(ip, cleanMac, 4L))
+                    val cleanMac = mac.takeIf { it.isNotBlank() && it != "00:00:00:00:00:00" }
+                    foundHosts[ip] = Pair(cleanMac, null)
+                    send(DeviceEvent.OnHostFound(ip, cleanMac, null))
                 }
             }
         }
 
-        // Stage 1.5: Discover via mDNS immediately (often finds devices that ICMP misses)
+        // Stage 1.5: Discover via mDNS (reuse this map in Stage 3 instead of scanning twice)
         val bindAddress = try { InetAddress.getByName(localIp) } catch (_: Exception) { null }
         val mdnsMap = if (bindAddress != null) {
             try { MdnsResolver.resolveAll(context, bindAddress) } catch (_: Exception) { emptyMap() }
@@ -181,10 +181,12 @@ object LanScanner {
 
         mdnsMap.forEach { (ip, name) ->
             if (ip.startsWith(prefix)) {
+                val mac = arpTable[ip]
                 if (discoveredIps.add(ip)) {
-                    val mac = arpTable[ip]
-                    foundHosts[ip] = Pair(mac, 10L)
-                    send(DeviceEvent.OnHostFound(ip, mac, 10L))
+                    foundHosts[ip] = Pair(mac, null)
+                    send(DeviceEvent.OnHostFound(ip, mac, null))
+                }
+                if (name.isNotBlank()) {
                     send(DeviceEvent.OnNameResolved(ip, name, "mDNS Discovery"))
                 }
             }
@@ -192,9 +194,8 @@ object LanScanner {
 
         // Always check gateway if present and not yet added
         if (gateway.isNotBlank() && gateway != "0.0.0.0" && !discoveredIps.contains(gateway)) {
-            val start = System.currentTimeMillis()
-            if (isHostReachable(gateway, scanMode)) {
-                val latency = (System.currentTimeMillis() - start).coerceAtLeast(1L)
+            val latency = measureLatencyMs(gateway, scanMode)
+            if (latency != null) {
                 val mac = arpTable[gateway]
                 if (discoveredIps.add(gateway)) {
                     foundHosts[gateway] = Pair(mac, latency)
@@ -203,12 +204,18 @@ object LanScanner {
             }
         }
 
-        // Also add local phone IP if not present
-        if (localIp.isNotBlank() && localIp != "0.0.0.0" && discoveredIps.add(localIp)) {
+        // Also add local phone IP (ensure self device model name & local MAC are always applied)
+        if (localIp.isNotBlank() && localIp != "0.0.0.0") {
             val mac = getLocalMacAddress() ?: arpTable[localIp]
-            foundHosts[localIp] = Pair(mac, 0L)
-            send(DeviceEvent.OnHostFound(localIp, mac, 0L))
-            send(DeviceEvent.OnNameResolved(localIp, "This Device (Phone)", "Self"))
+            if (discoveredIps.add(localIp)) {
+                foundHosts[localIp] = Pair(mac, 1L)
+                send(DeviceEvent.OnHostFound(localIp, mac, 1L))
+            } else if (!mac.isNullOrBlank() && foundHosts[localIp]?.first.isNullOrBlank()) {
+                foundHosts[localIp] = Pair(mac, foundHosts[localIp]?.second ?: 1L)
+                send(DeviceEvent.OnMacResolved(localIp, mac))
+            }
+            val deviceModel = "${android.os.Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} ${android.os.Build.MODEL}".trim()
+            send(DeviceEvent.OnNameResolved(localIp, "$deviceModel (This Device)", "Self"))
         }
 
         // Stage 2: Live host discovery sweep with concurrency limit
@@ -225,16 +232,22 @@ object LanScanner {
                         if (!isActive) return@launch
                         val alreadyFound = discoveredIps.contains(targetIp)
                         if (!alreadyFound) {
-                            val start = System.currentTimeMillis()
-                            val reachable = isHostReachable(targetIp, scanMode)
-                            val latency = (System.currentTimeMillis() - start).coerceAtLeast(1L)
-                            if (reachable) {
-                                // Re-read ARP for this specific IP to get MAC if it just appeared
+                            val latency = measureLatencyMs(targetIp, scanMode)
+                            if (latency != null) {
+                                // Re-read ARP / neighbor table after probe to capture MAC
                                 val mac = readArpTable()[targetIp]
                                 if (discoveredIps.add(targetIp)) {
                                     foundHosts[targetIp] = Pair(mac, latency)
                                     send(DeviceEvent.OnHostFound(targetIp, mac, latency))
                                 }
+                            }
+                        } else if (targetIp != localIp && foundHosts[targetIp]?.second == null) {
+                            // Measure real RTT for ARP/mDNS entries instead of static dummy values
+                            val rtt = measureLatencyMs(targetIp, scanMode)
+                            if (rtt != null) {
+                                val currentMac = foundHosts[targetIp]?.first
+                                foundHosts[targetIp] = Pair(currentMac, rtt)
+                                send(DeviceEvent.OnLatencyUpdated(targetIp, rtt))
                             }
                         }
                     } finally {
@@ -251,36 +264,30 @@ object LanScanner {
 
         send(DeviceEvent.OnProgress(totalIps, totalIps))
 
-        // Stage 3: Non-blocking Name Resolution for discovered hosts
+        // Refresh ARP / neighbor table once more after subnet sweep to correlate any newly populated MACs
+        val refreshedArp = readArpTable()
+        foundHosts.forEach { (ip, hostInfo) ->
+            val updatedMac = refreshedArp[ip]
+            if (hostInfo.first.isNullOrBlank() && !updatedMac.isNullOrBlank()) {
+                foundHosts[ip] = Pair(updatedMac, hostInfo.second)
+                send(DeviceEvent.OnMacResolved(ip, updatedMac))
+            }
+        }
+
+        // Stage 3: Non-blocking Name Resolution for discovered hosts (excluding self IP)
         try {
-            val bindAddress = try {
-                InetAddress.getByName(networkInfo.localIp)
-            } catch (_: Exception) {
-                null
-            }
-
-            val mdnsMap = if (bindAddress != null) {
-                try {
-                    MdnsResolver.resolveAll(context, bindAddress)
-                } catch (e: Exception) {
-                    emptyMap()
-                }
-            } else {
-                emptyMap()
-            }
-
             val netbiosSemaphore = Semaphore(16)
             supervisorScope {
-                val resolveJobs = foundHosts.map { (ip, hostInfo) ->
+                val resolveJobs = foundHosts.filterKeys { it != localIp }.map { (ip, hostInfo) ->
                     val mac = hostInfo.first
                     launch(Dispatchers.IO) {
-                        var resolvedName: String? = mdnsMap[ip]
+                        var resolvedName: String? = mdnsMap[ip]?.takeIf { it.isNotBlank() }
                         var source = if (resolvedName != null) "mDNS" else null
 
                         if (resolvedName == null) {
                             netbiosSemaphore.acquire()
                             try {
-                                resolvedName = NetbiosResolver.resolve(ip)
+                                resolvedName = NetbiosResolver.resolve(ip)?.takeIf { it.isNotBlank() }
                                 if (resolvedName != null) source = "NetBIOS"
                             } finally {
                                 netbiosSemaphore.release()
@@ -288,31 +295,27 @@ object LanScanner {
                         }
 
                         if (resolvedName == null) {
-                            resolvedName = ReverseDnsResolver.resolve(ip)
+                            resolvedName = ReverseDnsResolver.resolve(ip, gateway)?.takeIf { it.isNotBlank() }
                             if (resolvedName != null) source = "Reverse DNS"
                         }
 
                         if (resolvedName == null) {
                             val vendor = getVendor(mac ?: "")
-                            val macSuffix = if (!mac.isNullOrBlank()) {
-                                mac.replace(":", "").replace("-", "").takeLast(4).uppercase()
-                            } else {
-                                ip.substringAfterLast('.')
+                            resolvedName = when {
+                                ip == gateway && vendor != "Generic" && vendor != "Unknown" -> "$vendor Router (Gateway)"
+                                ip == gateway -> "Wi-Fi Router (Gateway)"
+                                vendor != "Generic" && vendor != "Unknown" -> "$vendor Device ($ip)"
+                                else -> "Host ($ip)"
                             }
-                            resolvedName = if (vendor != "Generic" && vendor != "Unknown") {
-                                "$vendor device • $macSuffix"
-                            } else {
-                                "LAN Device • $macSuffix"
-                            }
-                            source = "Fallback"
+                            source = "Vendor/IP"
                         }
 
-                        send(DeviceEvent.OnNameResolved(ip, resolvedName ?: "LAN Device", source ?: "Unknown"))
+                        send(DeviceEvent.OnNameResolved(ip, resolvedName, source ?: "Reverse DNS"))
                     }
                 }
                 resolveJobs.joinAll()
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             // Non-fatal, keep found hosts intact
         }
 
@@ -341,61 +344,184 @@ object LanScanner {
                         sb.append(String.format("%02X%s", mac[i], if (i < mac.size - 1) ":" else ""))
                     }
                     val macStr = sb.toString()
-                    if (macStr != "00:00:00:00:00:00") return macStr
+                    if (macStr != "00:00:00:00:00:00" && macStr != "02:00:00:00:00:00") return macStr
                 }
             }
         } catch (_: Exception) {}
         return null
     }
 
-    private fun isHostReachable(ip: String, scanMode: ScanMode = ScanMode.FAST): Boolean {
-        // Fast ICMP ping probe
+    /**
+     * Measures genuine network round-trip latency in milliseconds using:
+     * 1. Native `ping -c 1 -W 1 <ip>` stdout RTT parsing (`time=X.Y ms`)
+     * 2. Timed single-port TCP connect (`System.nanoTime()`) when ICMP is filtered
+     * 3. Timed `InetAddress.isReachable(500)` fallback
+     * Returns null if unreachable on all probes.
+     */
+    fun measureLatencyMs(ip: String, scanMode: ScanMode = ScanMode.FAST): Long? {
+        // 1. Native ping command RTT (accurate kernel-level round-trip time)
         try {
-            val address = InetAddress.getByName(ip)
-            if (address.isReachable(500)) return true
-        } catch (_: Exception) {}
+            val process = ProcessBuilder("ping", "-c", "1", "-W", "1", ip)
+                .redirectErrorStream(true)
+                .start()
+            val completed = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                process.waitFor(1400, java.util.concurrent.TimeUnit.MILLISECONDS)
+            } else {
+                process.waitFor()
+                true
+            }
+            val output = try {
+                process.inputStream.bufferedReader().use { it.readText() }
+            } catch (_: Exception) {
+                ""
+            }
+            if (!completed) {
+                process.destroyForcibly()
+            }
+            parsePingOutputMs(output)?.let { return it }
+        } catch (_: Exception) {
+        }
 
-        // TCP socket probe on standard ports with short timeouts
+        // 2. TCP socket handshake RTT (measure ONLY the responsive port connect, not failed timeouts)
         val portsToProbe = if (scanMode == ScanMode.DEEP) {
-            listOf(53, 80, 443, 554, 8080, 8443, 22, 139, 445, 5000, 7000, 8888)
+            listOf(80, 443, 53, 554, 8080, 8443, 22, 139, 445, 5000, 7000, 8888)
         } else {
-            listOf(53, 80, 443, 8080, 22)
+            listOf(80, 443, 53, 8080, 22)
         }
 
         for (port in portsToProbe) {
             try {
                 Socket().use { socket ->
-                    socket.connect(InetSocketAddress(ip, port), 250)
-                    return true
+                    val startNs = System.nanoTime()
+                    socket.connect(InetSocketAddress(ip, port), 350)
+                    val elapsedMs = (System.nanoTime() - startNs) / 1_000_000L
+                    return elapsedMs.coerceAtLeast(1L)
                 }
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+            }
         }
-        return false
+
+        // 3. ICMP / TCP echo via InetAddress.isReachable
+        try {
+            val address = InetAddress.getByName(ip)
+            val startNs = System.nanoTime()
+            if (address.isReachable(500)) {
+                val elapsedMs = (System.nanoTime() - startNs) / 1_000_000L
+                return elapsedMs.coerceAtLeast(1L)
+            }
+        } catch (_: Exception) {
+        }
+
+        return null
+    }
+
+    internal fun parsePingOutputMs(output: String): Long? {
+        if (output.isBlank()) return null
+        val timeMatch = Regex("""time[=<]\s*([0-9]+(?:\.[0-9]+)?)\s*ms""", RegexOption.IGNORE_CASE).find(output)
+        if (timeMatch != null) {
+            val ms = timeMatch.groupValues[1].toDoubleOrNull()
+            if (ms != null && ms.isFinite()) {
+                return kotlin.math.round(ms).toLong().coerceAtLeast(1L)
+            }
+        }
+        val rttSummaryMatch = Regex("""rtt\s+min/avg/max/[^=]*=\s*[0-9.]+/([0-9.]+)/""", RegexOption.IGNORE_CASE).find(output)
+        if (rttSummaryMatch != null) {
+            val avg = rttSummaryMatch.groupValues[1].toDoubleOrNull()
+            if (avg != null && avg.isFinite()) {
+                return kotlin.math.round(avg).toLong().coerceAtLeast(1L)
+            }
+        }
+        return null
     }
 
     private fun readArpTable(): Map<String, String> {
-        val arpMap = mutableMapOf<String, String>()
+        var arpText: String? = null
+        var neighText: String? = null
+
+        // 1. Direct /proc/net/arp (works on Android <= 9 and permissive builds)
         try {
-            BufferedReader(FileReader("/proc/net/arp")).use { reader ->
-                reader.readLine() // skip header line
-                var line: String?
-                while (reader.readLine().also { line = it } != null) {
-                    val tokens = line?.split(Regex("\\s+"))
-                    if (tokens != null && tokens.size >= 4) {
-                        val ip = tokens[0]
-                        val mac = tokens[3]
-                        if (mac != "00:00:00:00:00:00" && mac.length >= 11) {
-                            arpMap[ip] = mac
-                        }
+            arpText = BufferedReader(FileReader("/proc/net/arp")).use { it.readText() }
+        } catch (_: Exception) {
+        }
+
+        // 2. Direct `ip neigh show` (works on many Android 10-12 builds even when /proc/net/arp is blocked)
+        try {
+            val proc = ProcessBuilder("ip", "neigh", "show").redirectErrorStream(true).start()
+            neighText = proc.inputStream.bufferedReader().use { it.readText() }
+            proc.waitFor()
+        } catch (_: Exception) {
+        }
+
+        val merged = parseArpAndNeighOutput(arpText, neighText).toMutableMap()
+
+        // 3. If neighbor entries are empty and Shizuku is granted, read via elevated ADB shell
+        if (merged.isEmpty() && com.arwora.utils.ShizukuConnectionManager.hasShizukuPermission()) {
+            try {
+                val shizukuOut = runBlocking {
+                    com.arwora.feature.system.shell.ShellExecutor.executeCommand(
+                        "ip neigh show 2>/dev/null; echo '---ARP---'; cat /proc/net/arp 2>/dev/null"
+                    )
+                }
+                if (shizukuOut.stdout.isNotBlank()) {
+                    val parts = shizukuOut.stdout.split("---ARP---", limit = 2)
+                    val shizukuNeigh = parts.getOrNull(0)
+                    val shizukuArp = parts.getOrNull(1)
+                    merged.putAll(parseArpAndNeighOutput(shizukuArp, shizukuNeigh))
+                }
+            } catch (_: Exception) {
+            }
+        }
+
+        return merged
+    }
+
+    internal fun parseArpAndNeighOutput(arpText: String?, neighText: String?): Map<String, String> {
+        val arpMap = mutableMapOf<String, String>()
+        val macRegex = Regex("""^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$""")
+
+        fun acceptMac(raw: String): String? {
+            val normalized = raw.trim().replace("-", ":").uppercase()
+            if (!macRegex.matches(normalized)) return null
+            if (normalized == "00:00:00:00:00:00" || normalized == "FF:FF:FF:FF:FF:FF") return null
+            return normalized
+        }
+
+        if (!arpText.isNullOrBlank()) {
+            arpText.lines().drop(1).forEach { line ->
+                val tokens = line.trim().split(Regex("\\s+"))
+                if (tokens.size >= 4) {
+                    val ip = tokens[0].trim()
+                    val mac = acceptMac(tokens[3])
+                    if (ip.contains(".") && mac != null) {
+                        arpMap[ip] = mac
                     }
                 }
             }
-        } catch (_: Exception) {}
+        }
+
+        if (!neighText.isNullOrBlank()) {
+            val neighRegex = Regex("""^(\d+\.\d+\.\d+\.\d+)\s+.*?\blladdr\s+([0-9A-Fa-f:-]{17})\b""")
+            neighText.lines().forEach { line ->
+                val trimmed = line.trim()
+                if (trimmed.contains("FAILED", ignoreCase = true) ||
+                    trimmed.contains("INCOMPLETE", ignoreCase = true)
+                ) {
+                    return@forEach
+                }
+                val match = neighRegex.find(trimmed) ?: return@forEach
+                val ip = match.groupValues[1]
+                val mac = acceptMac(match.groupValues[2])
+                if (mac != null) {
+                    arpMap.putIfAbsent(ip, mac)
+                }
+            }
+        }
+
         return arpMap
     }
 
     fun getVendor(mac: String): String {
-        if (mac.isBlank()) return "Unknown"
+        if (mac.isBlank() || mac.equals("Unknown", ignoreCase = true)) return "Unknown"
         val clean = mac.replace("-", ":").uppercase()
         val prefix = clean.split(":").take(3).joinToString(":")
         return ouiMap[prefix] ?: "Generic"

@@ -51,7 +51,6 @@ import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -236,17 +235,16 @@ fun InlineUsernameAvailabilityCard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         if (isChecking) {
-                            CircularProgressIndicator(
+                            GooglePlayCompactLinearProgress(
+                                width = if (compactMode) 28.dp else 36.dp,
+                                height = 4.dp,
                                 modifier = Modifier
-                                    .size(if (compactMode) 18.dp else 20.dp)
+                                    .padding(horizontal = 4.dp)
                                     .testTag(
                                         if (compactMode) "floating_availability_loading"
                                         else "inline_availability_loading"
-                                    ),
-                                strokeWidth = 2.5.dp,
-                                color = MaterialTheme.colorScheme.primary
+                                    )
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
                         } else {
                             IconButton(
                                 onClick = {
@@ -283,6 +281,15 @@ fun InlineUsernameAvailabilityCard(
                             )
                         }
                     }
+                }
+
+                AnimatedVisibility(visible = isChecking) {
+                    GooglePlayLinearProgressBar(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 6.dp),
+                        height = 4.dp
+                    )
                 }
 
                 // Status Summary Row
@@ -408,10 +415,10 @@ fun UsernameAvailabilityBottomSheet(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (isChecking) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(22.dp),
-                            strokeWidth = 2.5.dp,
-                            color = MaterialTheme.colorScheme.primary
+                        GooglePlayCompactLinearProgress(
+                            width = 36.dp,
+                            height = 4.dp,
+                            modifier = Modifier.padding(end = 6.dp)
                         )
                     } else {
                         IconButton(onClick = { checkTrigger++ }) {
@@ -422,6 +429,15 @@ fun UsernameAvailabilityBottomSheet(
                         Icon(Icons.Default.Close, contentDescription = "Close")
                     }
                 }
+            }
+
+            AnimatedVisibility(visible = isChecking) {
+                GooglePlayLinearProgressBar(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    height = 4.dp
+                )
             }
 
             Spacer(modifier = Modifier.height(10.dp))
@@ -593,9 +609,9 @@ private fun PlatformAvailabilityRow(
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     if (result.state == AvailabilityState.CHECKING) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(if (compactMode) 10.dp else 12.dp),
-                            strokeWidth = 2.dp,
+                        GooglePlayCompactLinearProgress(
+                            width = if (compactMode) 18.dp else 24.dp,
+                            height = 3.dp,
                             color = stateColor
                         )
                     } else {

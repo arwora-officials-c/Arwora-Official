@@ -709,12 +709,35 @@ fun ScreenOffOptimizerScreen(
                                         )
                                     }
                                     if (useShizuku && !shizukuPermissionGranted) {
-                                        Text(
-                                            text = "Advanced automation will fallback to system shell (requires Root/ADB) if Shizuku is not granted.",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.error,
-                                            modifier = Modifier.padding(top = 4.dp)
-                                        )
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(top = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                text = "Shizuku inactive: will fall back to system shell.",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            TextButton(
+                                                onClick = {
+                                                    SoundEffectManager.playClick(context)
+                                                    com.arwora.utils.ShizukuConnectionManager.connect(
+                                                        context = context,
+                                                        requestCode = 101,
+                                                        onConnected = {
+                                                            ScreenOffOptimizerManager.setShizukuPermissionGranted(true)
+                                                        }
+                                                    )
+                                                },
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                            ) {
+                                                Text("Connect Shizuku", fontWeight = FontWeight.Bold)
+                                            }
+                                        }
                                     }
                                 }
                             }

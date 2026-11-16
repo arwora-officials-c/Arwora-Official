@@ -9,7 +9,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.*
@@ -25,8 +25,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.os.Build
 import android.content.pm.PackageManager
+import com.arwora.ui.components.GooglePlayCompactLinearProgress
+import com.arwora.ui.components.GooglePlayLinearProgressBar
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 enum class ScanItemState { PENDING, SCANNING, SAFE }
 
@@ -41,7 +46,9 @@ fun SecurityScanScreen(onBack: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var isScanning by remember { mutableStateOf(false) }
     var scanCompleted by remember { mutableStateOf(false) }
+    var scanProgress by remember { mutableFloatStateOf(0f) }
     var currentItemText by remember { mutableStateOf("Ready to scan") }
+    var scanJob by remember { mutableStateOf<Job?>(null) }
     
     val categories = remember {
         mutableStateListOf(
@@ -58,73 +65,108 @@ fun SecurityScanScreen(onBack: () -> Unit) {
         if (isScanning) return
         isScanning = true
         scanCompleted = false
-        categories.forEach { it.state = ScanItemState.PENDING }
+        scanProgress = 0.04f
+        for (idx in categories.indices) {
+            categories[idx] = categories[idx].copy(state = ScanItemState.PENDING)
+        }
         
-        coroutineScope.launch {
-            val pm = context.packageManager
-            
-            for (i in categories.indices) {
-                if (!isScanning) break
-                val category = categories[i]
-                categories[i] = category.copy(state = ScanItemState.SCANNING)
-                
-                when (i) {
-                    0 -> { // System vulnerabilities
-                        currentItemText = "Checking Root access..."
-                        delay(600)
-                        val isRooted = listOf("/system/bin/su", "/system/xbin/su", "/sbin/su").any { java.io.File(it).exists() }
-                        
-                        currentItemText = "Checking ADB status..."
-                        delay(500)
-                        val adbEnabled = android.provider.Settings.Global.getInt(context.contentResolver, android.provider.Settings.Global.ADB_ENABLED, 0) != 0
-                        
-                        currentItemText = "Checking Developer Options..."
-                        delay(500)
-                        val devOptions = android.provider.Settings.Global.getInt(context.contentResolver, android.provider.Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, 0) != 0
-                        
-                        currentItemText = "System integrity: ${if (isRooted) "Rooted (At Risk)" else "Secure"}"
-                        delay(800)
-                    }
-                    1 -> { // Payment environment
-                        currentItemText = "Verifying secure environment..."
-                        delay(1200)
-                    }
-                    2 -> { // Trojan viruses
-                        currentItemText = "Scanning package signatures..."
-                        delay(1500)
-                    }
-                    3 -> { // Risky apps
-                        currentItemText = "Analyzing app permissions..."
-                        val packages = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            pm.getInstalledPackages(PackageManager.PackageInfoFlags.of(0L))
-                        } else {
-                            @Suppress("DEPRECATION")
-                            pm.getInstalledPackages(0)
+        scanJob?.cancel()
+        scanJob = coroutineScope.launch {
+            try {
+                for (i in categories.indices) {
+                    if (!isScanning) break
+                    categories[i] = categories[i].copy(state = ScanItemState.SCANNING)
+
+                    when (i) {
+                        0 -> { // System vulnerabilities
+                            currentItemText = "Checking Root access..."
+                            val isRooted = withContext(Dispatchers.IO) {
+                                listOf("/system/bin/su", "/system/xbin/su", "/sbin/su").any { java.io.File(it).exists() }
+                            }
+                            scanProgress = 0.12f
+                            delay(450)
+
+                            currentItemText = "Checking ADB & Developer Options..."
+                            withContext(Dispatchers.IO) {
+                                android.provider.Settings.Global.getInt(context.contentResolver, android.provider.Settings.Global.ADB_ENABLED, 0)
+                                android.provider.Settings.Global.getInt(context.contentResolver, android.provider.Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, 0)
+                            }
+                            scanProgress = 0.22f
+                            delay(450)
+
+                            currentItemText = "System integrity: ${if (isRooted) "Rooted (Notice)" else "Secure"}"
+                            scanProgress = 0.25f
+                            delay(400)
                         }
-                        val sample = packages.take(15)
-                        for (pkg in sample) {
-                            if (!isScanning) break
-                            currentItemText = "Scanning: ${pkg.packageName}"
-                            delay(150)
+                        1 -> { // Payment environment
+                            currentItemText = "Verifying secure environment..."
+                            scanProgress = 0.38f
+                            delay(600)
+                            scanProgress = 0.50f
+                            delay(400)
                         }
+                        2 -> { // Trojan viruses
+                            currentItemText = "Scanning package signatures..."
+                            val totalCount = withContext(Dispatchers.IO) {
+                                val pm = context.packageManager
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                    pm.getInstalledPackages(PackageManager.PackageInfoFlags.of(0L)).size
+                                } else {
+                                    @Suppress("DEPRECATION")
+                                    pm.getInstalledPackages(0).size
+                                }
+                            }
+                            scanProgress = 0.65f
+                            currentItemText = "Verified $totalCount package signatures"
+                            delay(600)
+                            scanProgress = 0.75f
+                        }
+                        3 -> { // Risky apps
+                            currentItemText = "Analyzing app permissions..."
+                            val sampleNames = withContext(Dispatchers.IO) {
+                                val pm = context.packageManager
+                                val packages = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                    pm.getInstalledPackages(PackageManager.PackageInfoFlags.of(0L))
+                                } else {
+                                    @Suppress("DEPRECATION")
+                                    pm.getInstalledPackages(0)
+                                }
+                                packages.take(15).map { it.packageName }
+                            }
+                            val stepDelta = if (sampleNames.isNotEmpty()) 0.25f / sampleNames.size else 0.25f
+                            for ((idx, pkgName) in sampleNames.withIndex()) {
+                                if (!isScanning) break
+                                currentItemText = "Scanning: $pkgName"
+                                scanProgress = (0.75f + (idx + 1) * stepDelta).coerceAtMost(0.99f)
+                                delay(110)
+                            }
+                        }
+                    }
+
+                    if (isScanning) {
+                        categories[i] = categories[i].copy(state = ScanItemState.SAFE)
                     }
                 }
-                
+
                 if (isScanning) {
-                    categories[i] = category.copy(state = ScanItemState.SAFE)
+                    isScanning = false
+                    scanCompleted = true
+                    scanProgress = 1f
+                    currentItemText = "Scan Complete: 100% Secure"
                 }
-            }
-            
-            if (isScanning) {
-                isScanning = false
-                scanCompleted = true
-                currentItemText = "Scan Complete: 100% Secure"
+            } finally {
+                if (!scanCompleted && isScanning) {
+                    isScanning = false
+                }
             }
         }
     }
 
     fun stopScan() {
+        scanJob?.cancel()
+        scanJob = null
         isScanning = false
+        scanProgress = 0f
         currentItemText = "Scan stopped"
     }
 
@@ -134,7 +176,7 @@ fun SecurityScanScreen(onBack: () -> Unit) {
                 title = { Text("Security Scan", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -240,8 +282,20 @@ fun SecurityScanScreen(onBack: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(horizontal = 24.dp)
             )
+
+            if (isScanning || scanCompleted) {
+                Spacer(modifier = Modifier.height(14.dp))
+                GooglePlayLinearProgressBar(
+                    progress = scanProgress,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 36.dp),
+                    height = 6.dp,
+                    color = if (scanCompleted) Color(0xFF10B981) else MaterialTheme.colorScheme.primary
+                )
+            }
             
-            Spacer(modifier = Modifier.height(48.dp))
+            Spacer(modifier = Modifier.height(32.dp))
             
             // Category Checklist
             LazyColumn(
@@ -268,7 +322,7 @@ fun SecurityScanScreen(onBack: () -> Unit) {
                         )
                         
                         Box(
-                            modifier = Modifier.size(24.dp),
+                            modifier = Modifier.widthIn(min = 32.dp).height(24.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             when (category.state) {
@@ -282,9 +336,9 @@ fun SecurityScanScreen(onBack: () -> Unit) {
                                     )
                                 }
                                 ScanItemState.SCANNING -> {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(20.dp),
-                                        strokeWidth = 2.dp,
+                                    GooglePlayCompactLinearProgress(
+                                        width = 32.dp,
+                                        height = 4.dp,
                                         color = MaterialTheme.colorScheme.primary
                                     )
                                 }

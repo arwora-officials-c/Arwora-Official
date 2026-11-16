@@ -7,7 +7,8 @@ import android.content.Context
 import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.arwora.feature.system.shell.ShellExecutor
+import com.arwora.utils.ShizukuConnectionManager
+import com.arwora.utils.ShizukuConnectionState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -39,6 +40,7 @@ class WifiPasswordViewModel(application: Application) : AndroidViewModel(applica
     val isAddDialogOpen: StateFlow<Boolean> = _isAddDialogOpen.asStateFlow()
 
     val isElevatedModeAvailable: StateFlow<Boolean> = repository.isElevatedModeAvailable
+    val shizukuState: StateFlow<ShizukuConnectionState> = repository.shizukuState
 
     val filteredNetworks: StateFlow<List<SavedWifiNetwork>> = combine(
         repository.networks,
@@ -61,11 +63,22 @@ class WifiPasswordViewModel(application: Application) : AndroidViewModel(applica
         refresh()
     }
 
-    fun refresh() {
+    fun refreshShizukuStatus() {
+        val prevElevated = isElevatedModeAvailable.value
+        val state = repository.refreshShizukuState()
+        if (!prevElevated && state == ShizukuConnectionState.CONNECTED) {
+            refresh()
+        }
+    }
+
+    fun refresh(revealAfter: Boolean = false) {
         viewModelScope.launch {
             _isLoading.value = true
             try {
                 repository.refreshSavedNetworks()
+                if (revealAfter || _isGlobalRevealAll.value) {
+                    _revealedPasswordIds.value = repository.networks.value.map { it.id }.toSet()
+                }
             } finally {
                 _isLoading.value = false
             }
@@ -92,6 +105,9 @@ class WifiPasswordViewModel(application: Application) : AndroidViewModel(applica
         if (newState) {
             val allIds = filteredNetworks.value.map { it.id }.toSet()
             _revealedPasswordIds.value = allIds
+            if (repository.networks.value.isEmpty() || repository.refreshShizukuState() == ShizukuConnectionState.CONNECTED) {
+                refresh(revealAfter = true)
+            }
         } else {
             _revealedPasswordIds.value = emptySet()
         }
@@ -215,7 +231,15 @@ class WifiPasswordViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
-    fun requestShizukuPermission() {
-        ShellExecutor.requestPermission(1002)
+    fun connectShizuku(context: Context) {
+        ShizukuConnectionManager.connect(
+            context = context,
+            requestCode = 1002,
+            showFeedback = true,
+            onConnected = {
+                refresh()
+            }
+        )
+        repository.refreshShizukuState()
     }
 }

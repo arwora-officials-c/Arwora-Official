@@ -27,15 +27,17 @@ class AnimationSettingsActivity : ComponentActivity() {
                 return
             }
             val isDark = runBlocking { app.settingsRepository.darkModeFlow.first() }
+            val isWhite = runBlocking { app.settingsRepository.whiteThemeFlow.first() }
             val uiColorVal = runBlocking { app.settingsRepository.uiColorFlow.first() }
             val buttonColorVal = runBlocking { app.settingsRepository.buttonColorFlow.first() }
 
             val isSystemDark = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
-            val resolvedDarkTheme = isDark ?: isSystemDark
+            val resolvedDarkTheme = if (isWhite) false else (isDark ?: isSystemDark)
 
             setContent {
                 NameGenProTheme(
                     darkTheme = resolvedDarkTheme,
+                    whiteTheme = isWhite,
                     uiColor = Color(uiColorVal),
                     buttonColor = Color(buttonColorVal)
                 ) {

@@ -32,6 +32,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.arwora.ui.components.GooglePlayLinearProgressBar
+import com.arwora.ui.components.GoogleStyleLinearLoadingCard
 import com.arwora.utils.SoundEffectManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -69,20 +71,12 @@ fun StorageAnalyzerScreen(navController: NavController) {
     val initialSimulatedCache = 485 * 1024 * 1024L // 485 MB
     val initialSimulatedDownloads = 1240 * 1024 * 1024L // 1.24 GB
 
-    val currentCacheSize = if (simulatedCacheCleaned) 0L else (getFolderSize(context.cacheDir) + initialSimulatedCache)
-    val currentDownloadsSize = if (simulatedDownloadsCleaned) 18 * 1024 * 1024L else initialSimulatedDownloads
+    var measuredCacheDirBytes by remember { mutableLongStateOf(0L) }
+    var totalBytes by remember { mutableLongStateOf(64 * 1024 * 1024 * 1024L) }
+    var freeBytesBase by remember { mutableLongStateOf(24 * 1024 * 1024 * 1024L) }
 
-    // Device overall space (Fallback to standard values if total space is 0)
-    val totalBytes = remember { 
-        val space = File(context.filesDir.absolutePath).totalSpace
-        if (space > 0) space else 64 * 1024 * 1024 * 1024L
-    }
-    
-    // Recalculate usable space dynamically
-    val freeBytesBase = remember { 
-        val space = File(context.filesDir.absolutePath).usableSpace
-        if (space > 0) space else 24 * 1024 * 1024 * 1024L
-    }
+    val currentCacheSize = if (simulatedCacheCleaned) 0L else (measuredCacheDirBytes + initialSimulatedCache)
+    val currentDownloadsSize = if (simulatedDownloadsCleaned) 18 * 1024 * 1024L else initialSimulatedDownloads
     
     val freeBytes = freeBytesBase + 
             (if (simulatedCacheCleaned) initialSimulatedCache else 0L) + 
@@ -131,11 +125,26 @@ fun StorageAnalyzerScreen(navController: NavController) {
         animationSpec = tween(durationMillis = 1000, easing = FastOutSlowInEasing)
     )
 
-    LaunchedEffect(Unit) {
+    suspend fun runStorageScan() {
         scanning = true
-        delay(600) // Simulated fast directory scan for premium feel
+        startChartAnimation = false
+        val stats = withContext(Dispatchers.IO) {
+            val cacheBytes = getFolderSize(context.cacheDir)
+            val rootFile = File(context.filesDir.absolutePath)
+            val totalSpace = rootFile.totalSpace.let { if (it > 0) it else 64 * 1024 * 1024 * 1024L }
+            val usableSpace = rootFile.usableSpace.let { if (it > 0) it else 24 * 1024 * 1024 * 1024L }
+            Triple(cacheBytes, totalSpace, usableSpace)
+        }
+        measuredCacheDirBytes = stats.first
+        totalBytes = stats.second
+        freeBytesBase = stats.third
+        delay(300)
         scanning = false
         startChartAnimation = true
+    }
+
+    LaunchedEffect(Unit) {
+        runStorageScan()
     }
 
     Scaffold(
@@ -159,11 +168,7 @@ fun StorageAnalyzerScreen(navController: NavController) {
                     IconButton(onClick = {
                         SoundEffectManager.playClick(context)
                         coroutineScope.launch {
-                            scanning = true
-                            startChartAnimation = false
-                            delay(500)
-                            scanning = false
-                            startChartAnimation = true
+                            runStorageScan()
                         }
                     }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Scan Storage")
@@ -178,25 +183,15 @@ fun StorageAnalyzerScreen(navController: NavController) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding),
+                    .padding(padding)
+                    .padding(horizontal = 20.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(52.dp),
-                        strokeWidth = 4.dp,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = "Analyzing Directory Structure...",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                GoogleStyleLinearLoadingCard(
+                    title = "Analyzing Directory Structure...",
+                    subtitle = "Measuring storage breakdown across folders & caches",
+                    icon = Icons.Default.Storage
+                )
             }
         } else {
             LazyColumn(
@@ -380,9 +375,9 @@ fun StorageAnalyzerScreen(navController: NavController) {
                                         showCleanDialog = true
                                         
                                         coroutineScope.launch {
-                                            while (cleanProgress < 1f) {
-                                                cleanProgress += 0.1f
-                                                delay(120)
+                                            for (step in 1..10) {
+                                                cleanProgress = step / 10f
+                                                delay(110)
                                             }
                                             isCleaningCompleted = true
                                             simulatedCacheCleaned = true
@@ -566,19 +561,29 @@ fun StorageAnalyzerScreen(navController: NavController) {
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     if (!isCleaningCompleted) {
-                        CircularProgressIndicator(
-                            progress = { cleanProgress },
-                            modifier = Modifier.size(72.dp),
-                            strokeWidth = 6.dp,
-                            color = MaterialTheme.colorScheme.primary,
-                            trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
-                        )
-                        Text(
-                            text = "Deleting temporary logs and duplicates...",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center
-                        )
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "${(cleanProgress.coerceIn(0f, 1f) * 100).toInt()}%",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            GooglePlayLinearProgressBar(
+                                progress = cleanProgress,
+                                modifier = Modifier.fillMaxWidth(),
+                                height = 8.dp
+                            )
+                            Text(
+                                text = "Deleting temporary logs and duplicates...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                        }
                     } else {
                         Box(
                             modifier = Modifier

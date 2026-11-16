@@ -30,6 +30,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.arwora.ui.components.GooglePlayCompactLinearProgress
+import com.arwora.ui.components.GoogleStyleLinearLoadingCard
 import com.arwora.viewmodel.DeepScannerViewModel
 import com.arwora.viewmodel.ScanPhase
 
@@ -142,34 +144,22 @@ fun DeepScannerScreen(onBack: () -> Unit) {
         ) {
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Main animated progress indicator
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier.size(200.dp)
-            ) {
-                CircularProgressIndicator(
-                    progress = { 1f },
-                    modifier = Modifier.size(180.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    strokeWidth = 12.dp
-                )
-                
-                CircularProgressIndicator(
-                    progress = { animatedProgress },
-                    modifier = Modifier.size(180.dp),
-                    color = if (currentPhase == ScanPhase.COMPLETED) Color(0xFF10B981) else MaterialTheme.colorScheme.primary,
-                    strokeWidth = 12.dp
-                )
-                
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "${(animatedProgress * 100).toInt()}%",
-                        style = MaterialTheme.typography.displayMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            }
+            // Main animated Google Play Store linear progress card
+            GoogleStyleLinearLoadingCard(
+                title = when (currentPhase) {
+                    ScanPhase.COMPLETED -> "Deep Security Scan Complete"
+                    ScanPhase.IDLE -> "Ready for Deep Scan"
+                    else -> "Scanning Device & Packages..."
+                },
+                subtitle = if (currentPhase == ScanPhase.COMPLETED) {
+                    "All security checks finished"
+                } else {
+                    "Inspecting installed apps, permissions, and storage"
+                },
+                icon = if (currentPhase == ScanPhase.COMPLETED) Icons.Default.VerifiedUser else Icons.Default.Security,
+                progress = animatedProgress,
+                modifier = Modifier.fillMaxWidth()
+            )
 
             Spacer(modifier = Modifier.height(24.dp))
             
@@ -398,7 +388,7 @@ fun ScanCategoryItem(title: String, description: String, isActive: Boolean, isCo
         ) {
             when {
                 isCompleted -> Icon(Icons.Default.Check, contentDescription = "Done", tint = Color(0xFF10B981), modifier = Modifier.size(20.dp))
-                isActive -> CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
+                isActive -> GooglePlayCompactLinearProgress(width = 24.dp, height = 3.5.dp, color = MaterialTheme.colorScheme.primary)
                 else -> Icon(Icons.Default.HourglassEmpty, contentDescription = "Pending", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
             }
         }

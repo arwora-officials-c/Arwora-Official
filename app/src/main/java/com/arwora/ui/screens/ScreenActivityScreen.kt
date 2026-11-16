@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import com.arwora.ui.components.ArworaAnimatedSwitch
+import com.arwora.ui.components.GooglePlayCompactLinearProgress
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,8 +72,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import com.arwora.feature.system.usage.RealtimeUsageTracker
 import com.arwora.feature.system.usage.formatDataBytes
 import com.arwora.feature.system.usage.formatNetworkSpeed
@@ -365,9 +364,9 @@ fun ScreenActivityScreen(
                             viewModel.refresh()
                         }) {
                             if (uiState.isRefreshing) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp),
-                                    strokeWidth = 2.dp,
+                                GooglePlayCompactLinearProgress(
+                                    width = 24.dp,
+                                    height = 3.5.dp,
                                     color = MaterialTheme.colorScheme.primary
                                 )
                             } else {
@@ -445,15 +444,13 @@ fun ScreenActivityScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     contentPadding = PaddingValues(top = 10.dp, bottom = 24.dp)
                 ) {
-                    // 1. Sleek Compact Dashboard Widget (Ring chart, center time, unlocks, notifications, app limits)
+                    // 1. Sleek Compact Dashboard Widget (Ring chart, center time, storage & telemetry)
                     item {
                         if (uiState.isInitialLoading) {
                             SkeletonDashboardCard()
                         } else {
                             CompactWellbeingDashboardCard(
                                 summary = uiState.summary,
-                                activeTimersCount = activeTimersCount,
-                                exceededTimersCount = exceededTimersCount,
                                 selectedTimeframe = uiState.selectedTimeframe,
                                 onTimeframeSelected = { tf ->
                                     SoundEffectManager.playClick()
@@ -806,8 +803,6 @@ data class StorageSegmentItem(
 @Composable
 fun CompactWellbeingDashboardCard(
     summary: WellbeingSummary,
-    activeTimersCount: Int = 0,
-    exceededTimersCount: Int = 0,
     selectedTimeframe: UsageTimeframe,
     onTimeframeSelected: (UsageTimeframe) -> Unit,
     modifier: Modifier = Modifier,
@@ -1125,54 +1120,10 @@ fun CompactWellbeingDashboardCard(
 
             Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 if (showExtendedTelemetry) {
-                    val liveSteps by RealtimeUsageTracker.todaySteps.collectAsStateWithLifecycle()
-                    val hasActivityPermission by RealtimeUsageTracker.hasActivityRecognitionPermission.collectAsStateWithLifecycle()
-                    val isStepSensorAvailable by RealtimeUsageTracker.isStepSensorAvailable.collectAsStateWithLifecycle()
                     val mobileBytes by RealtimeUsageTracker.mobileDataBytes.collectAsStateWithLifecycle()
                     val wifiBytes by RealtimeUsageTracker.wifiDataBytes.collectAsStateWithLifecycle()
 
-                    val activityPermissionLauncher = rememberLauncherForActivityResult(
-                        ActivityResultContracts.RequestPermission()
-                    ) { isGranted ->
-                        if (isGranted) {
-                            RealtimeUsageTracker.init(context, summary.unlockCount)
-                        }
-                    }
-
-                    // Item 1: Steps Today
-                    CompactMetricItem(
-                        icon = Icons.Default.DirectionsWalk,
-                        iconTint = Color(0xFF10B981),
-                        title = "Steps Today",
-                        value = if (hasActivityPermission) "$liveSteps" else "Grant",
-                        subtitle = if (isStepSensorAvailable) "hardware sensor" else "pedometer",
-                        modifier = Modifier.testTag("compact_metric_steps_today"),
-                        onClick = { if (!hasActivityPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) activityPermissionLauncher.launch(android.Manifest.permission.ACTIVITY_RECOGNITION) }
-                    )
-
-                    // Item 2: Notification
-                    CompactMetricItem(
-                        icon = Icons.Default.Notifications,
-                        iconTint = Color(0xFF3B82F6),
-                        title = "Notification",
-                        value = if (!hasPermission) "—" else if (isLoading) "..." else "${summary.notificationCount}",
-                        subtitle = "received alerts",
-                        modifier = Modifier.testTag("compact_metric_notification")
-                    )
-
-                    // Item 3: App Limits
-                    val timerColor = if (exceededTimersCount > 0) Color(0xFFEF4444) else Color(0xFF10B981)
-                    CompactMetricItem(
-                        icon = if (exceededTimersCount > 0) Icons.Default.TimerOff else Icons.Default.Timer,
-                        iconTint = timerColor,
-                        title = "App",
-                        value = if (!hasPermission) "—" else if (isLoading) "..." else if (exceededTimersCount > 0) "$exceededTimersCount Over" else "$activeTimersCount Active",
-                        subtitle = if (exceededTimersCount > 0) "limit exceeded" else "monitored",
-                        valueColor = if (exceededTimersCount > 0) Color(0xFFEF4444) else null,
-                        modifier = Modifier.testTag("compact_metric_app_limits")
-                    )
-
-                    // Item 4: Data Usage Today
+                    // Data Usage Today
                     CompactMetricItem(
                         icon = Icons.Default.DataUsage,
                         iconTint = Color(0xFF3B82F6),
@@ -1218,19 +1169,6 @@ fun CompactWellbeingDashboardCard(
                     valueColor = ramColor,
                     modifier = Modifier.testTag("compact_metric_ram_breakdown")
                 )
-
-                if (showExtendedTelemetry) {
-                    val pickups by RealtimeUsageTracker.realtimePickups.collectAsStateWithLifecycle()
-                    // Item 5: Device Pickups
-                    CompactMetricItem(
-                        icon = Icons.Default.PhonelinkRing,
-                        iconTint = Color(0xFFEC4899),
-                        title = "Device Pickups",
-                        value = "$pickups Pickups",
-                        subtitle = "screen pick-ups",
-                        modifier = Modifier.testTag("compact_metric_device_pickups")
-                    )
-                }
             }
         }
     }

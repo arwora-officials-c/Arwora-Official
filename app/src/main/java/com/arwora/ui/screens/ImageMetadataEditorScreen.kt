@@ -37,6 +37,8 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.arwora.ui.MainViewModel
 import com.arwora.ui.components.ArworaAnimatedSwitch
+import com.arwora.ui.components.GooglePlayCompactLinearProgress
+import com.arwora.ui.components.GoogleStyleLinearLoadingCard
 import com.arwora.ui.navigation.Screen
 import com.arwora.utils.ExifEditorUtils
 import com.arwora.utils.ExifMetadata
@@ -339,9 +341,9 @@ fun ImageMetadataEditorScreen(navController: NavController, viewModel: MainViewM
                             contentPadding = PaddingValues(horizontal = 8.dp)
                         ) {
                             if (isStripping) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp,
+                                GooglePlayCompactLinearProgress(
+                                    width = 24.dp,
+                                    height = 3.5.dp,
                                     color = MaterialTheme.colorScheme.onError
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
@@ -412,9 +414,9 @@ fun ImageMetadataEditorScreen(navController: NavController, viewModel: MainViewM
                             contentPadding = PaddingValues(horizontal = 6.dp)
                         ) {
                             if (isSaving) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp,
+                                GooglePlayCompactLinearProgress(
+                                    width = 24.dp,
+                                    height = 3.5.dp,
                                     color = MaterialTheme.colorScheme.onPrimary
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
@@ -449,10 +451,14 @@ fun ImageMetadataEditorScreen(navController: NavController, viewModel: MainViewM
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(200.dp),
+                            .padding(vertical = 12.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                        GoogleStyleLinearLoadingCard(
+                            title = "Loading media & EXIF metadata...",
+                            subtitle = "Inspecting image and video headers",
+                            icon = Icons.Default.PhotoLibrary
+                        )
                     }
                 } else if (selectedMediaUri == null) {
                     // Empty State Card with Media Options
@@ -1205,9 +1211,9 @@ fun StripAllExifCard(
                 )
             ) {
                 if (isStripping) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp,
+                    GooglePlayCompactLinearProgress(
+                        width = 28.dp,
+                        height = 4.dp,
                         color = MaterialTheme.colorScheme.onError
                     )
                     Spacer(modifier = Modifier.width(8.dp))
@@ -1841,9 +1847,9 @@ fun RemoveAllMetadataCard(
                     )
                 ) {
                     if (isStripping) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
+                        GooglePlayCompactLinearProgress(
+                            width = 26.dp,
+                            height = 4.dp,
                             color = MaterialTheme.colorScheme.onError
                         )
                         Spacer(modifier = Modifier.width(8.dp))

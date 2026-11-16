@@ -27,6 +27,7 @@ import kotlinx.coroutines.launch
 class MockLocationService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + Job())
+    private var monitorJob: Job? = null
     private var isServiceRunning = false
 
     companion object {
@@ -125,7 +126,8 @@ class MockLocationService : Service() {
         }
 
         // Monitor state changes to keep notification & lifecycle in sync
-        serviceScope.launch {
+        monitorJob?.cancel()
+        monitorJob = serviceScope.launch {
             FakeGpsManager.isMockingActive.collect { active ->
                 if (!active && isServiceRunning) {
                     stopMocking()

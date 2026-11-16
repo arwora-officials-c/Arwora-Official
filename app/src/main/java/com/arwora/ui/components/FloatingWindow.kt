@@ -50,7 +50,7 @@ enum class FloatingWindowState {
     EXPANDED, COMPACT, MINIMIZED
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun FloatingWindowOverlay(viewModel: MainViewModel) {
     val context = LocalContext.current
@@ -130,14 +130,26 @@ fun FloatingWindowOverlay(viewModel: MainViewModel) {
             .zIndex(1000f)
     ) {
         val density = LocalDensity.current
-        val maxWidthPx = with(density) { maxWidth.toPx() }
-        val maxHeightPx = with(density) { maxHeight.toPx() }
+        val screenMaxWidthDp = maxWidth
+        val screenMaxHeightDp = maxHeight
+        val maxWidthPx = with(density) { screenMaxWidthDp.toPx() }
+        val maxHeightPx = with(density) { screenMaxHeightDp.toPx() }
 
         var offsetX by remember { mutableFloatStateOf(savedX) }
         var offsetY by remember { mutableFloatStateOf(savedY) }
 
-        var customWidthDp by remember { mutableStateOf(350.dp) }
-        var customHeightDp by remember { mutableStateOf(480.dp) }
+        val minWidthDp = 260.dp
+        val minExpandedHeightDp = 280.dp
+        val maxWindowWidthDp = (screenMaxWidthDp * 0.95f).coerceAtLeast(minWidthDp)
+        val maxWindowHeightDp = (screenMaxHeightDp * 0.85f).coerceAtLeast(minExpandedHeightDp)
+
+        var customWidthDp by remember { mutableStateOf(350.dp.coerceIn(minWidthDp, maxWindowWidthDp)) }
+        var customHeightDp by remember { mutableStateOf(480.dp.coerceIn(minExpandedHeightDp, maxWindowHeightDp)) }
+
+        LaunchedEffect(maxWidth, maxHeight) {
+            customWidthDp = customWidthDp.coerceIn(minWidthDp, maxWindowWidthDp)
+            customHeightDp = customHeightDp.coerceIn(minExpandedHeightDp, maxWindowHeightDp)
+        }
 
         // Sync local offset with saved position if it changes externally
         LaunchedEffect(savedX, savedY) {
@@ -221,9 +233,12 @@ fun FloatingWindowOverlay(viewModel: MainViewModel) {
 
                 // ==================== 2. COMPACT STATE ====================
                 FloatingWindowState.COMPACT -> {
+                    val compactWidthDp = (screenMaxWidthDp * 0.92f).coerceIn(260.dp, 340.dp)
+                    val compactMaxHeightDp = (screenMaxHeightDp * 0.72f).coerceAtLeast(200.dp)
                     Card(
                         modifier = Modifier
-                            .width(340.dp)
+                            .width(compactWidthDp)
+                            .heightIn(min = 200.dp, max = compactMaxHeightDp)
                             .shadow(12.dp, RoundedCornerShape(24.dp))
                             .clip(RoundedCornerShape(24.dp)),
                         shape = RoundedCornerShape(24.dp),
@@ -243,7 +258,8 @@ fun FloatingWindowOverlay(viewModel: MainViewModel) {
                                             },
                                             onDrag = { change, dragAmount ->
                                                 change.consume()
-                                                offsetX = (offsetX + dragAmount.x).coerceIn(0f, (maxWidthPx - 340f).coerceAtLeast(0f))
+                                                val compactW = with(density) { compactWidthDp.toPx() }
+                                                offsetX = (offsetX + dragAmount.x).coerceIn(0f, (maxWidthPx - compactW).coerceAtLeast(0f))
                                                 offsetY = (offsetY + dragAmount.y).coerceIn(0f, (maxHeightPx - 200f).coerceAtLeast(0f))
                                             }
                                         )
@@ -267,7 +283,8 @@ fun FloatingWindowOverlay(viewModel: MainViewModel) {
                                         com.arwora.utils.AppConstants.APP_NAME,
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold,
-                                        maxLines = 1
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
 
@@ -293,10 +310,17 @@ fun FloatingWindowOverlay(viewModel: MainViewModel) {
                                 }
                             }
 
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                // Quick Gender Selector
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .verticalScroll(rememberScrollState())
+                                    .padding(12.dp)
+                            ) {
+                                // Quick Gender Selector (horizontally scrollable so chips never truncate)
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     listOf("Male", "Female", "Unisex").forEach { g ->
@@ -315,10 +339,11 @@ fun FloatingWindowOverlay(viewModel: MainViewModel) {
                                                         else -> "⚥ Mix"
                                                     },
                                                     fontSize = 11.sp,
+                                                    maxLines = 1,
+                                                    softWrap = false,
                                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                                 )
                                             },
-                                            modifier = Modifier.weight(1f),
                                             colors = FilterChipDefaults.filterChipColors(
                                                 selectedContainerColor = MaterialTheme.colorScheme.primary,
                                                 selectedLabelColor = MaterialTheme.colorScheme.onPrimary
@@ -345,7 +370,9 @@ fun FloatingWindowOverlay(viewModel: MainViewModel) {
                                                 activeTool.uppercase(),
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = MaterialTheme.colorScheme.primary,
-                                                fontWeight = FontWeight.Bold
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
                                             )
                                             Text(
                                                 FontStyles.apply(currentResultText, fontStyle),
@@ -373,7 +400,7 @@ fun FloatingWindowOverlay(viewModel: MainViewModel) {
                                                 modifier = Modifier.size(36.dp)
                                             ) {
                                                 if (isGenerating) {
-                                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                                    GooglePlayCompactLinearProgress(width = 22.dp, height = 3.dp)
                                                 } else {
                                                     Icon(
                                                         Icons.Default.Refresh,
@@ -405,7 +432,7 @@ fun FloatingWindowOverlay(viewModel: MainViewModel) {
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                             elevation = CardDefaults.cardElevation(defaultElevation = 10.dp)
                         ) {
-                            Column {
+                            Column(modifier = Modifier.fillMaxSize()) {
                             // Dedicated Draggable Header Area (Fixed)
                             Row(
                                 modifier = Modifier
@@ -418,8 +445,10 @@ fun FloatingWindowOverlay(viewModel: MainViewModel) {
                                             },
                                             onDrag = { change, dragAmount ->
                                                 change.consume()
-                                                offsetX = (offsetX + dragAmount.x).coerceIn(0f, (maxWidthPx - 360f).coerceAtLeast(0f))
-                                                offsetY = (offsetY + dragAmount.y).coerceIn(0f, (maxHeightPx - 400f).coerceAtLeast(0f))
+                                                val wPx = with(density) { customWidthDp.toPx() }
+                                                val hPx = with(density) { customHeightDp.toPx() }
+                                                offsetX = (offsetX + dragAmount.x).coerceIn(0f, (maxWidthPx - wPx).coerceAtLeast(0f))
+                                                offsetY = (offsetY + dragAmount.y).coerceIn(0f, (maxHeightPx - hPx).coerceAtLeast(0f))
                                             }
                                         )
                                     }
@@ -453,11 +482,13 @@ fun FloatingWindowOverlay(viewModel: MainViewModel) {
                                             modifier = Modifier.size(24.dp)
                                         )
                                     }
-                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
                                     Text(
                                         com.arwora.utils.AppConstants.APP_NAME,
                                         style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.ExtraBold
+                                        fontWeight = FontWeight.ExtraBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
 
@@ -486,42 +517,52 @@ fun FloatingWindowOverlay(viewModel: MainViewModel) {
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(12.dp)
-                                    .verticalScroll(rememberScrollState()),
+                                    .weight(1f)
+                                    .verticalScroll(rememberScrollState())
+                                    .padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 32.dp),
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                // Tool Selector Tabs / Dropdown
+                                // Tool Selector Tabs / Dropdown (horizontally scrollable)
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    val topTools = listOf("Name", "Username", "Password")
-                                    topTools.forEach { tool ->
-                                        val isSelected = activeTool == tool
-                                        FilterChip(
-                                            selected = isSelected,
-                                            onClick = {
-                                                viewModel.setActiveTool(tool)
-                                                viewModel.generateCurrentTool()
-                                            },
-                                            label = {
-                                                Text(
-                                                    when(tool) {
-                                                        "Name" -> "Name"
-                                                        "Username" -> "User"
-                                                        else -> "Pwd"
-                                                    },
-                                                    fontSize = 11.sp,
-                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    Row(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        val topTools = listOf("Name", "Username", "Password")
+                                        topTools.forEach { tool ->
+                                            val isSelected = activeTool == tool
+                                            FilterChip(
+                                                selected = isSelected,
+                                                onClick = {
+                                                    viewModel.setActiveTool(tool)
+                                                    viewModel.generateCurrentTool()
+                                                },
+                                                label = {
+                                                    Text(
+                                                        when(tool) {
+                                                            "Name" -> "Name"
+                                                            "Username" -> "Username"
+                                                            else -> "Password"
+                                                        },
+                                                        fontSize = 11.sp,
+                                                        maxLines = 1,
+                                                        softWrap = false,
+                                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                                    )
+                                                },
+                                                colors = FilterChipDefaults.filterChipColors(
+                                                    selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimary
                                                 )
-                                            },
-                                            modifier = Modifier.weight(1f),
-                                            colors = FilterChipDefaults.filterChipColors(
-                                                selectedContainerColor = MaterialTheme.colorScheme.primary,
-                                                selectedLabelColor = MaterialTheme.colorScheme.onPrimary
                                             )
-                                        )
+                                        }
                                     }
 
                                     Box {
@@ -632,7 +673,11 @@ fun FloatingWindowOverlay(viewModel: MainViewModel) {
                                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                                         ) {
                                             if (isGenerating) {
-                                                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
+                                                GooglePlayCompactLinearProgress(
+                                                    width = 40.dp,
+                                                    height = 4.dp,
+                                                    color = MaterialTheme.colorScheme.onPrimary
+                                                )
                                             } else {
                                                 Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                                                 Spacer(modifier = Modifier.width(4.dp))
@@ -650,7 +695,9 @@ fun FloatingWindowOverlay(viewModel: MainViewModel) {
                                         // 1. Gender Controls
                                         Text("GENDER", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                                         Row(
-                                            modifier = Modifier.fillMaxWidth(),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .horizontalScroll(rememberScrollState()),
                                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
                                             listOf("Male", "Female", "Unisex").forEach { g ->
@@ -669,10 +716,11 @@ fun FloatingWindowOverlay(viewModel: MainViewModel) {
                                                                 else -> "⚥ Mix"
                                                             },
                                                             fontSize = 11.sp,
+                                                            maxLines = 1,
+                                                            softWrap = false,
                                                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                                         )
                                                     },
-                                                    modifier = Modifier.weight(1f),
                                                     colors = FilterChipDefaults.filterChipColors(
                                                         selectedContainerColor = MaterialTheme.colorScheme.primary,
                                                         selectedLabelColor = MaterialTheme.colorScheme.onPrimary
@@ -894,12 +942,17 @@ fun FloatingWindowOverlay(viewModel: MainViewModel) {
 
                                                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                                                 Text("Name Length: $selectedLength", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .horizontalScroll(rememberScrollState()),
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
                                                     listOf("Short", "Medium", "Long").forEach { len ->
                                                         FilterChip(
                                                             selected = selectedLength == len,
                                                             onClick = { viewModel.setNameLength(len) },
-                                                            label = { Text(len, fontSize = 10.sp) }
+                                                            label = { Text(len, fontSize = 10.sp, maxLines = 1, softWrap = false) }
                                                         )
                                                     }
                                                 }
@@ -971,7 +1024,9 @@ fun FloatingWindowOverlay(viewModel: MainViewModel) {
                                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                         Text("USERNAME STYLE", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                                         Row(
-                                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .horizontalScroll(rememberScrollState()),
                                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
                                             listOf("Random", "Aesthetic", "Cute", "Gaming").forEach { s ->
@@ -981,37 +1036,29 @@ fun FloatingWindowOverlay(viewModel: MainViewModel) {
                                                         viewModel.setUsernameStyle(s)
                                                         viewModel.generateCurrentTool()
                                                     },
-                                                    label = { Text(s, fontSize = 11.sp) }
+                                                    label = { Text(s, fontSize = 11.sp, maxLines = 1, softWrap = false) }
                                                 )
                                             }
                                         }
                                         Text("MODIFIERS", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                                        Row(modifier = Modifier.fillMaxWidth()) {
-                                            Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                                                Checkbox(checked = usernameAddNum, onCheckedChange = { viewModel.setUsernameAddNum(it); viewModel.generateCurrentTool() })
-                                                Text("Nums", fontSize = 11.sp)
-                                            }
-                                            Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                                                Checkbox(checked = usernameAddUnder, onCheckedChange = { viewModel.setUsernameAddUnder(it); viewModel.generateCurrentTool() })
-                                                Text("Under", fontSize = 11.sp)
-                                            }
-                                            Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                                                Checkbox(checked = usernameAddDot, onCheckedChange = { viewModel.setUsernameAddDot(it); viewModel.generateCurrentTool() })
-                                                Text("Dot", fontSize = 11.sp)
-                                            }
-                                        }
-                                        Row(modifier = Modifier.fillMaxWidth()) {
-                                            Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                                                Checkbox(checked = usernameShort, onCheckedChange = { viewModel.setUsernameShort(it); viewModel.generateCurrentTool() })
-                                                Text("Short", fontSize = 11.sp)
-                                            }
-                                            Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                                                Checkbox(checked = usernamePrefix, onCheckedChange = { viewModel.setUsernamePrefix(it); viewModel.generateCurrentTool() })
-                                                Text("Pre", fontSize = 11.sp)
-                                            }
-                                            Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                                                Checkbox(checked = usernameSuffix, onCheckedChange = { viewModel.setUsernameSuffix(it); viewModel.generateCurrentTool() })
-                                                Text("Suf", fontSize = 11.sp)
+                                        FlowRow(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            listOf(
+                                                Triple("Numbers", usernameAddNum) { v: Boolean -> viewModel.setUsernameAddNum(v); viewModel.generateCurrentTool() },
+                                                Triple("Under", usernameAddUnder) { v: Boolean -> viewModel.setUsernameAddUnder(v); viewModel.generateCurrentTool() },
+                                                Triple("Dots", usernameAddDot) { v: Boolean -> viewModel.setUsernameAddDot(v); viewModel.generateCurrentTool() },
+                                                Triple("Short", usernameShort) { v: Boolean -> viewModel.setUsernameShort(v); viewModel.generateCurrentTool() },
+                                                Triple("Prefix", usernamePrefix) { v: Boolean -> viewModel.setUsernamePrefix(v); viewModel.generateCurrentTool() },
+                                                Triple("Suffix", usernameSuffix) { v: Boolean -> viewModel.setUsernameSuffix(v); viewModel.generateCurrentTool() }
+                                            ).forEach { (label, checked, onChange) ->
+                                                FilterChip(
+                                                    selected = checked,
+                                                    onClick = { onChange(!checked) },
+                                                    label = { Text(label, fontSize = 11.sp, maxLines = 1, softWrap = false) }
+                                                )
                                             }
                                         }
                                     }
@@ -1028,32 +1075,24 @@ fun FloatingWindowOverlay(viewModel: MainViewModel) {
                                             },
                                             valueRange = 8f..32f
                                         )
-                                        Row(modifier = Modifier.fillMaxWidth()) {
-                                            Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                                                Checkbox(checked = passwordUpper, onCheckedChange = { viewModel.setPasswordUpper(it); viewModel.generateCurrentTool() })
-                                                Text("ABC", fontSize = 11.sp)
-                                            }
-                                            Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                                                Checkbox(checked = passwordLower, onCheckedChange = { viewModel.setPasswordLower(it); viewModel.generateCurrentTool() })
-                                                Text("abc", fontSize = 11.sp)
-                                            }
-                                            Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                                                Checkbox(checked = passwordNums, onCheckedChange = { viewModel.setPasswordNums(it); viewModel.generateCurrentTool() })
-                                                Text("123", fontSize = 11.sp)
-                                            }
-                                            Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                                                Checkbox(checked = passwordSyms, onCheckedChange = { viewModel.setPasswordSyms(it); viewModel.generateCurrentTool() })
-                                                Text("!@#", fontSize = 11.sp)
-                                            }
-                                        }
-                                        Row(modifier = Modifier.fillMaxWidth()) {
-                                            Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                                                Checkbox(checked = passwordExcludeSimilar, onCheckedChange = { viewModel.setPasswordExcludeSimilar(it); viewModel.generateCurrentTool() })
-                                                Text("No Sim", fontSize = 11.sp)
-                                            }
-                                            Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                                                Checkbox(checked = passwordExcludeAmbiguous, onCheckedChange = { viewModel.setPasswordExcludeAmbiguous(it); viewModel.generateCurrentTool() })
-                                                Text("No Amb", fontSize = 11.sp)
+                                        FlowRow(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            listOf(
+                                                Triple("ABC", passwordUpper) { v: Boolean -> viewModel.setPasswordUpper(v); viewModel.generateCurrentTool() },
+                                                Triple("abc", passwordLower) { v: Boolean -> viewModel.setPasswordLower(v); viewModel.generateCurrentTool() },
+                                                Triple("123", passwordNums) { v: Boolean -> viewModel.setPasswordNums(v); viewModel.generateCurrentTool() },
+                                                Triple("!@#", passwordSyms) { v: Boolean -> viewModel.setPasswordSyms(v); viewModel.generateCurrentTool() },
+                                                Triple("No Similar", passwordExcludeSimilar) { v: Boolean -> viewModel.setPasswordExcludeSimilar(v); viewModel.generateCurrentTool() },
+                                                Triple("No Ambiguous", passwordExcludeAmbiguous) { v: Boolean -> viewModel.setPasswordExcludeAmbiguous(v); viewModel.generateCurrentTool() }
+                                            ).forEach { (label, checked, onChange) ->
+                                                FilterChip(
+                                                    selected = checked,
+                                                    onClick = { onChange(!checked) },
+                                                    label = { Text(label, fontSize = 11.sp, maxLines = 1, softWrap = false) }
+                                                )
                                             }
                                         }
                                     }
@@ -1223,15 +1262,19 @@ fun FloatingWindowOverlay(viewModel: MainViewModel) {
                                 .size(32.dp)
                                 .clip(RoundedCornerShape(topStart = 12.dp, bottomEnd = 24.dp))
                                 .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f))
-                                .pointerInput(Unit) {
+                                .pointerInput(maxWidthPx, maxHeightPx) {
                                     detectDragGestures { change, dragAmount ->
                                         change.consume()
-                                        val maxW = this@BoxWithConstraints.maxWidth * 0.95f
-                                        val maxH = this@BoxWithConstraints.maxHeight * 0.85f
-                                        val newWidth = (customWidthDp + dragAmount.x.toDp()).coerceIn(260.dp, maxW)
-                                        val newHeight = (customHeightDp + dragAmount.y.toDp()).coerceIn(280.dp, maxH)
+                                        val maxW = maxWindowWidthDp
+                                        val maxH = maxWindowHeightDp
+                                        val newWidth = (customWidthDp + dragAmount.x.toDp()).coerceIn(minWidthDp, maxW)
+                                        val newHeight = (customHeightDp + dragAmount.y.toDp()).coerceIn(minExpandedHeightDp, maxH)
                                         customWidthDp = newWidth
                                         customHeightDp = newHeight
+                                        val wPx = with(density) { newWidth.toPx() }
+                                        val hPx = with(density) { newHeight.toPx() }
+                                        offsetX = offsetX.coerceIn(0f, (maxWidthPx - wPx).coerceAtLeast(0f))
+                                        offsetY = offsetY.coerceIn(0f, (maxHeightPx - hPx).coerceAtLeast(0f))
                                     }
                                 }
                         },

@@ -164,16 +164,10 @@ fun CustomBottomNavigationBar(
                                     pillBgColor,
                                     RoundedCornerShape(percent = 50)
                                 )
-                                .then(
-                                    if (isSelected) {
-                                        Modifier.border(
-                                            width = 1.dp,
-                                            color = pillBorderColor,
-                                            shape = RoundedCornerShape(percent = 50)
-                                        )
-                                    } else {
-                                        Modifier
-                                    }
+                                .border(
+                                    width = 1.dp,
+                                    color = pillBorderColor,
+                                    shape = RoundedCornerShape(percent = 50)
                                 ),
                             contentAlignment = Alignment.Center
                         ) {

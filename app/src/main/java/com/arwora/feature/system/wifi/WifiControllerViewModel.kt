@@ -14,7 +14,6 @@ import kotlinx.coroutines.flow.*
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
-import kotlin.math.abs
 import kotlin.random.Random
 
 class WifiControllerViewModel(application: Application) : AndroidViewModel(application) {
@@ -218,8 +217,9 @@ class WifiControllerViewModel(application: Application) : AndroidViewModel(appli
                 else -> dev.connectionDuration ?: "Active"
             }
 
+            val key = dev.mac.takeIf { it != "Unknown" && it.isNotBlank() } ?: dev.ip
             dev.copy(
-                customLabel = labels[dev.mac] ?: dev.customLabel,
+                customLabel = labels[key] ?: labels[dev.mac] ?: labels[dev.ip] ?: dev.customLabel,
                 isBlocked = blocked.contains(dev.mac),
                 connectionDuration = durationText
             )
@@ -357,22 +357,31 @@ class WifiControllerViewModel(application: Application) : AndroidViewModel(appli
                 }
 
                 MulticastHelper.acquireMdnsLock(context)
-                LanScanner.scanNetworkFlow(context, mode).collectLatest { event ->
+                LanScanner.scanNetworkFlow(context, mode).collect { event ->
                     when (event) {
                         is DeviceEvent.OnHostFound -> {
-                            val vendor = LanScanner.getVendor(event.mac ?: "")
-                            val mac = event.mac ?: "Unknown"
-                            val customLabel = wifiStore.customLabels.value[mac]
-                            val isBlocked = wifiStore.blockedMacs.value.contains(mac)
+                            val initialMac = event.mac ?: "Unknown"
+                            val currentNetwork = _networkInfo.value
+                            val isSelf = event.ip == currentNetwork.localIp
+                            val isGateway = event.ip == currentNetwork.gateway
 
-                            // Estimate per-device usage based on IP seed for tracking demo
-                            val seed = abs(event.ip.hashCode())
-                            val dlBytes = (200L * 1024 * 1024) + ((seed % 1500) * 1024 * 1024L)
-                            val ulBytes = (50L * 1024 * 1024) + ((seed % 400) * 1024 * 1024L)
+                            // Merge with Router Data if available
+                            val routerMatched = routerClientsJob.await().find { routerDev ->
+                                (routerDev.ip.isNotBlank() && routerDev.ip == event.ip) ||
+                                    (routerDev.mac != "Unknown" && routerDev.mac == event.mac)
+                            }
+
+                            val resolvedMac = if (routerMatched != null && initialMac == "Unknown") routerMatched.mac else initialMac
+                            val vendor = LanScanner.getVendor(resolvedMac)
+                            val labelKey = resolvedMac.takeIf { it != "Unknown" && it.isNotBlank() } ?: event.ip
+                            val customLabel = wifiStore.customLabels.value[labelKey]
+                                ?: wifiStore.customLabels.value[resolvedMac]
+                                ?: wifiStore.customLabels.value[event.ip]
+                            val isBlocked = wifiStore.blockedMacs.value.contains(resolvedMac)
 
                             val newDevice = DeviceInfo(
                                 ip = event.ip,
-                                mac = mac,
+                                mac = resolvedMac,
                                 vendor = vendor,
                                 friendlyName = null,
                                 customLabel = customLabel,
@@ -381,26 +390,15 @@ class WifiControllerViewModel(application: Application) : AndroidViewModel(appli
                                 latencyMs = event.latencyMs,
                                 openPorts = emptyList(),
                                 lastSeenTime = System.currentTimeMillis(),
-                                downloadUsageBytes = dlBytes,
-                                uploadUsageBytes = ulBytes,
+                                downloadUsageBytes = 0L,
+                                uploadUsageBytes = 0L,
                                 isBlocked = isBlocked
                             )
 
                             // Record device and trigger alert if unknown
                             wifiStore.recordDiscoveredDevice(newDevice)
 
-                            val currentNetwork = _networkInfo.value
-                            val isSelf = event.ip == currentNetwork.localIp
-                            val isGateway = event.ip == currentNetwork.gateway
-                            
-                            // Merge with Router Data if available
-                            val routerMatched = routerClientsJob.await().find { routerDev -> 
-                                (routerDev.ip.isNotBlank() && routerDev.ip == event.ip) || 
-                                (routerDev.mac != "Unknown" && routerDev.mac == event.mac) 
-                            }
-
                             val realDeviceInfo = newDevice.copy(
-                                mac = if (routerMatched != null && mac == "Unknown") routerMatched.mac else mac,
                                 band = if (isSelf || isGateway) (if (currentNetwork.frequency >= 4900) "5 GHz" else "2.4 GHz") else (routerMatched?.band ?: "Auto"),
                                 ssid = if (isSelf || isGateway) currentNetwork.ssid else (routerMatched?.ssid ?: "Local Network"),
                                 rssi = if (isSelf) currentNetwork.rssi else if (isGateway) -40 else (routerMatched?.rssi ?: Random.nextInt(-85, -60)),
@@ -415,8 +413,8 @@ class WifiControllerViewModel(application: Application) : AndroidViewModel(appli
                                 } else (routerMatched?.channel ?: 36),
                                 connectionDuration = if (isSelf) getHostDuration() else (routerMatched?.connectionDuration ?: "Active"),
                                 linkSpeedMbps = if (isSelf) currentNetwork.linkSpeedMbps else if (isGateway) 1200 else (routerMatched?.linkSpeedMbps ?: 292),
-                                downloadUsageBytes = routerMatched?.downloadUsageBytes ?: dlBytes,
-                                uploadUsageBytes = routerMatched?.uploadUsageBytes ?: ulBytes,
+                                downloadUsageBytes = 0L,
+                                uploadUsageBytes = 0L,
                                 accessSN = routerMatched?.accessSN ?: (if (isGateway) "GW-9921-AF" else "Internal"),
                                 accessName = routerMatched?.accessName ?: (if (isGateway) "Main Gateway" else "Access Point"),
                                 estimatedDistanceMeters = if (isSelf) 0.5 else if (isGateway) 2.5 else (routerMatched?.estimatedDistanceMeters ?: 8.0)
@@ -426,15 +424,57 @@ class WifiControllerViewModel(application: Application) : AndroidViewModel(appli
                             if (current.none { it.ip == event.ip }) {
                                 current.add(realDeviceInfo)
                                 _devices.value = current.sortedBy { ipToLong(it.ip) }
-                                _statusText.value = "Found ${current.size} devices • Names resolving..."
+                                _statusText.value = "Found ${current.size} devices • Resolving names..."
                             }
                         }
                         is DeviceEvent.OnNameResolved -> {
                             val current = _devices.value.map { device ->
                                 if (device.ip == event.ip) {
+                                    val resolvedHostname = if (event.source in listOf("mDNS", "mDNS Discovery", "NetBIOS", "Reverse DNS")) {
+                                        event.friendlyName
+                                    } else {
+                                        device.hostname
+                                    }
                                     device.copy(
                                         friendlyName = event.friendlyName,
-                                        nameSource = event.source
+                                        nameSource = event.source,
+                                        hostname = resolvedHostname
+                                    )
+                                } else {
+                                    device
+                                }
+                            }
+                            _devices.value = current
+                        }
+                        is DeviceEvent.OnMacResolved -> {
+                            val newVendor = LanScanner.getVendor(event.mac)
+                            val customLabels = wifiStore.customLabels.value
+                            val current = _devices.value.map { device ->
+                                if (device.ip == event.ip) {
+                                    val updatedLabel = customLabels[event.mac] ?: customLabels[device.ip] ?: device.customLabel
+                                    val updatedFriendlyName = if (device.nameSource == "Vendor/IP" && newVendor != "Generic" && newVendor != "Unknown") {
+                                        if (device.ip == _networkInfo.value.gateway) "$newVendor Router (Gateway)" else "$newVendor Device (${device.ip})"
+                                    } else {
+                                        device.friendlyName
+                                    }
+                                    device.copy(
+                                        mac = event.mac,
+                                        vendor = newVendor,
+                                        customLabel = updatedLabel,
+                                        friendlyName = updatedFriendlyName
+                                    )
+                                } else {
+                                    device
+                                }
+                            }
+                            _devices.value = current
+                        }
+                        is DeviceEvent.OnLatencyUpdated -> {
+                            val current = _devices.value.map { device ->
+                                if (device.ip == event.ip) {
+                                    device.copy(
+                                        latencyMs = event.latencyMs,
+                                        lastSeenTime = System.currentTimeMillis()
                                     )
                                 } else {
                                     device
@@ -546,13 +586,25 @@ class WifiControllerViewModel(application: Application) : AndroidViewModel(appli
 
     fun pingDevice(ip: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            val start = System.currentTimeMillis()
             try {
-                val address = InetAddress.getByName(ip)
-                val reachable = address.isReachable(1500)
-                val elapsed = System.currentTimeMillis() - start
-                if (reachable) {
-                    _snackbarMessage.emit("Ping to $ip: ${elapsed}ms")
+                val measuredMs = LanScanner.measureLatencyMs(ip, _scanMode.value)
+                if (measuredMs != null) {
+                    val updated = _devices.value.map { device ->
+                        if (device.ip == ip) {
+                            device.copy(
+                                latencyMs = measuredMs,
+                                lastSeenTime = System.currentTimeMillis()
+                            )
+                        } else {
+                            device
+                        }
+                    }
+                    _devices.value = updated
+                    val info = _networkInfo.value
+                    if (info.isConnected) {
+                        cache["${info.bssid}_${info.gateway}"] = updated
+                    }
+                    _snackbarMessage.emit("Ping to $ip: $measuredMs ms")
                 } else {
                     _snackbarMessage.emit("Ping to $ip: unreachable (timeout)")
                 }

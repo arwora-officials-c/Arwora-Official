@@ -42,6 +42,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.arwora.ui.MainViewModel
+import com.arwora.ui.components.GooglePlayCompactLinearProgress
+import com.arwora.ui.components.GoogleStyleLinearLoadingCard
 import com.arwora.ui.navigation.Screen
 import com.arwora.utils.DetailedTag
 import com.arwora.utils.ExifEditorUtils
@@ -228,20 +230,16 @@ fun MetadataViewerScreen(
         ) {
             if (isLoading) {
                 Box(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 20.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                        Text(
-                            text = "Extracting full EXIF & media metadata...",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    GoogleStyleLinearLoadingCard(
+                        title = "Extracting full EXIF & media metadata...",
+                        subtitle = "Scanning camera, GPS, and embedded file headers",
+                        icon = Icons.Default.ImageSearch
+                    )
                 }
             } else if (report == null) {
                 // Empty state to pick photo or video
@@ -776,8 +774,12 @@ fun PrivacyStatusCard(
                     )
                 ) {
                     if (isStripping) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onError)
-                        Spacer(modifier = Modifier.width(6.dp))
+                        GooglePlayCompactLinearProgress(
+                            width = 28.dp,
+                            height = 4.dp,
+                            color = MaterialTheme.colorScheme.onError
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text("Stripping EXIF...", style = MaterialTheme.typography.labelMedium)
                     } else {
                         Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -1292,8 +1294,12 @@ fun MetadataBottomActionCard(
                     )
                 ) {
                     if (isStripping) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onError)
-                        Spacer(modifier = Modifier.width(6.dp))
+                        GooglePlayCompactLinearProgress(
+                            width = 28.dp,
+                            height = 4.dp,
+                            color = MaterialTheme.colorScheme.onError
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text("Stripping...", style = MaterialTheme.typography.labelMedium)
                     } else {
                         Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(18.dp))

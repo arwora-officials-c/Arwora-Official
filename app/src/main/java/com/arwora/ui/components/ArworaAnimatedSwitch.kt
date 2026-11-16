@@ -1,7 +1,5 @@
 package com.arwora.ui.components
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -43,46 +41,15 @@ fun ArworaAnimatedSwitch(
     val resolvedInteractionSource = interactionSource ?: remember { MutableInteractionSource() }
     val isPressed by resolvedInteractionSource.collectIsPressedAsState()
 
-    val animSpec = tween<Color>(durationMillis = 220, easing = FastOutSlowInEasing)
-    val checkedThumb by animateColorAsState(
-        targetValue = MaterialTheme.colorScheme.onPrimary,
-        animationSpec = animSpec,
-        label = "switchCheckedThumb"
-    )
-    val checkedTrack by animateColorAsState(
-        targetValue = MaterialTheme.colorScheme.primary,
-        animationSpec = animSpec,
-        label = "switchCheckedTrack"
-    )
-    val checkedIcon by animateColorAsState(
-        targetValue = MaterialTheme.colorScheme.primary,
-        animationSpec = animSpec,
-        label = "switchCheckedIcon"
-    )
-    val uncheckedThumb by animateColorAsState(
-        targetValue = MaterialTheme.colorScheme.outline,
-        animationSpec = animSpec,
-        label = "switchUncheckedThumb"
-    )
-    val uncheckedTrack by animateColorAsState(
-        targetValue = MaterialTheme.colorScheme.surfaceVariant,
-        animationSpec = animSpec,
-        label = "switchUncheckedTrack"
-    )
-    val uncheckedBorder by animateColorAsState(
-        targetValue = MaterialTheme.colorScheme.outline.copy(alpha = 0.7f),
-        animationSpec = animSpec,
-        label = "switchUncheckedBorder"
-    )
-
+    val colorScheme = MaterialTheme.colorScheme
     val resolvedColors = colors ?: SwitchDefaults.colors(
-        checkedThumbColor = checkedThumb,
-        checkedTrackColor = checkedTrack,
-        checkedBorderColor = checkedTrack,
-        checkedIconColor = checkedIcon,
-        uncheckedThumbColor = uncheckedThumb,
-        uncheckedTrackColor = uncheckedTrack,
-        uncheckedBorderColor = uncheckedBorder
+        checkedThumbColor = colorScheme.onPrimary,
+        checkedTrackColor = colorScheme.primary,
+        checkedBorderColor = colorScheme.primary,
+        checkedIconColor = colorScheme.primary,
+        uncheckedThumbColor = colorScheme.outline,
+        uncheckedTrackColor = colorScheme.surfaceVariant,
+        uncheckedBorderColor = colorScheme.outline.copy(alpha = 0.7f)
     )
 
     val iconScale by animateFloatAsState(

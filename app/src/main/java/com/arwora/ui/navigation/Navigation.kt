@@ -61,7 +61,7 @@ import com.arwora.ui.screens.*
 import kotlinx.coroutines.launch
 
 /**
- * Allows nested screens (e.g., Home quick actions, System Social Hub card) to switch directly
+ * Allows nested screens (e.g., Home quick actions) to switch directly
  * to any main HorizontalPager tab by route, returning true if handled by the pager.
  */
 val LocalMainTabNavigator = staticCompositionLocalOf<((String) -> Boolean)?> { null }

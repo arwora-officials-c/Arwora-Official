@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.filled.WifiLock
 import androidx.compose.material.icons.filled.WifiOff
@@ -48,7 +49,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -69,6 +69,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -88,8 +89,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.arwora.ui.components.GooglePlayCompactLinearProgress
+import com.arwora.ui.components.GooglePlayLinearProgressBar
+import com.arwora.utils.ShizukuConnectionManager
+import com.arwora.utils.ShizukuConnectionState
 import kotlinx.coroutines.launch
 
 /**
@@ -144,11 +152,13 @@ fun WifiPasswordScreen(
     viewModel: WifiPasswordViewModel = viewModel()
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val networks by viewModel.filteredNetworks.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val isGlobalRevealAll by viewModel.isGlobalRevealAll.collectAsStateWithLifecycle()
     val isElevatedMode by viewModel.isElevatedModeAvailable.collectAsStateWithLifecycle()
+    val shizukuState by viewModel.shizukuState.collectAsStateWithLifecycle()
     val qrSelectedNetwork by viewModel.selectedNetworkForQr.collectAsStateWithLifecycle()
     val isAddDialogOpen by viewModel.isAddDialogOpen.collectAsStateWithLifecycle()
 
@@ -158,6 +168,30 @@ fun WifiPasswordScreen(
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    DisposableEffect(lifecycleOwner) {
+        val shizukuReg = ShizukuConnectionManager.registerListeners(
+            onBinderChanged = { viewModel.refreshShizukuStatus() },
+            onPermissionResult = { reqCode, granted ->
+                if (reqCode == 1002) {
+                    viewModel.refreshShizukuStatus()
+                    if (granted) {
+                        viewModel.refresh()
+                    }
+                }
+            }
+        )
+        val lifecycleObserver = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshShizukuStatus()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(lifecycleObserver)
+        onDispose {
+            ShizukuConnectionManager.unregisterListeners(shizukuReg)
+            lifecycleOwner.lifecycle.removeObserver(lifecycleObserver)
+        }
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -260,10 +294,49 @@ fun WifiPasswordScreen(
                     totalSaved = networks.size,
                     isGlobalReveal = isGlobalRevealAll,
                     isElevated = isElevatedMode,
+                    shizukuState = shizukuState,
                     isLoading = isLoading,
-                    onToggleRevealAll = { viewModel.toggleRevealAll() },
-                    onRequestShizuku = { viewModel.requestShizukuPermission() }
+                    onToggleRevealAll = { viewModel.toggleRevealAll() }
                 )
+            }
+
+            // 1b. Google Play Style Linear Progress Bar while reading system Wi-Fi files
+            if (isLoading) {
+                item {
+                    WifiContainerCard(
+                        modifier = Modifier.testTag("wifi_loading_progress_card")
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 18.dp, vertical = 14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "Reading saved Wi-Fi configurations...",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            GooglePlayLinearProgressBar(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("wifi_linear_progress_bar"),
+                                height = 6.dp
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 1c. Shizuku Warning Banner when Shizuku is inactive or permission denied
+            if (shizukuState != ShizukuConnectionState.CONNECTED) {
+                item {
+                    ShizukuWarningBanner(
+                        shizukuState = shizukuState,
+                        onConnectShizuku = { viewModel.connectShizuku(context) }
+                    )
+                }
             }
 
             // 2. Search & Filter Bar
@@ -276,12 +349,14 @@ fun WifiPasswordScreen(
 
             // 3. Network List
             if (networks.isEmpty() && !isLoading) {
-                item {
-                    WifiEmptyState(
-                        hasQuery = searchQuery.isNotBlank(),
-                        onClearSearch = { viewModel.onSearchQueryChanged("") },
-                        onAddNetwork = { viewModel.openAddDialog() }
-                    )
+                if (searchQuery.isNotBlank() || shizukuState == ShizukuConnectionState.CONNECTED) {
+                    item {
+                        WifiEmptyState(
+                            hasQuery = searchQuery.isNotBlank(),
+                            onClearSearch = { viewModel.onSearchQueryChanged("") },
+                            onAddNetwork = { viewModel.openAddDialog() }
+                        )
+                    }
                 }
             } else {
                 items(
@@ -360,9 +435,9 @@ private fun WifiOverviewCard(
     totalSaved: Int,
     isGlobalReveal: Boolean,
     isElevated: Boolean,
+    shizukuState: ShizukuConnectionState,
     isLoading: Boolean,
-    onToggleRevealAll: () -> Unit,
-    onRequestShizuku: () -> Unit
+    onToggleRevealAll: () -> Unit
 ) {
     WifiContainerCard {
         Column(modifier = Modifier.padding(18.dp)) {
@@ -412,9 +487,9 @@ private fun WifiOverviewCard(
                 }
 
                 if (isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(22.dp),
-                        strokeWidth = 2.dp,
+                    GooglePlayCompactLinearProgress(
+                        width = 40.dp,
+                        height = 4.dp,
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
@@ -428,6 +503,18 @@ private fun WifiOverviewCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                val badgeColor = when (shizukuState) {
+                    ShizukuConnectionState.CONNECTED -> Color(0xFF10B981)
+                    ShizukuConnectionState.PERMISSION_REQUIRED -> Color(0xFFF59E0B)
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                }
+                val badgeLabel = when {
+                    isElevated || shizukuState == ShizukuConnectionState.CONNECTED -> "Shizuku Connected"
+                    shizukuState == ShizukuConnectionState.PERMISSION_REQUIRED -> "Shizuku Permission Needed"
+                    shizukuState == ShizukuConnectionState.INACTIVE -> "Shizuku Inactive"
+                    else -> "Local Vault Only"
+                }
+
                 // Status Badge
                 Surface(
                     shape = RoundedCornerShape(8.dp),
@@ -442,14 +529,14 @@ private fun WifiOverviewCard(
                             modifier = Modifier
                                 .size(6.dp)
                                 .clip(CircleShape)
-                                .background(if (isElevated) Color(0xFF10B981) else MaterialTheme.colorScheme.primary)
+                                .background(badgeColor)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = if (isElevated) "Shizuku Root Sync" else "Local & System Vault",
+                            text = badgeLabel,
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.SemiBold,
-                            color = if (isElevated) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant
+                            color = badgeColor
                         )
                     }
                 }
@@ -478,6 +565,94 @@ private fun WifiOverviewCard(
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Clean warning banner shown when Shizuku is inactive, not installed, or permission is denied,
+ * offering a direct "Connect Shizuku" CTA instead of leaving users stuck on an empty state.
+ */
+@Composable
+private fun ShizukuWarningBanner(
+    shizukuState: ShizukuConnectionState,
+    onConnectShizuku: () -> Unit
+) {
+    val headline = when (shizukuState) {
+        ShizukuConnectionState.PERMISSION_REQUIRED -> "Shizuku Permission Denied"
+        ShizukuConnectionState.INACTIVE -> "Shizuku Service Inactive"
+        ShizukuConnectionState.NOT_INSTALLED -> "Shizuku Required for System Sync"
+        ShizukuConnectionState.CONNECTED -> "Shizuku Connected"
+    }
+    val description = when (shizukuState) {
+        ShizukuConnectionState.PERMISSION_REQUIRED ->
+            "Grant Shizuku permission so Arwora Hyper Toolkit can read saved Wi-Fi networks from the system store."
+        ShizukuConnectionState.INACTIVE ->
+            "Start Shizuku via Wireless Debugging or ADB, then tap Connect Shizuku to fetch saved Wi-Fi networks."
+        ShizukuConnectionState.NOT_INSTALLED ->
+            "Install and activate Shizuku to read system Wi-Fi configurations, or tap + to add networks manually."
+        ShizukuConnectionState.CONNECTED -> ""
+    }
+
+    WifiContainerCard(
+        modifier = Modifier.testTag("shizuku_warning_banner")
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.65f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.WarningAmber,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = headline,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Button(
+                onClick = onConnectShizuku,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .testTag("connect_shizuku_button")
+            ) {
+                Text(
+                    text = "Connect Shizuku",
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }
@@ -707,7 +882,8 @@ private fun WifiNetworkCard(
             Spacer(modifier = Modifier.height(14.dp))
 
             // Password Container with Show/Hide toggle and dedicated Copy Button
-            val isSecurityOpen = network.securityType == WifiSecurityType.OPEN || network.password.isEmpty()
+            val isSecurityOpen = network.securityType == WifiSecurityType.OPEN
+            val hasStoredPassword = network.password.isNotEmpty()
 
             Surface(
                 modifier = Modifier.fillMaxWidth(),
@@ -737,6 +913,13 @@ private fun WifiNetworkCard(
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        } else if (!hasStoredPassword) {
+                            Text(
+                                text = "Protected by system keystore (Root needed for PSK)",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         } else {
                             Text(
                                 text = if (isRevealed) network.password else "••••••••",
@@ -752,7 +935,7 @@ private fun WifiNetworkCard(
                         }
                     }
 
-                    if (!isSecurityOpen) {
+                    if (!isSecurityOpen && hasStoredPassword) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp)

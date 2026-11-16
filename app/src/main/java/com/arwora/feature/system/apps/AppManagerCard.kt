@@ -33,6 +33,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.arwora.ui.components.GooglePlayLinearProgressBar
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.arwora.feature.system.apps.capability.AppManagerCapability
@@ -301,7 +302,7 @@ fun AppManagerCard(
             Spacer(modifier = Modifier.height(12.dp))
 
             if (isLoading) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                GooglePlayLinearProgressBar(modifier = Modifier.fillMaxWidth(), height = 5.dp)
                 Spacer(modifier = Modifier.height(12.dp))
             }
 

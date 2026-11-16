@@ -41,6 +41,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -61,9 +62,11 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import com.arwora.service.MockLocationService
 import com.arwora.ui.AppManagerViewModel
-import com.arwora.ui.navigation.LocalMainTabNavigator
 import com.arwora.ui.navigation.Screen
 import com.arwora.ui.components.FakeDeviceDialog
+import com.arwora.ui.components.GooglePlayCompactLinearProgress
+import com.arwora.ui.components.GooglePlayLinearProgressBar
+import com.arwora.ui.components.GoogleStyleLinearLoadingCard
 import com.arwora.feature.system.shell.ShellCommandCard
 import com.arwora.feature.system.shell.ShellCommandViewModel
 import com.arwora.feature.system.linkshortener.LinkShortenerCard
@@ -454,35 +457,29 @@ fun SystemDashboardScreen(
                     Column(modifier = Modifier.padding(16.dp)) {
                         @OptIn(ExperimentalLayoutApi::class)
                         FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.20f))
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(6.dp)
-                                            .clip(CircleShape)
-                                            .background(Color(0xFF10B981))
-                                    )
-                                    Text(
-                                        text = "System Status: Online",
-                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
+                            DashboardStatusBadge(
+                                text = "System Status: Online",
+                                dotColor = Color(0xFF10B981),
+                                containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                                borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.20f),
+                                textColor = MaterialTheme.colorScheme.primary,
+                                testTagName = "hero_system_status_chip",
+                                modifier = Modifier.align(Alignment.CenterVertically)
+                            )
 
                             val notifChipColor = if (hasNotificationAccess) Color(0xFF10B981) else Color(0xFFF59E0B)
-                            Surface(
+                            DashboardStatusBadge(
+                                text = if (hasNotificationAccess) "Notifications: Granted" else "Notifications: Off",
+                                dotColor = notifChipColor,
+                                containerColor = notifChipColor.copy(alpha = 0.10f),
+                                borderColor = notifChipColor.copy(alpha = 0.25f),
+                                textColor = notifChipColor,
+                                testTagName = "hero_notification_status_chip",
+                                modifier = Modifier.align(Alignment.CenterVertically),
                                 onClick = {
                                     SoundEffectManager.playClick()
                                     if (!hasNotificationAccess) {
@@ -492,37 +489,26 @@ fun SystemDashboardScreen(
                                             navController.navigate(Screen.NotificationHistory.route)
                                         }
                                     }
-                                },
-                                shape = RoundedCornerShape(8.dp),
-                                color = notifChipColor.copy(alpha = 0.10f),
-                                border = BorderStroke(1.dp, notifChipColor.copy(alpha = 0.25f)),
-                                modifier = Modifier.testTag("hero_notification_status_chip")
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(6.dp)
-                                            .clip(CircleShape)
-                                            .background(notifChipColor)
-                                    )
-                                    Text(
-                                        text = if (hasNotificationAccess) "Notifications: Granted" else "Notifications: Off",
-                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                        color = notifChipColor
-                                    )
                                 }
-                            }
+                            )
 
                             val shizukuChipColor = when {
                                 hasShizukuPerm && isShizukuAvailable -> Color(0xFF10B981)
                                 isShizukuAvailable -> Color(0xFFF59E0B)
                                 else -> MaterialTheme.colorScheme.onSurfaceVariant
                             }
-                            Surface(
+                            DashboardStatusBadge(
+                                text = when {
+                                    hasShizukuPerm && isShizukuAvailable -> "Shizuku: Connected"
+                                    isShizukuAvailable -> "Shizuku: Authorize"
+                                    else -> "Shizuku: Inactive"
+                                },
+                                dotColor = shizukuChipColor,
+                                containerColor = shizukuChipColor.copy(alpha = 0.10f),
+                                borderColor = shizukuChipColor.copy(alpha = 0.25f),
+                                textColor = shizukuChipColor,
+                                testTagName = "hero_shizuku_status_chip",
+                                modifier = Modifier.align(Alignment.CenterVertically),
                                 onClick = {
                                     SoundEffectManager.playClick()
                                     ShizukuConnectionManager.connect(
@@ -531,34 +517,8 @@ fun SystemDashboardScreen(
                                         onConnected = { refreshDashboardStatuses() },
                                         onPermissionRequested = { refreshDashboardStatuses() }
                                     )
-                                },
-                                shape = RoundedCornerShape(8.dp),
-                                color = shizukuChipColor.copy(alpha = 0.10f),
-                                border = BorderStroke(1.dp, shizukuChipColor.copy(alpha = 0.25f)),
-                                modifier = Modifier.testTag("hero_shizuku_status_chip")
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(6.dp)
-                                            .clip(CircleShape)
-                                            .background(shizukuChipColor)
-                                    )
-                                    Text(
-                                        text = when {
-                                            hasShizukuPerm && isShizukuAvailable -> "Shizuku: Connected"
-                                            isShizukuAvailable -> "Shizuku: Authorize"
-                                            else -> "Shizuku: Inactive"
-                                        },
-                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                        color = shizukuChipColor
-                                    )
                                 }
-                            }
+                            )
                         }
 
                         Spacer(modifier = Modifier.height(10.dp))
@@ -1434,7 +1394,13 @@ fun SystemDashboardScreen(
                                                 enabled = !isLoadingIp
                                             ) {
                                                 if (isLoadingIp) {
-                                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
+                                                    GooglePlayCompactLinearProgress(
+                                                        width = 36.dp,
+                                                        height = 4.dp,
+                                                        color = MaterialTheme.colorScheme.onPrimary
+                                                    )
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Text("Looking up...")
                                                 } else {
                                                     Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
                                                     Spacer(modifier = Modifier.width(8.dp))
@@ -1445,12 +1411,11 @@ fun SystemDashboardScreen(
                                     }
 
                                     if (isLoadingIp) {
-                                        Box(
-                                            modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                                        }
+                                        GoogleStyleLinearLoadingCard(
+                                            title = "Resolving IP & WHOIS Intelligence...",
+                                            subtitle = "Querying ASN, geolocation, and registrar records",
+                                            icon = Icons.Default.TravelExplore
+                                        )
                                     } else {
                                         val details = ipDetails
                                         if (details != null) {
@@ -1517,7 +1482,7 @@ fun SystemDashboardScreen(
                                                     }
                                                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
                                                     if (isLoadingReverseDns) {
-                                                        CircularProgressIndicator(modifier = Modifier.size(18.dp).align(Alignment.CenterHorizontally))
+                                                        GooglePlayLinearProgressBar(modifier = Modifier.fillMaxWidth(), height = 4.dp)
                                                     } else {
                                                         val ptrText = if (reverseDnsResult.isEmpty() || reverseDnsResult == "No PTR Record") "No reverse DNS found" else reverseDnsResult
                                                         Text(
@@ -1609,7 +1574,7 @@ fun SystemDashboardScreen(
                                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
                                             
                                             if (isScanningPorts) {
-                                                CircularProgressIndicator(modifier = Modifier.size(18.dp).align(Alignment.CenterHorizontally))
+                                                GooglePlayLinearProgressBar(modifier = Modifier.fillMaxWidth(), height = 4.dp)
                                             } else {
                                                 if (portScanResults.isEmpty()) {
                                                     Text("No target resolved. Perform WHOIS lookup first.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1651,7 +1616,7 @@ fun SystemDashboardScreen(
                                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
                                             
                                             if (isPinging) {
-                                                CircularProgressIndicator(modifier = Modifier.size(18.dp).align(Alignment.CenterHorizontally))
+                                                GooglePlayLinearProgressBar(modifier = Modifier.fillMaxWidth(), height = 4.dp)
                                             } else {
                                                 pingResult?.let { pr ->
                                                     TooltipRow(
@@ -1666,7 +1631,7 @@ fun SystemDashboardScreen(
                                             Text("Network Route Hops (Traceroute)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                                             if (isTracerouting) {
-                                                CircularProgressIndicator(modifier = Modifier.size(18.dp).align(Alignment.CenterHorizontally))
+                                                GooglePlayLinearProgressBar(modifier = Modifier.fillMaxWidth(), height = 4.dp)
                                             } else {
                                                 if (tracerouteHops.isEmpty()) {
                                                     Text("Hops not resolved.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1866,7 +1831,13 @@ fun SystemDashboardScreen(
                                                 enabled = !isCheckingSsl
                                             ) {
                                                 if (isCheckingSsl) {
-                                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
+                                                    GooglePlayCompactLinearProgress(
+                                                        width = 36.dp,
+                                                        height = 4.dp,
+                                                        color = MaterialTheme.colorScheme.onPrimary
+                                                    )
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Text("Verifying SSL...")
                                                 } else {
                                                     Text("Verify SSL Validity")
                                                 }
@@ -1950,7 +1921,13 @@ fun SystemDashboardScreen(
                                                 enabled = !isFetchingHeaders
                                             ) {
                                                 if (isFetchingHeaders) {
-                                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
+                                                    GooglePlayCompactLinearProgress(
+                                                        width = 36.dp,
+                                                        height = 4.dp,
+                                                        color = MaterialTheme.colorScheme.onPrimary
+                                                    )
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Text("Fetching Headers...")
                                                 } else {
                                                     Text("Parse HTTP Headers")
                                                 }
@@ -2043,7 +2020,13 @@ fun SystemDashboardScreen(
                                                 enabled = !isCheckingDns
                                             ) {
                                                 if (isCheckingDns) {
-                                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
+                                                    GooglePlayCompactLinearProgress(
+                                                        width = 36.dp,
+                                                        height = 4.dp,
+                                                        color = MaterialTheme.colorScheme.onPrimary
+                                                    )
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Text("Checking DNS...")
                                                 } else {
                                                     Text("Check Global Propagation")
                                                 }
@@ -2525,31 +2508,6 @@ fun SystemDashboardScreen(
                 )
             }
 
-            // SECTION 4: OTHER SYSTEM UTILITIES
-            item {
-                SectionHeader(title = "Other System Utilities")
-            }
-
-            item {
-                val tabNavigator = LocalMainTabNavigator.current
-                SystemActionRowCard(
-                    title = "Social Hub",
-                    subtitle = "Download reels & social videos",
-                    icon = Icons.Default.Share,
-                    iconColor = MaterialTheme.colorScheme.primary,
-                    badge = "Social",
-                    badgeColor = MaterialTheme.colorScheme.primary,
-                    onClick = {
-                        SoundEffectManager.playClick()
-                        if (tabNavigator?.invoke(Screen.Social.route) != true) {
-                            navController.navigate(Screen.Social.route)
-                        }
-                    }
-                )
-            }
-
-
-
             item {
                 Spacer(modifier = Modifier.height(96.dp))
             }
@@ -2567,10 +2525,10 @@ fun SystemDashboardScreen(
                         text = "To allow this app to inject fake GPS coordinates system-wide:",
                         style = MaterialTheme.typography.bodyMedium
                     )
-                    Text("1. Open Android **Developer Options**.", fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodySmall)
-                    Text("2. Scroll to **Select mock location app**.", fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodySmall)
-                    Text("3. Choose **${context.applicationInfo.loadLabel(context.packageManager)}**.", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
-                    Text("4. Return here and tap **Start Mock GPS**.", fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodySmall)
+                    Text("1. Open Android Developer Options.", fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodySmall)
+                    Text("2. Scroll to 'Select mock location app'.", fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodySmall)
+                    Text("3. Choose ${context.applicationInfo.loadLabel(context.packageManager)}.", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                    Text("4. Return here and tap Start Mock GPS.", fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodySmall)
                 }
             },
             confirmButton = {
@@ -3050,5 +3008,58 @@ fun SystemCard(
             elevation = cardElevation,
             content = content
         )
+    }
+}
+
+@Composable
+private fun DashboardStatusBadge(
+    text: String,
+    dotColor: Color,
+    containerColor: Color,
+    borderColor: Color,
+    textColor: Color,
+    testTagName: String,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null
+) {
+    val pillShape = RoundedCornerShape(50.dp)
+    Surface(
+        shape = pillShape,
+        color = containerColor,
+        border = BorderStroke(1.dp, borderColor),
+        modifier = modifier
+            .defaultMinSize(minHeight = 32.dp)
+            .clip(pillShape)
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(role = Role.Button, onClick = onClick)
+                } else {
+                    Modifier
+                }
+            )
+            .testTag(testTagName)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(dotColor)
+            )
+            Text(
+                text = text,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                fontWeight = FontWeight.Medium,
+                color = textColor,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }

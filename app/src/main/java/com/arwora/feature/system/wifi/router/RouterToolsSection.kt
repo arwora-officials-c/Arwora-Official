@@ -29,6 +29,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.arwora.feature.system.wifi.DeviceInfo
 import com.arwora.feature.system.wifi.GatewayPingResult
+import com.arwora.ui.components.GooglePlayCompactLinearProgress
+import com.arwora.ui.components.GooglePlayLinearProgressBar
 
 @Composable
 fun RouterToolsSection(
@@ -124,9 +126,9 @@ fun RouterToolsSection(
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                         ) {
                             if (isPinging) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp,
+                                GooglePlayCompactLinearProgress(
+                                    width = 24.dp,
+                                    height = 3.5.dp,
                                     color = MaterialTheme.colorScheme.onPrimary
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
@@ -141,7 +143,7 @@ fun RouterToolsSection(
 
                     if (isPinging) {
                         Spacer(modifier = Modifier.height(12.dp))
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        GooglePlayLinearProgressBar(modifier = Modifier.fillMaxWidth(), height = 5.dp)
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
                             text = "Probing router gateway & testing packet stability...",

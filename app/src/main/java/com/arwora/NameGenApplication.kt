@@ -93,10 +93,12 @@ class NameGenApplication : Application() {
             android.util.Log.e("NameGenApplication", "Failed to initialize YoutubeDL engine", e)
         }
 
-        // Defer audio engine synthesis and hardware AudioTrack allocations to run strictly post-first-frame
+        // Defer audio engine synthesis, hardware AudioTrack allocations, and Wi-Fi auto-pair monitor to run post-first-frame
         StartupDefer.schedulePostFirstFrame(this) {
             com.arwora.utils.SoundEffectManager.init(this@NameGenApplication)
             com.arwora.feature.system.battery.service.BatteryMonitorManager.init(this@NameGenApplication)
+            com.arwora.utils.WirelessPairingManager.init(this@NameGenApplication)
+            com.arwora.service.WifiAutoPairMonitor.syncWithPreference(this@NameGenApplication)
         }
     }
 }

@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
@@ -54,7 +53,6 @@ fun ConnectedDevicesSection(
     onStopScan: () -> Unit,
     onSaveCustomName: (mac: String, name: String) -> Unit,
     onPingDevice: (DeviceInfo) -> Unit,
-    onToggleBlock: (DeviceInfo) -> Unit,
     alerts: List<DeviceAlert>,
     alertsEnabled: Boolean,
     onToggleAlerts: (Boolean) -> Unit,
@@ -326,7 +324,6 @@ fun ConnectedDevicesSection(
                         device = device,
                         onEditName = { editingDevice = device },
                         onPing = { onPingDevice(device) },
-                        onToggleBlock = { onToggleBlock(device) },
                         onCopy = { text, label ->
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             clipboard.setPrimaryClip(ClipData.newPlainText(label, text))
@@ -385,10 +382,9 @@ private fun DeviceSummaryCard(
     device: DeviceInfo,
     onEditName: () -> Unit,
     onPing: () -> Unit,
-    onToggleBlock: () -> Unit,
     onCopy: (text: String, label: String) -> Unit
 ) {
-    val displayName = device.customLabel ?: device.friendlyName ?: device.vendor.ifBlank { "Network Host" }
+    val displayName = device.customLabel ?: device.friendlyName ?: device.hostname ?: device.vendor.ifBlank { "Network Host" }
     val formattedLastSeen = remember(device.lastSeenTime) {
         val diff = System.currentTimeMillis() - device.lastSeenTime
         when {
@@ -398,26 +394,11 @@ private fun DeviceSummaryCard(
         }
     }
 
-    // Format download & upload usage nicely
-    val usageText = remember(device.downloadUsageBytes, device.uploadUsageBytes) {
-        val dlMb = device.downloadUsageBytes / (1024.0 * 1024.0)
-        val ulMb = device.uploadUsageBytes / (1024.0 * 1024.0)
-        if (dlMb > 1024) {
-            String.format(Locale.US, "↓ %.1f GB  ↑ %.0f MB", dlMb / 1024.0, ulMb)
-        } else {
-            String.format(Locale.US, "↓ %.0f MB  ↑ %.0f MB", dlMb, ulMb)
-        }
-    }
-
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(
-            1.dp,
-            if (device.isBlocked) MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
-            else MaterialTheme.colorScheme.outline
-        )
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             // Top row: Name, status badge, edit button
@@ -436,7 +417,7 @@ private fun DeviceSummaryCard(
                         modifier = Modifier
                             .size(8.dp)
                             .clip(CircleShape)
-                            .background(if (device.isBlocked) MaterialTheme.colorScheme.error else Color(0xFF10B981))
+                            .background(Color(0xFF10B981))
                     )
 
                     Text(
@@ -528,7 +509,7 @@ private fun DeviceSummaryCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Badges row: Data usage, Latency, Open Ports, Block status
+            // Badges row: Latency, Open Ports, and Ping control
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -538,32 +519,16 @@ private fun DeviceSummaryCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    // Data Usage badge
                     Surface(
                         shape = RoundedCornerShape(6.dp),
-                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+                        color = MaterialTheme.colorScheme.surfaceVariant
                     ) {
                         Text(
-                            text = usageText,
+                            text = device.latencyMs?.let { "$it ms" } ?: "-- ms",
                             style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.secondary,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
-                    }
-
-                    if (device.latencyMs != null) {
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant
-                        ) {
-                            Text(
-                                text = "${device.latencyMs} ms",
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
                     }
 
                     if (device.openPorts.isNotEmpty()) {
@@ -581,32 +546,12 @@ private fun DeviceSummaryCard(
                     }
                 }
 
-                // Quick Action Controls: Ping & Block/Unblock
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                OutlinedButton(
+                    onClick = onPing,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    modifier = Modifier.height(28.dp)
                 ) {
-                    OutlinedButton(
-                        onClick = onPing,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                        modifier = Modifier.height(28.dp)
-                    ) {
-                        Text("Ping", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp))
-                    }
-
-                    OutlinedButton(
-                        onClick = onToggleBlock,
-                        colors = if (device.isBlocked) {
-                            ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                        } else ButtonDefaults.outlinedButtonColors(),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                        modifier = Modifier.height(28.dp)
-                    ) {
-                        Text(
-                            if (device.isBlocked) "Blocked" else "Block",
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp)
-                        )
-                    }
+                    Text("Ping", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp))
                 }
             }
         }

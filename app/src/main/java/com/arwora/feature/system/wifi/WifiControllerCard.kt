@@ -47,8 +47,7 @@ enum class WifiSectionTab(val label: String) {
     SPEED_TEST("Speed Test"),
     SPEED_HISTORY("History"),
     SIGNAL_CHANNEL("Signal & Channel"),
-    SCANNER("Scanner"),
-    ALERTS("Alerts")
+    SCANNER("Scanner")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -73,9 +72,6 @@ fun WifiControllerCard(
     }
 
     // Store & diagnostics states
-    val alerts by viewModel.wifiStore.alerts.collectAsStateWithLifecycle()
-    val alertsEnabled by viewModel.wifiStore.alertsEnabled.collectAsStateWithLifecycle()
-    val customLabels by viewModel.wifiStore.customLabels.collectAsStateWithLifecycle()
     val speedHistory by viewModel.wifiStore.speedHistory.collectAsStateWithLifecycle()
     val blockedMacs by viewModel.wifiStore.blockedMacs.collectAsStateWithLifecycle()
     val signalInfo by viewModel.signalInfo.collectAsStateWithLifecycle()
@@ -346,9 +342,6 @@ fun WifiControllerCard(
                         onPingDevice = { dev ->
                             viewModel.pingDevice(dev.ip)
                         },
-                        onToggleBlock = { dev ->
-                            viewModel.toggleBlockDevice(dev)
-                        },
                         hostIp = networkInfo.localIp
                     )
                     Spacer(modifier = Modifier.height(14.dp))
@@ -403,28 +396,6 @@ fun WifiControllerCard(
                         onStartScan = { viewModel.scanWifiNetworks() },
                         onConnect = { ssid, psk, isWps ->
                             viewModel.connectToWifi(ssid, psk, isWps)
-                        }
-                    )
-                    Spacer(modifier = Modifier.height(14.dp))
-                }
-
-                // ==========================================
-                // 8. DEVICE NAMING & ALERTS
-                // ==========================================
-                if (currentTab == WifiSectionTab.ALL || currentTab == WifiSectionTab.ALERTS) {
-                    DeviceNamingAndAlertsCard(
-                        alerts = alerts,
-                        alertsEnabled = alertsEnabled,
-                        onToggleAlerts = { enabled ->
-                            viewModel.wifiStore.setAlertsEnabled(enabled)
-                        },
-                        onClearAlerts = {
-                            viewModel.wifiStore.clearAlerts()
-                        },
-                        customLabels = customLabels,
-                        devices = devices,
-                        onSaveCustomName = { mac, name ->
-                            viewModel.saveCustomDeviceName(mac, name)
                         }
                     )
                 }

@@ -3,14 +3,14 @@
 
     <style name="Theme.MyApplication" parent="Theme.Material3.DayNight.NoActionBar" />
 
-    <!-- Official Android 12+ SplashScreen theme with backward compatibility -->
+    <!-- Official Android 12+ SplashScreen theme with backward compatibility.
+         Uses a transparent icon so the app logo is animated exactly once
+         in the unified Compose startup screen without double-logo flashing. -->
     <style name="Theme.App.Starting" parent="Theme.SplashScreen">
-        <!-- Set the splash screen background color -->
         <item name="android:windowBackground">@color/splash_bg</item>
         <item name="windowSplashScreenBackground">@color/splash_bg</item>
-        <!-- Set the splash screen icon -->
-        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_icon</item>
-        <!-- Theme to switch to after splash screen exits -->
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_blank</item>
+        <item name="windowSplashScreenAnimationDuration">0</item>
         <item name="postSplashScreenTheme">@style/Theme.MyApplication</item>
     </style>
 

@@ -44,6 +44,7 @@ import com.arwora.ui.components.AppLogo
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+internal const val SPLASH_LOGO_ANIM_DURATION_MS = 550
 internal const val SPLASH_TEXT_ANIM_DURATION_MS = 700
 internal const val SPLASH_POST_ANIM_HOLD_MS = 220L
 
@@ -51,7 +52,8 @@ internal const val SPLASH_POST_ANIM_HOLD_MS = 220L
 fun SplashScreen(
     onSplashFinished: () -> Unit = {}
 ) {
-    val logoScale = remember { Animatable(0.95f) }
+    val logoAlpha = remember { Animatable(0f) }
+    val logoScale = remember { Animatable(0.86f) }
     val textAlpha = remember { Animatable(0f) }
     val textScale = remember { Animatable(0.86f) }
     var hasFinished by remember { mutableStateOf(false) }
@@ -89,11 +91,20 @@ fun SplashScreen(
     }
 
     LaunchedEffect(Unit) {
-        val logoJob = launch {
+        val logoAlphaJob = launch {
+            logoAlpha.animateTo(
+                targetValue = 1.0f,
+                animationSpec = tween(
+                    durationMillis = SPLASH_LOGO_ANIM_DURATION_MS,
+                    easing = FastOutSlowInEasing
+                )
+            )
+        }
+        val logoScaleJob = launch {
             logoScale.animateTo(
                 targetValue = 1.0f,
                 animationSpec = tween(
-                    durationMillis = 550,
+                    durationMillis = SPLASH_LOGO_ANIM_DURATION_MS,
                     easing = FastOutSlowInEasing
                 )
             )
@@ -116,7 +127,8 @@ fun SplashScreen(
                 )
             )
         }
-        logoJob.join()
+        logoAlphaJob.join()
+        logoScaleJob.join()
         alphaJob.join()
         scaleJob.join()
         delay(SPLASH_POST_ANIM_HOLD_MS)
@@ -148,6 +160,7 @@ fun SplashScreen(
                 contentDescription = "Arwora Hyper Toolkit Logo",
                 modifier = Modifier
                     .scale(logoScale.value)
+                    .alpha(logoAlpha.value)
                     .testTag("splash_app_logo")
             )
 

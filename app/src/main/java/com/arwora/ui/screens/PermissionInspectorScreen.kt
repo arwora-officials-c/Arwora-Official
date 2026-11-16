@@ -43,6 +43,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import com.arwora.ui.components.GoogleStyleLinearLoadingCard
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
@@ -333,18 +334,16 @@ fun PermissionInspectorScreen(navController: NavController) {
             // List Content
             if (loading) {
                 Box(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 20.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                        Spacer(modifier = Modifier.height(14.dp))
-                        Text(
-                            "Analyzing application permissions safely...",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    GoogleStyleLinearLoadingCard(
+                        title = "Analyzing application permissions safely...",
+                        subtitle = "Auditing declared and runtime permissions across installed apps",
+                        icon = Icons.Default.VerifiedUser
+                    )
                 }
             } else if (filteredApps.isEmpty()) {
                 Box(

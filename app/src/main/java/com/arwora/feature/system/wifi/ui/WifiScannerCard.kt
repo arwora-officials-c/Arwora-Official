@@ -26,6 +26,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.arwora.feature.system.wifi.WifiNetwork
+import com.arwora.ui.components.GooglePlayCompactLinearProgress
 import com.arwora.utils.SoundEffectManager
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -102,9 +103,9 @@ fun WifiScannerCard(
                     )
                 ) {
                     if (isScanning) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(14.dp),
-                            strokeWidth = 2.dp,
+                        GooglePlayCompactLinearProgress(
+                            width = 24.dp,
+                            height = 3.5.dp,
                             color = MaterialTheme.colorScheme.primary
                         )
                         Spacer(modifier = Modifier.width(6.dp))

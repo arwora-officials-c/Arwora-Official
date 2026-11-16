@@ -43,6 +43,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
+import com.arwora.ui.components.GooglePlayCompactLinearProgress
 import com.arwora.service.MockLocationService
 import com.arwora.utils.FakeGpsManager
 import com.arwora.utils.LocationPreset
@@ -474,7 +475,11 @@ fun FakeGpsMapScreen(
                             }
                         }
                         if (isSearching) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            GooglePlayCompactLinearProgress(
+                                width = 28.dp,
+                                height = 4.dp,
+                                modifier = Modifier.padding(horizontal = 6.dp)
+                            )
                         } else {
                             IconButton(onClick = { searchLocation(searchQuery) }) {
                                 Icon(Icons.Default.ArrowForward, contentDescription = "Go", tint = MaterialTheme.colorScheme.primary)

@@ -44,7 +44,6 @@ fun ConnectedDevicesCard(
     onStopScan: () -> Unit,
     onSaveCustomName: (mac: String, name: String) -> Unit,
     onPingDevice: (DeviceInfo) -> Unit,
-    onToggleBlock: (DeviceInfo) -> Unit,
     hostIp: String,
     modifier: Modifier = Modifier
 ) {
@@ -67,7 +66,7 @@ fun ConnectedDevicesCard(
 
     WifiSectionCard(
         title = "Connected Devices",
-        description = "Discover all active hosts on subnet with vendor lookup, data usage, and latency",
+        description = "Discover active hosts on subnet with vendor lookup and latency",
         icon = Icons.Default.Devices,
         iconTint = Color(0xFF10B981),
         statusBadge = {
@@ -225,7 +224,6 @@ fun ConnectedDevicesCard(
                             hostIp = hostIp,
                             onEditName = { editingDevice = device },
                             onPing = { onPingDevice(device) },
-                            onToggleBlock = { onToggleBlock(device) },
                             onCopy = { text, label ->
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             clipboard.setPrimaryClip(ClipData.newPlainText(label, text))
@@ -269,7 +267,8 @@ fun ConnectedDevicesCard(
             },
             confirmButton = {
                 Button(onClick = {
-                    onSaveCustomName(dev.mac, tempName)
+                    val labelKey = dev.mac.takeIf { it != "Unknown" && it.isNotBlank() } ?: dev.ip
+                    onSaveCustomName(labelKey, tempName)
                     editingDevice = null
                 }) {
                     Text("Save Label")
@@ -290,32 +289,20 @@ fun ModernDeviceListCard(
     hostIp: String,
     onEditName: () -> Unit,
     onPing: () -> Unit,
-    onToggleBlock: () -> Unit,
     onCopy: (text: String, label: String) -> Unit
 ) {
-    val context = LocalContext.current
-    val displayName = device.customLabel ?: device.friendlyName ?: device.vendor.ifBlank { "Network Host" }
+    val displayName = device.customLabel
+        ?: device.friendlyName?.takeIf { it.isNotBlank() }
+        ?: device.hostname?.takeIf { it.isNotBlank() }
+        ?: device.vendor.takeIf { it.isNotBlank() && !it.equals("Unknown", ignoreCase = true) && !it.equals("Generic", ignoreCase = true) }?.let { "$it Device (${device.ip})" }
+        ?: "Host (${device.ip})"
 
-    val formattedLastSeen = remember(device.lastSeenTime, device.isBlocked) {
-        if (device.isBlocked) {
-            "Blocked"
-        } else {
-            val diff = System.currentTimeMillis() - device.lastSeenTime
-            when {
-                diff < 60_000 -> "Active now"
-                diff < 3600_000 -> "${diff / 60_000}m ago"
-                else -> "${diff / 3600_000}h ago"
-            }
-        }
-    }
-
-    val usageText = remember(device.downloadUsageBytes, device.uploadUsageBytes) {
-        val dlMb = device.downloadUsageBytes / (1024.0 * 1024.0)
-        val ulMb = device.uploadUsageBytes / (1024.0 * 1024.0)
-        if (dlMb > 1024) {
-            String.format(Locale.US, "↓ %.1f GB  ↑ %.0f MB", dlMb / 1024.0, ulMb)
-        } else {
-            String.format(Locale.US, "↓ %.0f MB  ↑ %.0f MB", dlMb, ulMb)
+    val formattedLastSeen = remember(device.lastSeenTime) {
+        val diff = System.currentTimeMillis() - device.lastSeenTime
+        when {
+            diff < 60_000 -> "Active now"
+            diff < 3600_000 -> "${diff / 60_000}m ago"
+            else -> "${diff / 3600_000}h ago"
         }
     }
 
@@ -347,11 +334,7 @@ fun ModernDeviceListCard(
             .clickable { isExpanded = !isExpanded },
         shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(
-            1.dp,
-            if (device.isBlocked) MaterialTheme.colorScheme.error.copy(alpha = 0.6f)
-            else MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
-        )
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             // Top Row: Avatar + Device Name & Vendor + Actions
@@ -377,12 +360,12 @@ fun ModernDeviceListCard(
                         )
                     }
 
-                    // Online / Blocked Status Dot
+                    // Online Status Dot
                     Box(
                         modifier = Modifier
                             .size(10.dp)
                             .clip(CircleShape)
-                            .background(if (device.isBlocked) MaterialTheme.colorScheme.error else Color(0xFF10B981))
+                            .background(Color(0xFF10B981))
                             .border(1.5.dp, MaterialTheme.colorScheme.surface, CircleShape)
                     )
                 }
@@ -440,7 +423,7 @@ fun ModernDeviceListCard(
                         Text(
                             text = formattedLastSeen,
                             style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.5.sp, fontWeight = FontWeight.Medium),
-                            color = if (device.isBlocked) MaterialTheme.colorScheme.error else Color(0xFF10B981)
+                            color = Color(0xFF10B981)
                         )
                     }
                 }
@@ -502,29 +485,34 @@ fun ModernDeviceListCard(
                     )
                 }
 
+                val hasValidMac = device.mac.isNotBlank() && !device.mac.equals("Unknown", ignoreCase = true)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.End,
                     modifier = Modifier
                         .weight(1.1f)
                         .clip(RoundedCornerShape(4.dp))
-                        .clickable { onCopy(device.mac, "MAC Address") }
+                        .let { mod ->
+                            if (hasValidMac) mod.clickable { onCopy(device.mac, "MAC Address") } else mod
+                        }
                         .padding(vertical = 2.dp)
                 ) {
                     Text(
-                        text = "MAC: ${device.mac}",
+                        text = if (hasValidMac) "MAC: ${device.mac}" else "MAC: Restricted",
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.5.sp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Icon(
-                        Icons.Default.ContentCopy,
-                        contentDescription = "Copy MAC",
-                        modifier = Modifier.size(12.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    if (hasValidMac) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            Icons.Default.ContentCopy,
+                            contentDescription = "Copy MAC",
+                            modifier = Modifier.size(12.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
 
@@ -570,82 +558,32 @@ fun ModernDeviceListCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Badges & Action Buttons
+            // Latency Badge & Ping Action
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
                 ) {
-                    // Data Usage badge
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f),
-                        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-                    ) {
-                        Text(
-                            text = usageText,
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold),
-                            color = MaterialTheme.colorScheme.secondary,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-
-                    if (device.latencyMs != null) {
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-                        ) {
-                            Text(
-                                text = "${device.latencyMs} ms",
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.5.sp),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                            )
-                        }
-                    }
+                    Text(
+                        text = device.latencyMs?.let { "$it ms" } ?: "-- ms",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
                 }
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                OutlinedButton(
+                    onClick = onPing,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
+                    modifier = Modifier.height(30.dp),
+                    shape = RoundedCornerShape(8.dp)
                 ) {
-                    OutlinedButton(
-                        onClick = onPing,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                        modifier = Modifier.height(28.dp),
-                        shape = RoundedCornerShape(6.dp)
-                    ) {
-                        Text("Ping", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp))
-                    }
-
-                    OutlinedButton(
-                        onClick = onToggleBlock,
-                        colors = if (device.isBlocked) {
-                            ButtonDefaults.outlinedButtonColors(
-                                containerColor = Color(0xFF10B981).copy(alpha = 0.12f),
-                                contentColor = Color(0xFF10B981)
-                            )
-                        } else {
-                            ButtonDefaults.outlinedButtonColors(
-                                containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
-                                contentColor = MaterialTheme.colorScheme.error
-                            )
-                        },
-                        border = if (device.isBlocked) BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.5f))
-                                 else BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                        modifier = Modifier.height(28.dp),
-                        shape = RoundedCornerShape(6.dp)
-                    ) {
-                        Text(
-                            if (device.isBlocked) "Unblock" else "Block",
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                        )
-                    }
+                    Text("Ping", style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold))
                 }
             }
         }

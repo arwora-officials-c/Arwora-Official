@@ -38,6 +38,9 @@ class AppManagerViewModel(
     private val _extractedApks = MutableStateFlow<List<com.arwora.utils.ExtractedApkItem>>(emptyList())
     val extractedApks: StateFlow<List<com.arwora.utils.ExtractedApkItem>> = _extractedApks.asStateFlow()
 
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
     private val _isExtracting = MutableStateFlow(false)
     val isExtracting: StateFlow<Boolean> = _isExtracting.asStateFlow()
 
@@ -65,7 +68,7 @@ class AppManagerViewModel(
     }
 
     fun loadExtractedApks() {
-        viewModelScope.launch {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             _extractedApks.value = com.arwora.utils.ApkExtractorUtils.getExtractedApks(context)
         }
     }
@@ -77,38 +80,41 @@ class AppManagerViewModel(
     ) {
         viewModelScope.launch {
             _isExtracting.value = true
-            val appInfo = app.appInfo ?: try {
-                context.packageManager.getApplicationInfo(app.packageName, 0)
-            } catch (e: Exception) {
-                null
-            }
+            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val appInfo = app.appInfo ?: try {
+                    context.packageManager.getApplicationInfo(app.packageName, 0)
+                } catch (e: Exception) {
+                    null
+                }
 
-            if (appInfo == null) {
-                _isExtracting.value = false
-                onComplete(com.arwora.utils.ExtractionResult.Error("Could not retrieve application info"))
-                return@launch
+                if (appInfo == null) {
+                    com.arwora.utils.ExtractionResult.Error("Could not retrieve application info")
+                } else {
+                    com.arwora.utils.ApkExtractorUtils.extractApk(
+                        context = context,
+                        appInfo = appInfo,
+                        appName = app.appName,
+                        versionName = app.versionName
+                    )
+                }
             }
-
-            val result = com.arwora.utils.ApkExtractorUtils.extractApk(
-                context = context,
-                appInfo = appInfo,
-                appName = app.appName,
-                versionName = app.versionName
-            )
             _isExtracting.value = false
             loadExtractedApks()
             onComplete(result)
         }
     }
 
-    fun loadInstalledApps() {
-        if (_installedApps.value.isNotEmpty()) return
-        memoryCachedApps?.let {
-            _installedApps.value = it
-            return
+    fun loadInstalledApps(forceRefresh: Boolean = false) {
+        if (!forceRefresh) {
+            if (_installedApps.value.isNotEmpty()) return
+            memoryCachedApps?.let {
+                _installedApps.value = it
+                return
+            }
         }
 
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            _isLoading.value = true
             try {
                 val pm = context.packageManager
                 val packages = kotlinx.coroutines.withTimeoutOrNull(10000L) {
@@ -161,7 +167,11 @@ class AppManagerViewModel(
                 memoryCachedApps = list
                 _installedApps.value = list
             } catch (e: Exception) {
-                _installedApps.value = emptyList()
+                if (!forceRefresh) {
+                    _installedApps.value = emptyList()
+                }
+            } finally {
+                _isLoading.value = false
             }
         }
     }

@@ -10,6 +10,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 
 val LocalButtonColor = compositionLocalOf { AccentIndigo }
 
@@ -23,14 +24,15 @@ fun NameGenProTheme(
 ) {
     val animatedUiColor by animateColorAsState(
         targetValue = uiColor,
-        animationSpec = tween(durationMillis = 250),
+        animationSpec = tween(durationMillis = 220),
         label = "animatedUiColor"
     )
     val animatedButtonColor by animateColorAsState(
         targetValue = buttonColor,
-        animationSpec = tween(durationMillis = 250),
+        animationSpec = tween(durationMillis = 220),
         label = "animatedButtonColor"
     )
+    val adaptiveOnPrimary = if (animatedUiColor.luminance() > 0.55f) Color(0xFF101828) else Color.White
 
     val targetBg = when {
         whiteTheme -> Color(0xFFFFFFFF)
@@ -73,23 +75,23 @@ fun NameGenProTheme(
         else -> Color(0xFFE2E8F0)
     }
 
-    val animatedBg by animateColorAsState(targetValue = targetBg, animationSpec = tween(250), label = "animBg")
-    val animatedSurface by animateColorAsState(targetValue = targetSurface, animationSpec = tween(250), label = "animSurface")
-    val animatedSurfaceVariant by animateColorAsState(targetValue = targetSurfaceVariant, animationSpec = tween(250), label = "animSurfaceVariant")
-    val animatedOnSurface by animateColorAsState(targetValue = targetOnSurface, animationSpec = tween(250), label = "animOnSurface")
-    val animatedOnBackground by animateColorAsState(targetValue = targetOnBackground, animationSpec = tween(250), label = "animOnBackground")
-    val animatedOnSurfaceVariant by animateColorAsState(targetValue = targetOnSurfaceVariant, animationSpec = tween(250), label = "animOnSurfaceVariant")
-    val animatedOutline by animateColorAsState(targetValue = targetOutline, animationSpec = tween(250), label = "animOutline")
-    val animatedSecondaryContainer by animateColorAsState(targetValue = targetSecondaryContainer, animationSpec = tween(250), label = "animSecondaryContainer")
+    val animatedBg by animateColorAsState(targetValue = targetBg, animationSpec = tween(220), label = "animBg")
+    val animatedSurface by animateColorAsState(targetValue = targetSurface, animationSpec = tween(220), label = "animSurface")
+    val animatedSurfaceVariant by animateColorAsState(targetValue = targetSurfaceVariant, animationSpec = tween(220), label = "animSurfaceVariant")
+    val animatedOnSurface by animateColorAsState(targetValue = targetOnSurface, animationSpec = tween(220), label = "animOnSurface")
+    val animatedOnBackground by animateColorAsState(targetValue = targetOnBackground, animationSpec = tween(220), label = "animOnBackground")
+    val animatedOnSurfaceVariant by animateColorAsState(targetValue = targetOnSurfaceVariant, animationSpec = tween(220), label = "animOnSurfaceVariant")
+    val animatedOutline by animateColorAsState(targetValue = targetOutline, animationSpec = tween(220), label = "animOutline")
+    val animatedSecondaryContainer by animateColorAsState(targetValue = targetSecondaryContainer, animationSpec = tween(220), label = "animSecondaryContainer")
 
     val colorScheme = if (darkTheme) {
         darkColorScheme(
             primary = animatedUiColor,
-            onPrimary = TextPrimary,
+            onPrimary = adaptiveOnPrimary,
             primaryContainer = animatedUiColor.copy(alpha = 0.7f),
             onPrimaryContainer = TextPrimary,
             secondary = animatedUiColor,
-            onSecondary = TextPrimary,
+            onSecondary = adaptiveOnPrimary,
             secondaryContainer = animatedSecondaryContainer,
             onSecondaryContainer = TextPrimary,
             background = animatedBg,
@@ -103,11 +105,11 @@ fun NameGenProTheme(
     } else {
         lightColorScheme(
             primary = animatedUiColor,
-            onPrimary = Color.White,
+            onPrimary = adaptiveOnPrimary,
             primaryContainer = if (whiteTheme) animatedUiColor.copy(alpha = 0.12f) else animatedUiColor.copy(alpha = 0.2f),
             onPrimaryContainer = if (whiteTheme) animatedUiColor else Color.Black,
             secondary = animatedUiColor,
-            onSecondary = Color.White,
+            onSecondary = adaptiveOnPrimary,
             secondaryContainer = animatedSecondaryContainer,
             onSecondaryContainer = if (whiteTheme) Color(0xFF1D2939) else Color.Black,
             background = animatedBg,

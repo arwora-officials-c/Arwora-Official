@@ -70,7 +70,8 @@ fun InlineDropdownMenu(
         Card(
             modifier = Modifier
                 .padding(top = 4.dp)
-                .width(200.dp)
+                .widthIn(min = 160.dp, max = 230.dp)
+                .fillMaxWidth(0.92f)
                 .shadow(8.dp, RoundedCornerShape(8.dp)),
             shape = RoundedCornerShape(8.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -252,271 +253,275 @@ fun SystemOverlayContent(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
         ) {
-            Column(modifier = Modifier.fillMaxSize().padding(10.dp)) {
-                // Dedicated Drag Header
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-                        .pointerInput(Unit) {
-                            detectDragGestures(
-                                onDrag = { change, dragAmount ->
-                                    change.consume()
-                                    onDragDelta(dragAmount.x, dragAmount.y)
-                                }
-                            )
-                        }
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .weight(1f)
-                    ) {
-                        Icon(
-                            Icons.Default.DragHandle,
-                            contentDescription = "Drag Overlay",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        if (appIconBitmap != null) {
-                            Image(
-                                bitmap = appIconBitmap,
-                                contentDescription = "App Logo",
-                                modifier = Modifier.size(24.dp).clip(CircleShape),
-                                contentScale = ContentScale.Fit
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.AutoAwesome,
-                                contentDescription = "App Logo",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            com.arwora.utils.AppConstants.APP_NAME,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1
-                        )
-                    }
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(
-                            onClick = {
-                                val nextExpanded = !isExpanded
-                                isExpanded = nextExpanded
-                                onTogglePanel(nextExpanded)
-                            },
-                            modifier = Modifier.size(28.dp)
-                        ) {
-                            Icon(
-                                if (isExpanded) Icons.Default.CloseFullscreen else Icons.Default.OpenInFull,
-                                contentDescription = if (isExpanded) "Collapse Panel" else "Expand Panel",
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                        IconButton(onClick = onMinimize, modifier = Modifier.size(28.dp)) {
-                            Icon(Icons.Default.Remove, contentDescription = "Minimize", modifier = Modifier.size(16.dp))
-                        }
-                        IconButton(onClick = onClose, modifier = Modifier.size(28.dp)) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", modifier = Modifier.size(16.dp))
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val isNarrow = maxWidth < 310.dp
                 Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
+                        .fillMaxSize()
+                        .padding(if (isNarrow) 8.dp else 10.dp)
                 ) {
-                    when (activeTool) {
-                        "Calculator" -> {
-                            com.arwora.ui.screens.CalculatorView()
-                        }
-                        else -> {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .verticalScroll(rememberScrollState())
-                                    .padding(bottom = 18.dp)
-                            ) {
-                    // Male / Female / Unisex Chips
+                    // Dedicated Drag Header
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                    listOf("Male", "Female", "Unisex").forEach { g ->
-                        val isSelected = selectedGender == g
-                        FilterChip(
-                            selected = isSelected,
-                            onClick = {
-                                viewModel.setGender(g)
-                                viewModel.generateCurrentTool()
-                            },
-                            label = {
-                                Text(
-                                    when(g) {
-                                        "Male" -> "♂ Male"
-                                        "Female" -> "♀ Female"
-                                        else -> "⚥ Mix"
-                                    },
-                                    fontSize = 11.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                            .pointerInput(Unit) {
+                                detectDragGestures(
+                                    onDrag = { change, dragAmount ->
+                                        change.consume()
+                                        onDragDelta(dragAmount.x, dragAmount.y)
+                                    }
                                 )
-                            },
-                            modifier = Modifier.weight(1f),
-                            colors = FilterChipDefaults.filterChipColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                labelColor = MaterialTheme.colorScheme.onSurface,
-                                selectedContainerColor = MaterialTheme.colorScheme.primary,
-                                selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                            }
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                Icons.Default.DragHandle,
+                                contentDescription = "Drag Overlay",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
                             )
-                        )
+                            if (appIconBitmap != null) {
+                                Image(
+                                    bitmap = appIconBitmap,
+                                    contentDescription = "App Logo",
+                                    modifier = Modifier.size(22.dp).clip(CircleShape),
+                                    contentScale = ContentScale.Fit
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = "App Logo",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                            Text(
+                                com.arwora.utils.AppConstants.APP_NAME,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = {
+                                    val nextExpanded = !isExpanded
+                                    isExpanded = nextExpanded
+                                    onTogglePanel(nextExpanded)
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    if (isExpanded) Icons.Default.CloseFullscreen else Icons.Default.OpenInFull,
+                                    contentDescription = if (isExpanded) "Collapse Panel" else "Expand Panel",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            IconButton(onClick = onMinimize, modifier = Modifier.size(28.dp)) {
+                                Icon(Icons.Default.Remove, contentDescription = "Minimize", modifier = Modifier.size(16.dp))
+                            }
+                            IconButton(onClick = onClose, modifier = Modifier.size(28.dp)) {
+                                Icon(Icons.Default.Close, contentDescription = "Close", modifier = Modifier.size(16.dp))
+                            }
+                        }
                     }
-                }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                // Result Box
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
-                ) {
+                    // Scrollable Content Area (covers all tools including Calculator when resized small)
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState())
+                            .padding(bottom = 26.dp)
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    activeTool.uppercase(),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 1.sp
-                                )
-                                Text(
-                                    FontStyles.apply(currentResultText, fontStyle),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
+                        when (activeTool) {
+                            "Calculator" -> {
+                                com.arwora.ui.screens.CalculatorView()
                             }
-
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                TextButton(
-                                    onClick = { copyText(currentResultText) },
-                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
-                                    modifier = Modifier.height(30.dp)
+                            else -> {
+                                // Male / Female / Unisex Chips (horizontally scrollable so labels never truncate)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(12.dp))
-                                    Spacer(Modifier.width(2.dp))
-                                    Text("Copy", fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                }
-
-                                IconButton(
-                                    onClick = {
-                                        if (isFav.value) viewModel.removeFavorite(activeTool.uppercase(), currentResultText)
-                                        else viewModel.addFavorite(activeTool.uppercase(), currentResultText)
-                                    },
-                                    modifier = Modifier.size(28.dp)
-                                ) {
-                                    Icon(
-                                        if (isFav.value) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                                        contentDescription = "Favorite",
-                                        modifier = Modifier.size(14.dp),
-                                        tint = if (isFav.value) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                                    )
-                                }
-
-                                TextButton(
-                                    onClick = { viewModel.generateCurrentTool() },
-                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
-                                    modifier = Modifier.height(30.dp)
-                                ) {
-                                    if (isGenerating) {
-                                        CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
-                                    } else {
-                                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
-                                        Spacer(Modifier.width(2.dp))
-                                        Text("Regen", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                    listOf("Male", "Female", "Unisex").forEach { g ->
+                                        val isSelected = selectedGender == g
+                                        FilterChip(
+                                            selected = isSelected,
+                                            onClick = {
+                                                viewModel.setGender(g)
+                                                viewModel.generateCurrentTool()
+                                            },
+                                            label = {
+                                                Text(
+                                                    when(g) {
+                                                        "Male" -> "♂ Male"
+                                                        "Female" -> "♀ Female"
+                                                        else -> "⚥ Mix"
+                                                    },
+                                                    fontSize = 11.sp,
+                                                    maxLines = 1,
+                                                    softWrap = false,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                                )
+                                            },
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                                labelColor = MaterialTheme.colorScheme.onSurface,
+                                                selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                                selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                                            )
+                                        )
                                     }
                                 }
-                            }
-                        }
 
-                        if (activeTool == "Username" && currentResultText.isNotBlank()) {
-                            val isCompactCheckerOpen = showFloatingUsernameChecker && checkedFloatingUsername == currentResultText
-                            FilledTonalButton(
-                                onClick = toggleFloatingUsernameCheck,
-                                shape = RoundedCornerShape(10.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(38.dp)
-                                    .testTag("floating_compact_username_check_button")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Public,
-                                    contentDescription = "Check Username Availability",
-                                    modifier = Modifier.size(15.dp)
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    text = if (isCompactCheckerOpen) "Hide Availability" else "Check Availability",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                // Result Box
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(
+                                            activeTool.uppercase(),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.Bold,
+                                            letterSpacing = 1.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            FontStyles.apply(currentResultText, fontStyle),
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+
+                                        FlowRow(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
+                                            verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically)
+                                        ) {
+                                            TextButton(
+                                                onClick = { copyText(currentResultText) },
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                modifier = Modifier.height(32.dp)
+                                            ) {
+                                                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(13.dp))
+                                                Spacer(Modifier.width(3.dp))
+                                                Text("Copy", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                                            }
+
+                                            IconButton(
+                                                onClick = {
+                                                    if (isFav.value) viewModel.removeFavorite(activeTool.uppercase(), currentResultText)
+                                                    else viewModel.addFavorite(activeTool.uppercase(), currentResultText)
+                                                },
+                                                modifier = Modifier.size(32.dp)
+                                            ) {
+                                                Icon(
+                                                    if (isFav.value) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                                                    contentDescription = "Favorite",
+                                                    modifier = Modifier.size(16.dp),
+                                                    tint = if (isFav.value) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                                )
+                                            }
+
+                                            TextButton(
+                                                onClick = { viewModel.generateCurrentTool() },
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                modifier = Modifier.height(32.dp)
+                                            ) {
+                                                if (isGenerating) {
+                                                    GooglePlayCompactLinearProgress(
+                                                        width = 26.dp,
+                                                        height = 3.dp,
+                                                        color = MaterialTheme.colorScheme.primary
+                                                    )
+                                                } else {
+                                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                    Spacer(Modifier.width(3.dp))
+                                                    Text("Regen", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                                                }
+                                            }
+                                        }
+
+                                        if (activeTool == "Username" && currentResultText.isNotBlank()) {
+                                            val isCompactCheckerOpen = showFloatingUsernameChecker && checkedFloatingUsername == currentResultText
+                                            FilledTonalButton(
+                                                onClick = toggleFloatingUsernameCheck,
+                                                shape = RoundedCornerShape(10.dp),
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(38.dp)
+                                                    .testTag("floating_compact_username_check_button")
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Public,
+                                                    contentDescription = "Check Username Availability",
+                                                    modifier = Modifier.size(15.dp)
+                                                )
+                                                Spacer(Modifier.width(6.dp))
+                                                Text(
+                                                    text = if (isCompactCheckerOpen) "Hide Availability" else "Check Availability",
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if (activeTool == "Username") {
+                                    InlineUsernameAvailabilityCard(
+                                        visible = showFloatingUsernameChecker && checkedFloatingUsername == currentResultText,
+                                        username = currentResultText,
+                                        onCollapse = { showFloatingUsernameChecker = false },
+                                        viewModel = viewModel,
+                                        compactMode = true,
+                                        onExternalLinkOpened = onMinimize,
+                                        modifier = Modifier.padding(top = 8.dp)
+                                    )
+                                }
                             }
                         }
                     }
-                }
-
-                if (activeTool == "Username") {
-                    InlineUsernameAvailabilityCard(
-                        visible = showFloatingUsernameChecker && checkedFloatingUsername == currentResultText,
-                        username = currentResultText,
-                        onCollapse = { showFloatingUsernameChecker = false },
-                        viewModel = viewModel,
-                        compactMode = true,
-                        onExternalLinkOpened = onMinimize,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                }
-                }
-                }
-                }
                 }
             }
         }
     } else {
         // Expanded Studio Window
-        Box {
-            val boxScope = this
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val isNarrow = maxWidth < 310.dp
             Card(
                 modifier = Modifier
                     .fillMaxSize()
@@ -529,7 +534,7 @@ fun SystemOverlayContent(
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(12.dp)
+                        .padding(if (isNarrow) 8.dp else 12.dp)
                 ) {
                     // Draggable Header Area (Fixed at top)
                     Row(
@@ -552,8 +557,7 @@ fun SystemOverlayContent(
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .weight(1f)
+                            modifier = Modifier.weight(1f)
                         ) {
                             Icon(
                                 Icons.Default.DragIndicator,
@@ -565,7 +569,7 @@ fun SystemOverlayContent(
                                 Image(
                                     bitmap = appIconBitmap,
                                     contentDescription = "App Logo",
-                                    modifier = Modifier.size(24.dp).clip(CircleShape),
+                                    modifier = Modifier.size(22.dp).clip(CircleShape),
                                     contentScale = ContentScale.Fit
                                 )
                             } else {
@@ -573,14 +577,15 @@ fun SystemOverlayContent(
                                     imageVector = Icons.Default.AutoAwesome,
                                     contentDescription = "App Logo",
                                     tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(24.dp)
+                                    modifier = Modifier.size(22.dp)
                                 )
                             }
-                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 com.arwora.utils.AppConstants.APP_NAME,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.ExtraBold
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.ExtraBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
 
@@ -608,15 +613,15 @@ fun SystemOverlayContent(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     // Content Area (Scrollable body)
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f)
-                            .padding(horizontal = 12.dp, vertical = 12.dp)
-                            .verticalScroll(rememberScrollState()),
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = if (isNarrow) 2.dp else 4.dp, vertical = 4.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
 
@@ -800,7 +805,11 @@ fun SystemOverlayContent(
                                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                                 ) {
                                     if (isGenerating) {
-                                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
+                                        GooglePlayCompactLinearProgress(
+                                            width = 40.dp,
+                                            height = 4.dp,
+                                            color = MaterialTheme.colorScheme.onPrimary
+                                        )
                                     } else {
                                         Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(4.dp))
@@ -826,11 +835,13 @@ fun SystemOverlayContent(
                 // Controls based on activeTool
                 when (activeTool) {
                     "Name", "First + Middle", "Middle Name", "Surname" -> {
-                        // 1. Gender Controls
+                        // 1. Gender Controls (horizontally scrollable so chips never truncate)
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text("GENDER", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 listOf("Male", "Female", "Unisex").forEach { g ->
@@ -849,10 +860,11 @@ fun SystemOverlayContent(
                                                     else -> "⚥ Unisex"
                                                 },
                                                 fontSize = 11.sp,
+                                                maxLines = 1,
+                                                softWrap = false,
                                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                             )
                                         },
-                                        modifier = Modifier.weight(1f),
                                         colors = FilterChipDefaults.filterChipColors(
                                             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                                             labelColor = MaterialTheme.colorScheme.onSurface,
@@ -880,7 +892,7 @@ fun SystemOverlayContent(
                                             viewModel.setMode(m)
                                             viewModel.generateCurrentTool()
                                         },
-                                        label = { Text(m, fontSize = 11.sp, fontWeight = if (selectedMode == m) FontWeight.Bold else FontWeight.Normal) },
+                                        label = { Text(m, fontSize = 11.sp, maxLines = 1, softWrap = false, fontWeight = if (selectedMode == m) FontWeight.Bold else FontWeight.Normal) },
                                         colors = FilterChipDefaults.filterChipColors(
                                             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                                             labelColor = MaterialTheme.colorScheme.onSurface,
@@ -906,7 +918,14 @@ fun SystemOverlayContent(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text(selectedCountry, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                        Text(
+                                            selectedCountry,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
+                                        )
                                         Icon(Icons.Default.ArrowDropDown, contentDescription = null)
                                     }
                                 }
@@ -944,7 +963,7 @@ fun SystemOverlayContent(
                                             viewModel.setStyle(s)
                                             viewModel.generateCurrentTool()
                                         },
-                                        label = { Text(s, fontSize = 11.sp, fontWeight = if (selectedStyle == s) FontWeight.Bold else FontWeight.Normal) },
+                                        label = { Text(s, fontSize = 11.sp, maxLines = 1, softWrap = false, fontWeight = if (selectedStyle == s) FontWeight.Bold else FontWeight.Normal) },
                                         colors = FilterChipDefaults.filterChipColors(
                                             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                                             labelColor = MaterialTheme.colorScheme.onSurface,
@@ -956,37 +975,54 @@ fun SystemOverlayContent(
                             }
                         }
 
-                        // 5. Custom Inputs
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedTextField(
-                                value = customFirst,
-                                onValueChange = { viewModel.setCustomFirst(it) },
-                                label = { Text("First Name", fontSize = 11.sp) },
-                                modifier = Modifier.weight(1f).onFocusChanged { isCustomFirstFocused = it.isFocused },
-                                singleLine = true
-                            )
-                            OutlinedTextField(
-                                value = customLast,
-                                onValueChange = { viewModel.setCustomLast(it) },
-                                label = { Text("Surname", fontSize = 11.sp) },
-                                modifier = Modifier.weight(1f).onFocusChanged { isCustomLastFocused = it.isFocused },
-                                singleLine = true
-                            )
+                        // 5. Custom Inputs (responsive stacking on narrow widths)
+                        if (isNarrow) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedTextField(
+                                    value = customFirst,
+                                    onValueChange = { viewModel.setCustomFirst(it) },
+                                    label = { Text("First Name", fontSize = 11.sp) },
+                                    modifier = Modifier.fillMaxWidth().onFocusChanged { isCustomFirstFocused = it.isFocused },
+                                    singleLine = true
+                                )
+                                OutlinedTextField(
+                                    value = customLast,
+                                    onValueChange = { viewModel.setCustomLast(it) },
+                                    label = { Text("Surname", fontSize = 11.sp) },
+                                    modifier = Modifier.fillMaxWidth().onFocusChanged { isCustomLastFocused = it.isFocused },
+                                    singleLine = true
+                                )
+                            }
+                        } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = customFirst,
+                                    onValueChange = { viewModel.setCustomFirst(it) },
+                                    label = { Text("First Name", fontSize = 11.sp) },
+                                    modifier = Modifier.weight(1f).onFocusChanged { isCustomFirstFocused = it.isFocused },
+                                    singleLine = true
+                                )
+                                OutlinedTextField(
+                                    value = customLast,
+                                    onValueChange = { viewModel.setCustomLast(it) },
+                                    label = { Text("Surname", fontSize = 11.sp) },
+                                    modifier = Modifier.weight(1f).onFocusChanged { isCustomLastFocused = it.isFocused },
+                                    singleLine = true
+                                )
+                            }
                         }
 
-                        // 6. Quantity
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Quantity: $selectedCount", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        // 6. Quantity (stacked cleanly to prevent label/chip collisions)
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("QUANTITY: $selectedCount", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             Row(
-                                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 listOf(1, 5, 10, 25, 50).forEach { cnt ->
                                     val isCountSelected = selectedCount == cnt
@@ -996,7 +1032,7 @@ fun SystemOverlayContent(
                                             viewModel.setCount(cnt)
                                             viewModel.generateCurrentTool()
                                         },
-                                        label = { Text("$cnt", fontSize = 10.sp, fontWeight = if (isCountSelected) FontWeight.Bold else FontWeight.Normal) },
+                                        label = { Text("$cnt", fontSize = 11.sp, maxLines = 1, softWrap = false, fontWeight = if (isCountSelected) FontWeight.Bold else FontWeight.Normal) },
                                         colors = FilterChipDefaults.filterChipColors(
                                             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                                             labelColor = MaterialTheme.colorScheme.onSurface,
@@ -1013,7 +1049,13 @@ fun SystemOverlayContent(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Include Middle Name", style = MaterialTheme.typography.bodySmall)
+                            Text(
+                                "Include Middle Name",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f).padding(end = 8.dp),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
                             ArworaAnimatedSwitch(checked = includeMiddle, onCheckedChange = { viewModel.setIncludeMiddle(it); viewModel.generateCurrentTool() }, modifier = Modifier.scale(0.8f))
                         }
 
@@ -1022,7 +1064,13 @@ fun SystemOverlayContent(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("No Repeat Session", style = MaterialTheme.typography.bodySmall)
+                            Text(
+                                "No Repeat Session",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f).padding(end = 8.dp),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
                             ArworaAnimatedSwitch(checked = noRepeat, onCheckedChange = { viewModel.setNoRepeat(it) }, modifier = Modifier.scale(0.8f))
                         }
 
@@ -1039,12 +1087,12 @@ fun SystemOverlayContent(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text("Generated List (${generatedNames.size})", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                                        Text("Generated List (${generatedNames.size})", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         TextButton(onClick = {
                                             val allText = generatedNames.joinToString("\n") { it.name }
                                             copyText(allText, "Copied all names!")
                                         }) {
-                                            Text("Copy All", fontSize = 11.sp)
+                                            Text("Copy All", fontSize = 11.sp, maxLines = 1, softWrap = false)
                                         }
                                     }
                                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1057,11 +1105,9 @@ fun SystemOverlayContent(
                                                 horizontalArrangement = Arrangement.SpaceBetween,
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Text("${idx + 1}. $styledName", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                                                Row {
-                                                    IconButton(onClick = { copyText(styledName) }, modifier = Modifier.size(24.dp)) {
-                                                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.primary)
-                                                    }
+                                                Text("${idx + 1}. $styledName", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                                IconButton(onClick = { copyText(styledName) }, modifier = Modifier.size(28.dp)) {
+                                                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy", modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
                                                 }
                                             }
                                         }
@@ -1083,7 +1129,7 @@ fun SystemOverlayContent(
                                         shape = RoundedCornerShape(10.dp)
                                     ) {
                                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                            Text(selectedCountry, style = MaterialTheme.typography.bodyMedium)
+                                            Text(selectedCountry, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                                             Icon(Icons.Default.ArrowDropDown, null)
                                         }
                                     }
@@ -1095,17 +1141,21 @@ fun SystemOverlayContent(
                                 }
                             }
 
-                            // Gender for Username
+                            // Gender for Username (horizontally scrollable)
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text("GENDER", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
                                     listOf("Male", "Female", "Unisex").forEach { g ->
                                         val isGSelected = selectedGender == g
                                         FilterChip(
                                             selected = isGSelected,
                                             onClick = { viewModel.setGender(g); viewModel.generateCurrentTool() },
-                                            label = { Text(g, fontSize = 11.sp, fontWeight = if (isGSelected) FontWeight.Bold else FontWeight.Normal) },
-                                            modifier = Modifier.weight(1f),
+                                            label = { Text(g, fontSize = 11.sp, maxLines = 1, softWrap = false, fontWeight = if (isGSelected) FontWeight.Bold else FontWeight.Normal) },
                                             colors = FilterChipDefaults.filterChipColors(
                                                 containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                                                 labelColor = MaterialTheme.colorScheme.onSurface,
@@ -1119,7 +1169,9 @@ fun SystemOverlayContent(
 
                             Text("USERNAME STYLE", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             Row(
-                                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 listOf("Random", "Aesthetic", "Cute", "Gaming", "Professional").forEach { s ->
@@ -1130,7 +1182,7 @@ fun SystemOverlayContent(
                                             viewModel.setUsernameStyle(s)
                                             viewModel.generateCurrentTool()
                                         },
-                                        label = { Text(s, fontSize = 11.sp, fontWeight = if (isSSelected) FontWeight.Bold else FontWeight.Normal) },
+                                        label = { Text(s, fontSize = 11.sp, maxLines = 1, softWrap = false, fontWeight = if (isSSelected) FontWeight.Bold else FontWeight.Normal) },
                                         colors = FilterChipDefaults.filterChipColors(
                                             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                                             labelColor = MaterialTheme.colorScheme.onSurface,
@@ -1143,38 +1195,50 @@ fun SystemOverlayContent(
                             
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text("MODIFIERS", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                                Row(modifier = Modifier.fillMaxWidth()) {
-                                    Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                                        Checkbox(checked = addNum, onCheckedChange = { viewModel.setUsernameAddNum(it); viewModel.generateCurrentTool() }, modifier = Modifier.scale(0.8f))
-                                        Text("Numbers", fontSize = 10.sp, maxLines = 1)
-                                    }
-                                    Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                                        Checkbox(checked = addUnder, onCheckedChange = { viewModel.setUsernameAddUnder(it); viewModel.generateCurrentTool() }, modifier = Modifier.scale(0.8f))
-                                        Text("Under", fontSize = 10.sp, maxLines = 1)
-                                    }
-                                    Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                                        Checkbox(checked = addDot, onCheckedChange = { viewModel.setUsernameAddDot(it); viewModel.generateCurrentTool() }, modifier = Modifier.scale(0.8f))
-                                        Text("Dots", fontSize = 10.sp, maxLines = 1)
-                                    }
-                                }
-                                Row(modifier = Modifier.fillMaxWidth()) {
-                                    Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                                        Checkbox(checked = shortUsername, onCheckedChange = { viewModel.setUsernameShort(it); viewModel.generateCurrentTool() }, modifier = Modifier.scale(0.8f))
-                                        Text("Short", fontSize = 10.sp, maxLines = 1)
-                                    }
-                                    Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                                        Checkbox(checked = randomPrefix, onCheckedChange = { viewModel.setUsernamePrefix(it); viewModel.generateCurrentTool() }, modifier = Modifier.scale(0.8f))
-                                        Text("Prefix", fontSize = 10.sp, maxLines = 1)
-                                    }
-                                    Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                                        Checkbox(checked = randomSuffix, onCheckedChange = { viewModel.setUsernameSuffix(it); viewModel.generateCurrentTool() }, modifier = Modifier.scale(0.8f))
-                                        Text("Suffix", fontSize = 10.sp, maxLines = 1)
+                                FlowRow(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    listOf(
+                                        Triple("Numbers", addNum) { v: Boolean -> viewModel.setUsernameAddNum(v); viewModel.generateCurrentTool() },
+                                        Triple("Underscore", addUnder) { v: Boolean -> viewModel.setUsernameAddUnder(v); viewModel.generateCurrentTool() },
+                                        Triple("Dots", addDot) { v: Boolean -> viewModel.setUsernameAddDot(v); viewModel.generateCurrentTool() },
+                                        Triple("Short", shortUsername) { v: Boolean -> viewModel.setUsernameShort(v); viewModel.generateCurrentTool() },
+                                        Triple("Prefix", randomPrefix) { v: Boolean -> viewModel.setUsernamePrefix(v); viewModel.generateCurrentTool() },
+                                        Triple("Suffix", randomSuffix) { v: Boolean -> viewModel.setUsernameSuffix(v); viewModel.generateCurrentTool() }
+                                    ).forEach { (label, checked, onChange) ->
+                                        FilterChip(
+                                            selected = checked,
+                                            onClick = { onChange(!checked) },
+                                            label = {
+                                                Text(
+                                                    label,
+                                                    fontSize = 11.sp,
+                                                    maxLines = 1,
+                                                    softWrap = false,
+                                                    fontWeight = if (checked) FontWeight.Bold else FontWeight.Normal
+                                                )
+                                            },
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                                labelColor = MaterialTheme.colorScheme.onSurface,
+                                                selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                                selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                                            )
+                                        )
                                     }
                                 }
                             }
 
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text("No Repeat Session", style = MaterialTheme.typography.bodySmall)
+                                Text(
+                                    "No Repeat Session",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.weight(1f).padding(end = 8.dp),
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                                 ArworaAnimatedSwitch(checked = noRepeat, onCheckedChange = { viewModel.setNoRepeat(it) }, modifier = Modifier.scale(0.8f))
                             }
                         }
@@ -1196,7 +1260,7 @@ fun SystemOverlayContent(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Uppercase (A-Z)", style = MaterialTheme.typography.bodyMedium)
+                                Text("Uppercase (A-Z)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(end = 8.dp), maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 ArworaAnimatedSwitch(checked = pwdUpper, onCheckedChange = { viewModel.setPasswordUpper(it); viewModel.generateCurrentTool() })
                             }
                             Row(
@@ -1204,7 +1268,7 @@ fun SystemOverlayContent(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Numbers (0-9)", style = MaterialTheme.typography.bodyMedium)
+                                Text("Numbers (0-9)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(end = 8.dp), maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 ArworaAnimatedSwitch(checked = pwdNums, onCheckedChange = { viewModel.setPasswordNums(it); viewModel.generateCurrentTool() })
                             }
                             Row(
@@ -1212,7 +1276,7 @@ fun SystemOverlayContent(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Symbols (!@#)", style = MaterialTheme.typography.bodyMedium)
+                                Text("Symbols (!@#)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(end = 8.dp), maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 ArworaAnimatedSwitch(checked = pwdSyms, onCheckedChange = { viewModel.setPasswordSyms(it); viewModel.generateCurrentTool() })
                             }
 
@@ -1221,7 +1285,7 @@ fun SystemOverlayContent(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Exclude Similar (i, l, 1, o, 0)", style = MaterialTheme.typography.bodySmall)
+                                Text("Exclude Similar (i, l, 1, o, 0)", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f).padding(end = 8.dp), maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 ArworaAnimatedSwitch(checked = pwdExcludeSimilar, onCheckedChange = { viewModel.setPasswordExcludeSimilar(it); viewModel.generateCurrentTool() }, modifier = Modifier.scale(0.8f))
                             }
                             Row(
@@ -1229,7 +1293,7 @@ fun SystemOverlayContent(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Exclude Ambiguous ({}, [], (), /)", style = MaterialTheme.typography.bodySmall)
+                                Text("Exclude Ambiguous ({}, [], (), /)", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f).padding(end = 8.dp), maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 ArworaAnimatedSwitch(checked = pwdExcludeAmbiguous, onCheckedChange = { viewModel.setPasswordExcludeAmbiguous(it); viewModel.generateCurrentTool() }, modifier = Modifier.scale(0.8f))
                             }
                         }
@@ -1372,19 +1436,40 @@ fun SystemOverlayContent(
 
                     "Name Mixer" -> {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedTextField(
-                                    value = mix1,
-                                    onValueChange = { viewModel.setMixerInputs(it, mix2) },
-                                    label = { Text("Name 1") },
-                                    modifier = Modifier.weight(1f).onFocusChanged { isMix1Focused = it.isFocused }
-                                )
-                                OutlinedTextField(
-                                    value = mix2,
-                                    onValueChange = { viewModel.setMixerInputs(mix1, it) },
-                                    label = { Text("Name 2") },
-                                    modifier = Modifier.weight(1f).onFocusChanged { isMix2Focused = it.isFocused }
-                                )
+                            if (isNarrow) {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedTextField(
+                                        value = mix1,
+                                        onValueChange = { viewModel.setMixerInputs(it, mix2) },
+                                        label = { Text("Name 1") },
+                                        modifier = Modifier.fillMaxWidth().onFocusChanged { isMix1Focused = it.isFocused },
+                                        singleLine = true
+                                    )
+                                    OutlinedTextField(
+                                        value = mix2,
+                                        onValueChange = { viewModel.setMixerInputs(mix1, it) },
+                                        label = { Text("Name 2") },
+                                        modifier = Modifier.fillMaxWidth().onFocusChanged { isMix2Focused = it.isFocused },
+                                        singleLine = true
+                                    )
+                                }
+                            } else {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedTextField(
+                                        value = mix1,
+                                        onValueChange = { viewModel.setMixerInputs(it, mix2) },
+                                        label = { Text("Name 1") },
+                                        modifier = Modifier.weight(1f).onFocusChanged { isMix1Focused = it.isFocused },
+                                        singleLine = true
+                                    )
+                                    OutlinedTextField(
+                                        value = mix2,
+                                        onValueChange = { viewModel.setMixerInputs(mix1, it) },
+                                        label = { Text("Name 2") },
+                                        modifier = Modifier.weight(1f).onFocusChanged { isMix2Focused = it.isFocused },
+                                        singleLine = true
+                                    )
+                                }
                             }
                             Button(
                                 onClick = { viewModel.mixNames(mix1, mix2) },
@@ -1424,9 +1509,10 @@ fun SystemOverlayContent(
                                 placeholder = { Text("Type or paste here...") }
                             )
 
-                            Row(
+                            FlowRow(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Button(
                                     onClick = {
@@ -1437,13 +1523,12 @@ fun SystemOverlayContent(
                                             Toast.makeText(context, "Text Saved", Toast.LENGTH_SHORT).show()
                                         }
                                     },
-                                    modifier = Modifier.weight(1f),
                                     shape = RoundedCornerShape(10.dp),
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
                                 ) {
                                     Icon(Icons.Default.Save, null, modifier = Modifier.size(16.dp))
                                     Spacer(Modifier.width(6.dp))
-                                    Text("Save Text", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Text("Save Text", fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                                 }
 
                                 if (savedList.isNotEmpty()) {
@@ -1452,14 +1537,13 @@ fun SystemOverlayContent(
                                             viewModel.clearSavedText()
                                             Toast.makeText(context, "All items cleared", Toast.LENGTH_SHORT).show()
                                         },
-                                        modifier = Modifier.weight(1f),
                                         shape = RoundedCornerShape(10.dp),
-                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
                                         colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
                                     ) {
                                         Icon(Icons.Default.DeleteSweep, null, modifier = Modifier.size(16.dp))
                                         Spacer(Modifier.width(6.dp))
-                                        Text("Clear All", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Text("Clear All", fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                                     }
                                 }
                             }
@@ -1542,7 +1626,7 @@ fun SystemOverlayContent(
                         com.arwora.ui.screens.CalculatorView()
                     }
                 }
-                Spacer(modifier = Modifier.height(22.dp))
+                Spacer(modifier = Modifier.height(28.dp))
             }
         }
     }

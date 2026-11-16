@@ -1,8 +1,10 @@
 package com.arwora.feature.system.wifi
 
 sealed interface DeviceEvent {
-    data class OnHostFound(val ip: String, val mac: String?, val latencyMs: Long) : DeviceEvent
+    data class OnHostFound(val ip: String, val mac: String?, val latencyMs: Long?) : DeviceEvent
     data class OnNameResolved(val ip: String, val friendlyName: String, val source: String) : DeviceEvent
+    data class OnMacResolved(val ip: String, val mac: String) : DeviceEvent
+    data class OnLatencyUpdated(val ip: String, val latencyMs: Long) : DeviceEvent
     data class OnProgress(val scanned: Int, val total: Int) : DeviceEvent
     data class OnDone(val summary: String) : DeviceEvent
 }

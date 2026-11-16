@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.arwora.utils.FakeDeviceManager
 import com.arwora.utils.FakeDeviceProfile
+import com.arwora.utils.ShizukuConnectionManager
 import com.arwora.utils.SoundEffectManager
 
 @Composable
@@ -38,6 +39,18 @@ fun FakeDeviceDialog(
 
     // Toggle state: false = Full Name (Default), true = Short Name
     var isShortNameMode by remember { mutableStateOf(FakeDeviceManager.isShortNameMode(context)) }
+    var isShizukuReady by remember { mutableStateOf(FakeDeviceManager.isShizukuReady()) }
+
+    DisposableEffect(Unit) {
+        isShizukuReady = FakeDeviceManager.isShizukuReady()
+        val listeners = ShizukuConnectionManager.registerListeners(
+            onBinderChanged = { isShizukuReady = FakeDeviceManager.isShizukuReady() },
+            onPermissionResult = { _, _ -> isShizukuReady = FakeDeviceManager.isShizukuReady() }
+        )
+        onDispose {
+            ShizukuConnectionManager.unregisterListeners(listeners)
+        }
+    }
 
     val filteredProfiles = remember(searchQuery) {
         FakeDeviceManager.searchDevices(searchQuery)
@@ -64,6 +77,45 @@ fun FakeDeviceDialog(
             Column(
                 modifier = Modifier.fillMaxWidth()
             ) {
+                if (!isShizukuReady) {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 10.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.45f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f))
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Shizuku inactive: selections save locally; connect Shizuku for system spoofing.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            TextButton(
+                                onClick = {
+                                    SoundEffectManager.playClick(context)
+                                    ShizukuConnectionManager.connect(
+                                        context = context,
+                                        onConnected = { isShizukuReady = FakeDeviceManager.isShizukuReady() },
+                                        onPermissionRequested = { isShizukuReady = FakeDeviceManager.isShizukuReady() }
+                                    )
+                                },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                            ) {
+                                Text("Connect", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
                 // Search Input Field
                 OutlinedTextField(
                     value = searchQuery,

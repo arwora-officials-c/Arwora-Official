@@ -30,6 +30,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.arwora.ui.components.GooglePlayCompactLinearProgress
 import com.arwora.utils.DnsManager
 import com.arwora.utils.DnsProvider
 import com.arwora.utils.DnsSecureSettingsHelper
@@ -740,7 +741,11 @@ fun DnsSpeedBenchmarkCard(
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     if (isRunningAll) {
-                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                        GooglePlayCompactLinearProgress(
+                            width = 26.dp,
+                            height = 3.5.dp,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Testing...", style = MaterialTheme.typography.labelSmall)
                     } else {
@@ -780,7 +785,7 @@ fun DnsSpeedBenchmarkCard(
 
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 if (item.isTesting) {
-                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                    GooglePlayCompactLinearProgress(width = 36.dp, height = 4.dp)
                                 } else if (item.latencyMs != null) {
                                     val ms = item.latencyMs
                                     val color = when {
@@ -920,7 +925,11 @@ fun AutoSelectFastestDnsCard(
                 shape = RoundedCornerShape(12.dp)
             ) {
                 if (isTesting) {
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                    GooglePlayCompactLinearProgress(
+                        width = 32.dp,
+                        height = 4.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Benchmarking...", fontWeight = FontWeight.Bold)
                 } else {

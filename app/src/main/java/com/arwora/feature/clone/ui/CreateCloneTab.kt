@@ -24,6 +24,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.arwora.ui.components.ArworaAnimatedSwitch
+import com.arwora.ui.components.GooglePlayLinearProgressBar
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 
@@ -300,7 +301,7 @@ fun CloneConfigurationSheet(
         Spacer(modifier = Modifier.height(8.dp))
 
         if (isCreating) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            GooglePlayLinearProgressBar(modifier = Modifier.fillMaxWidth(), height = 5.dp)
             Spacer(modifier = Modifier.height(8.dp))
         }
 

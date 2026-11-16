@@ -78,9 +78,6 @@ fun WifiControllerScreen(
     }
 
     // Store & diagnostics states
-    val alerts by viewModel.wifiStore.alerts.collectAsStateWithLifecycle()
-    val alertsEnabled by viewModel.wifiStore.alertsEnabled.collectAsStateWithLifecycle()
-    val customLabels by viewModel.wifiStore.customLabels.collectAsStateWithLifecycle()
     val speedHistory by viewModel.wifiStore.speedHistory.collectAsStateWithLifecycle()
     val blockedMacs by viewModel.wifiStore.blockedMacs.collectAsStateWithLifecycle()
     val signalInfo by viewModel.signalInfo.collectAsStateWithLifecycle()
@@ -92,6 +89,7 @@ fun WifiControllerScreen(
     val isScanningNetworks by viewModel.isScanningNetworks.collectAsStateWithLifecycle()
 
     var selectedDevice by remember { mutableStateOf<DeviceInfo?>(null) }
+    var editingDevice by remember { mutableStateOf<DeviceInfo?>(null) }
     var currentTab by remember { mutableStateOf(WifiSectionTab.DEVICES) }
 
     var hasPermissions by remember { mutableStateOf(false) }
@@ -310,11 +308,8 @@ fun WifiControllerScreen(
                             ModernDeviceListCard(
                                 device = device,
                                 hostIp = networkInfo.localIp,
-                                onEditName = { /* Already handled in ConnectedDevicesCard but we are redesigning here */ },
+                                onEditName = { editingDevice = device },
                                 onPing = { viewModel.pingDevice(device.ip) },
-                                onToggleBlock = { 
-                                    viewModel.toggleBlockDevice(device)
-                                },
                                 onCopy = { text, label -> copyToClipboard(label, text) }
                             )
                         }
@@ -367,25 +362,6 @@ fun WifiControllerScreen(
                     }
                 }
 
-                WifiSectionTab.ALERTS -> {
-                    item {
-                        DeviceNamingAndAlertsCard(
-                            alerts = alerts,
-                            alertsEnabled = alertsEnabled,
-                            onToggleAlerts = { enabled ->
-                                viewModel.wifiStore.setAlertsEnabled(enabled)
-                            },
-                            onClearAlerts = {
-                                viewModel.wifiStore.clearAlerts()
-                            },
-                            customLabels = customLabels,
-                            devices = devices,
-                            onSaveCustomName = { mac, name ->
-                                viewModel.saveCustomDeviceName(mac, name)
-                            }
-                        )
-                    }
-                }
                 else -> {}
             }
 
@@ -418,6 +394,52 @@ fun WifiControllerScreen(
                 device.latencyMs?.let { InfoRow("Latency", "$it ms") }
             }
         }
+    }
+
+    editingDevice?.let { dev ->
+        var tempName by remember(dev.ip) { mutableStateOf(dev.customLabel ?: dev.friendlyName ?: "") }
+
+        AlertDialog(
+            onDismissRequest = { editingDevice = null },
+            title = {
+                Text(
+                    text = "Set Custom Device Label",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "Assign an easy-to-scan friendly name for ${dev.ip} (${dev.vendor.ifBlank { "Host" }}):",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = tempName,
+                        onValueChange = { tempName = it },
+                        placeholder = { Text("e.g. Phone or Office TV") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    val labelKey = dev.mac.takeIf { it != "Unknown" && it.isNotBlank() } ?: dev.ip
+                    viewModel.saveCustomDeviceName(labelKey, tempName)
+                    editingDevice = null
+                }) {
+                    Text("Save Label")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingDevice = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 

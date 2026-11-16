@@ -37,6 +37,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.arwora.ui.components.GooglePlayCompactLinearProgress
 import com.arwora.utils.ShizukuConnectionManager
 import com.arwora.utils.SoundEffectManager
 import java.text.SimpleDateFormat
@@ -429,10 +430,10 @@ fun ShellCommandSheet(
                     elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
                 ) {
                     if (isRunning) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            strokeWidth = 2.5.dp
+                        GooglePlayCompactLinearProgress(
+                            width = 28.dp,
+                            height = 4.dp,
+                            color = MaterialTheme.colorScheme.onPrimary
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Text("Executing...", style = MaterialTheme.typography.titleSmall)

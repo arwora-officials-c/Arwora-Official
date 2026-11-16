@@ -57,6 +57,9 @@ import com.arwora.ui.navigation.Screen
 import com.arwora.utils.AppPermissionsHelper
 import com.arwora.utils.ManagedAppPermission
 import com.arwora.utils.ManagedPermissionCategory
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
@@ -100,15 +103,29 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
     var showColorPickerDialog by remember { mutableStateOf(false) }
     var originalUiColor by remember { mutableStateOf(uiColorLong) }
     var originalButtonColor by remember { mutableStateOf(buttonColorLong) }
+    val coroutineScope = rememberCoroutineScope()
     var isPermissionsExpanded by remember { mutableStateOf(false) }
-    var appPermissions by remember {
-        mutableStateOf(AppPermissionsHelper.inspectPermissions(context))
+    var appPermissions by remember { mutableStateOf<List<ManagedAppPermission>>(emptyList()) }
+    var permissionsLoaded by remember { mutableStateOf(false) }
+
+    LaunchedEffect(context) {
+        val loaded = withContext(Dispatchers.IO) {
+            AppPermissionsHelper.inspectPermissions(context)
+        }
+        appPermissions = loaded
+        permissionsLoaded = true
     }
 
     DisposableEffect(lifecycleOwner, context) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                appPermissions = AppPermissionsHelper.inspectPermissions(context)
+                coroutineScope.launch {
+                    val loaded = withContext(Dispatchers.IO) {
+                        AppPermissionsHelper.inspectPermissions(context)
+                    }
+                    appPermissions = loaded
+                    permissionsLoaded = true
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -554,7 +571,7 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
             SettingsGroupCard(modifier = Modifier.testTag("settings_app_permissions_card")) {
                 SettingsItemRow(
                     title = "App Permissions",
-                    subtitle = "$grantedCount of ${appPermissions.size} permissions granted",
+                    subtitle = if (permissionsLoaded) "$grantedCount of ${appPermissions.size} permissions granted" else "Checking permissions...",
                     icon = Icons.Default.AdminPanelSettings,
                     modifier = Modifier.testTag("settings_app_permissions_row"),
                     trailingContent = {
@@ -584,8 +601,14 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
                     },
                     onClick = {
                         com.arwora.utils.SoundEffectManager.playClick()
-                        appPermissions = AppPermissionsHelper.inspectPermissions(context)
                         isPermissionsExpanded = !isPermissionsExpanded
+                        coroutineScope.launch {
+                            val loaded = withContext(Dispatchers.IO) {
+                                AppPermissionsHelper.inspectPermissions(context)
+                            }
+                            appPermissions = loaded
+                            permissionsLoaded = true
+                        }
                     }
                 )
 
@@ -808,18 +831,15 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
         ColorWheelPickerDialog(
             initialColorLong = originalUiColor,
             onDismissRequest = {
-                viewModel.setUiColor(originalUiColor)
-                viewModel.setButtonColor(originalButtonColor)
+                viewModel.setLiveAccentPreview(null)
                 showColorPickerDialog = false
             },
             onConfirm = { finalColor ->
-                viewModel.setUiColor(finalColor)
-                viewModel.setButtonColor(finalColor)
+                viewModel.setAccentColors(finalColor, finalColor)
                 showColorPickerDialog = false
             },
             onLiveColorUpdate = { liveColor ->
-                viewModel.setUiColor(liveColor)
-                viewModel.setButtonColor(liveColor)
+                viewModel.setLiveAccentPreview(liveColor)
             }
         )
     }
@@ -1232,8 +1252,13 @@ fun ColorWheelPickerDialog(
         Color(colorInt)
     }
 
+    var isInitialEmission by remember { mutableStateOf(true) }
     LaunchedEffect(currentSelectedColor) {
-        onLiveColorUpdate(currentSelectedColor.toArgb().toLong() and 0xFFFFFFFFL)
+        if (isInitialEmission) {
+            isInitialEmission = false
+        } else {
+            onLiveColorUpdate(currentSelectedColor.toArgb().toLong() and 0xFFFFFFFFL)
+        }
     }
 
     AlertDialog(

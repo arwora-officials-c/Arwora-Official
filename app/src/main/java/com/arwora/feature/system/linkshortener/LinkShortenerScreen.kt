@@ -36,6 +36,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.arwora.ui.components.GooglePlayCompactLinearProgress
 import com.arwora.utils.SoundEffectManager
 import java.text.SimpleDateFormat
 import java.util.*
@@ -359,10 +360,10 @@ fun LinkShortenerScreen(
                         elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
                     ) {
                         if (isShortening) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(22.dp),
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                strokeWidth = 2.5.dp
+                            GooglePlayCompactLinearProgress(
+                                width = 28.dp,
+                                height = 4.dp,
+                                color = MaterialTheme.colorScheme.onPrimary
                             )
                             Spacer(modifier = Modifier.width(10.dp))
                             Text(

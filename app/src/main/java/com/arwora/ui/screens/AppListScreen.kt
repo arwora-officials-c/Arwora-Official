@@ -61,6 +61,7 @@ fun AppListScreen(
     val extractedApks by viewModel.extractedApks.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val filterType by viewModel.filterType.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val isExtracting by viewModel.isExtracting.collectAsStateWithLifecycle()
 
     var selectedTab by remember { mutableStateOf(0) } // 0: Installed Apps, 1: Extracted APKs, 2: App History Log
@@ -94,7 +95,7 @@ fun AppListScreen(
                     IconButton(
                         onClick = {
                             SoundEffectManager.playClick(context)
-                            viewModel.loadInstalledApps()
+                            viewModel.loadInstalledApps(forceRefresh = true)
                             viewModel.loadExtractedApks()
                             Toast.makeText(context, "Refreshing apps & extracted APKs...", Toast.LENGTH_SHORT).show()
                         }
@@ -111,6 +112,14 @@ fun AppListScreen(
                 .padding(paddingValues)
                 .background(MaterialTheme.colorScheme.background)
         ) {
+            if (isLoading || isExtracting) {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(3.dp),
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
             
             // 1. DASHBOARD SUMMARY SECTION
             Card(
@@ -295,7 +304,20 @@ fun AppListScreen(
                     matchesSearch && matchesFilter
                 }
 
-                if (filteredApps.isEmpty()) {
+                if (isLoading && filteredApps.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        com.arwora.ui.components.GoogleStyleLinearLoadingCard(
+                            title = "Scanning Installed Packages...",
+                            subtitle = "Reading application metadata and APK sizes",
+                            icon = Icons.Default.Apps
+                        )
+                    }
+                } else if (filteredApps.isEmpty()) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()

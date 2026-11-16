@@ -336,14 +336,18 @@ fun CardValidatorDialog(
                                         Text(if (ocrImageUri != null) "Choose Another Image" else "Select Card Image")
                                     }
 
-                                    if (isProcessingOcr) {
-                                        Spacer(modifier = Modifier.height(12.dp))
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    AnimatedVisibility(visible = isProcessingOcr) {
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(top = 12.dp),
+                                            verticalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
-                                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                                             Text("Analyzing image & extracting card digits...", style = MaterialTheme.typography.bodySmall)
+                                            GooglePlayLinearProgressBar(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                height = 5.dp
+                                            )
                                         }
                                     }
                                 }

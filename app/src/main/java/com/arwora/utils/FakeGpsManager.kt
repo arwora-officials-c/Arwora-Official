@@ -84,11 +84,51 @@ object FakeGpsManager {
             .getString(KEY_PRESET_NAME, "Tokyo Tower") ?: "Tokyo Tower"
     }
 
+    fun clearError() {
+        _lastError.value = null
+    }
+
+    internal fun validateCoordinates(lat: Double, lng: Double): Boolean {
+        return lat.isFinite() && lng.isFinite() &&
+            lat >= -90.0 && lat <= 90.0 &&
+            lng >= -180.0 && lng <= 180.0
+    }
+
     /**
      * Checks if the app is currently allowed to add test providers (i.e. selected as Mock Location App).
      */
     @SuppressLint("WrongConstant")
     fun isMockLocationAppAllowed(context: Context): Boolean {
+        try {
+            val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as? android.app.AppOpsManager
+            if (appOps != null) {
+                val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    appOps.unsafeCheckOpNoThrow(
+                        android.app.AppOpsManager.OPSTR_MOCK_LOCATION,
+                        android.os.Process.myUid(),
+                        context.packageName
+                    )
+                } else {
+                    @Suppress("DEPRECATION")
+                    appOps.checkOpNoThrow(
+                        android.app.AppOpsManager.OPSTR_MOCK_LOCATION,
+                        android.os.Process.myUid(),
+                        context.packageName
+                    )
+                }
+                if (mode == android.app.AppOpsManager.MODE_ALLOWED) {
+                    return true
+                }
+                if (mode == android.app.AppOpsManager.MODE_ERRORED ||
+                    mode == android.app.AppOpsManager.MODE_IGNORED
+                ) {
+                    return false
+                }
+            }
+        } catch (_: Exception) {
+            // Fall back to LocationManager probe
+        }
+
         val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return false
         val testProvider = "gps_mock_test_probe"
         return try {
@@ -114,7 +154,7 @@ object FakeGpsManager {
         } catch (e: SecurityException) {
             false
         } catch (e: Exception) {
-            true
+            false
         }
     }
 
@@ -125,21 +165,29 @@ object FakeGpsManager {
     @SuppressLint("WrongConstant", "MissingPermission")
     fun startMockLocation(context: Context, lat: Double, lng: Double): Boolean {
         _lastError.value = null
+        if (!validateCoordinates(lat, lng)) {
+            _lastError.value = "Invalid coordinates. Latitude must be -90..90 and Longitude -180..180."
+            _isMockingActive.value = false
+            return false
+        }
+
         saveCoordinates(context, lat, lng)
         val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
             ?: run {
                 _lastError.value = "LocationManager not available on this device."
+                _isMockingActive.value = false
                 return false
             }
 
-        val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+        val candidateProviders = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+        val activeProviders = mutableListOf<String>()
 
         // 1. Setup Providers
-        for (provider in providers) {
+        for (provider in candidateProviders) {
             try {
                 try {
                     locationManager.removeTestProvider(provider)
-                } catch (ignored: Exception) { }
+                } catch (_: Exception) { }
 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     locationManager.addTestProvider(
@@ -170,14 +218,21 @@ object FakeGpsManager {
                     )
                 }
                 locationManager.setTestProviderEnabled(provider, true)
+                activeProviders.add(provider)
             } catch (e: SecurityException) {
                 Log.w(TAG, "SecurityException: App is not selected as Mock Location app in Developer Options: ${e.message}")
-                _lastError.value = "Please select this app under 'Select mock location app' in Developer Options"
+                _lastError.value = "Please select Arwora Hyper Toolkit under 'Select mock location app' in Developer Options."
                 _isMockingActive.value = false
                 return false
             } catch (e: Exception) {
                 Log.w(TAG, "Warning initializing test provider $provider: ${e.message}")
             }
+        }
+
+        if (activeProviders.isEmpty()) {
+            _lastError.value = "Unable to register mock location provider. Ensure this app is selected under 'Select mock location app' in Developer Options."
+            _isMockingActive.value = false
+            return false
         }
 
         // 2. Start continuous periodic updates
@@ -188,10 +243,10 @@ object FakeGpsManager {
         mockJob = scope.launch {
             while (isActive && _isMockingActive.value) {
                 try {
-                    injectLocation(locationManager, providers, lat, lng)
+                    injectLocation(locationManager, activeProviders, lat, lng)
                     _updateCounter.value += 1
                 } catch (e: SecurityException) {
-                    _lastError.value = "Mock permission revoked in Developer Options."
+                    _lastError.value = "Mock location permission revoked. Re-select this app in Developer Options."
                     _isMockingActive.value = false
                     break
                 } catch (e: Exception) {
@@ -234,6 +289,8 @@ object FakeGpsManager {
             }
             try {
                 locationManager.setTestProviderLocation(provider, location)
+            } catch (e: SecurityException) {
+                throw e
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to set location for $provider: ${e.message}")
             }
