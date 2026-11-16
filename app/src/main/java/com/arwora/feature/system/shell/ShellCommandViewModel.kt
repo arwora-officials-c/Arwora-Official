@@ -15,8 +15,11 @@ class ShellCommandViewModel(application: Application) : AndroidViewModel(applica
 
     private val historyStore = ShellHistoryStore(application)
 
-    private val _status = MutableStateFlow(ShellStatus.SHIZUKU_REQUIRED)
+    private val _status = MutableStateFlow(ShellStatus.ADB_REQUIRED)
     val status: StateFlow<ShellStatus> = _status.asStateFlow()
+
+    private val _isConnecting = MutableStateFlow(false)
+    val isConnecting: StateFlow<Boolean> = _isConnecting.asStateFlow()
 
     private val _commandText = MutableStateFlow("getprop ro.build.version.release")
     val commandText: StateFlow<String> = _commandText.asStateFlow()
@@ -43,7 +46,7 @@ class ShellCommandViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun refreshStatus() {
-        val currentStatus = ShellExecutor.checkShizukuStatus(getApplication())
+        val currentStatus = ShellExecutor.checkAdbStatus(getApplication())
         _status.value = currentStatus
     }
 
@@ -59,9 +62,17 @@ class ShellCommandViewModel(application: Application) : AndroidViewModel(applica
         _commandText.value = preset.command
     }
 
-    fun requestShizukuPermission() {
-        ShellExecutor.requestPermission()
-        refreshStatus()
+    fun connectAdb() {
+        if (_isConnecting.value) return
+        _isConnecting.value = true
+        viewModelScope.launch {
+            try {
+                ShellExecutor.connectAdb(getApplication())
+                refreshStatus()
+            } finally {
+                _isConnecting.value = false
+            }
+        }
     }
 
     fun runCurrentCommand(forceConfirmed: Boolean = false) {

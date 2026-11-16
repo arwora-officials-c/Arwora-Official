@@ -38,7 +38,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arwora.ui.components.GooglePlayCompactLinearProgress
-import com.arwora.utils.ShizukuConnectionManager
+import com.arwora.utils.NativeAdbManager
 import com.arwora.utils.SoundEffectManager
 import java.text.SimpleDateFormat
 import java.util.*
@@ -52,6 +52,8 @@ fun ShellCommandSheet(
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     val status by viewModel.status.collectAsStateWithLifecycle()
+    val isConnecting by viewModel.isConnecting.collectAsStateWithLifecycle()
+    val adbConnected by NativeAdbManager.isConnected.collectAsStateWithLifecycle()
     val commandText by viewModel.commandText.collectAsStateWithLifecycle()
     val isRunning by viewModel.isRunning.collectAsStateWithLifecycle()
     val lastResult by viewModel.lastResult.collectAsStateWithLifecycle()
@@ -62,12 +64,12 @@ fun ShellCommandSheet(
 
     val lifecycleOwner = LocalLifecycleOwner.current
 
+    LaunchedEffect(adbConnected) {
+        viewModel.refreshStatus()
+    }
+
     DisposableEffect(lifecycleOwner) {
         viewModel.refreshStatus()
-        val listeners = ShizukuConnectionManager.registerListeners(
-            onBinderChanged = { viewModel.refreshStatus() },
-            onPermissionResult = { _, _ -> viewModel.refreshStatus() }
-        )
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 viewModel.refreshStatus()
@@ -76,7 +78,6 @@ fun ShellCommandSheet(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            ShizukuConnectionManager.unregisterListeners(listeners)
         }
     }
 
@@ -135,9 +136,9 @@ fun ShellCommandSheet(
                                 )
                                 val badgeColor = when (status) {
                                     ShellStatus.READY -> Color(0xFF10B981)
-                                    ShellStatus.SHIZUKU_REQUIRED -> MaterialTheme.colorScheme.error
-                                    ShellStatus.PERMISSION_DENIED -> MaterialTheme.colorScheme.error
-                                    ShellStatus.STOPPED_BY_YOU -> MaterialTheme.colorScheme.outline
+                                    ShellStatus.ADB_REQUIRED -> MaterialTheme.colorScheme.error
+                                    ShellStatus.WIFI_REQUIRED -> MaterialTheme.colorScheme.error
+                                    ShellStatus.DISCONNECTED -> MaterialTheme.colorScheme.outline
                                 }
                                 Surface(
                                     shape = RoundedCornerShape(6.dp),
@@ -176,7 +177,7 @@ fun ShellCommandSheet(
                     Spacer(modifier = Modifier.height(14.dp))
 
                     Text(
-                        text = "Execute low-level system commands using the Shizuku framework. This allows accessing features typically restricted to system apps.",
+                        text = "Execute low-level system commands using built-in Wireless ADB. This allows accessing features typically restricted to system apps.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         lineHeight = 20.sp
@@ -213,7 +214,7 @@ fun ShellCommandSheet(
                 }
             }
 
-            // Shizuku not ready banner
+            // Wireless ADB not ready banner
             if (status != ShellStatus.READY) {
                 Spacer(modifier = Modifier.height(16.dp))
                 Card(
@@ -228,7 +229,7 @@ fun ShellCommandSheet(
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Icon(Icons.Default.Security, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                             Text(
-                                text = if (status == ShellStatus.PERMISSION_DENIED) "Authorization Required" else "Shizuku Service Offline",
+                                text = if (status == ShellStatus.WIFI_REQUIRED) "Wi-Fi Connection Required" else "Wireless ADB Offline",
                                 fontWeight = FontWeight.ExtraBold,
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.primary
@@ -236,10 +237,10 @@ fun ShellCommandSheet(
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = if (status == ShellStatus.PERMISSION_DENIED)
-                                "Shizuku is running, but Arwora Hyper Toolkit needs your explicit permission to execute commands."
+                            text = if (status == ShellStatus.WIFI_REQUIRED)
+                                "Connect to a Wi-Fi network and turn on Wireless Debugging in Developer Options to bind local ADB."
                             else
-                                "The Shizuku service is required but not detected. Please start Shizuku from its app using Wireless Debugging or ADB.",
+                                "Built-in Wireless ADB is ready to bind. Ensure Wireless Debugging is enabled in Developer Options and tap Connect Now.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -248,17 +249,16 @@ fun ShellCommandSheet(
                             Button(
                                 onClick = {
                                     SoundEffectManager.playClick()
-                                    ShizukuConnectionManager.connect(
-                                        context = context,
-                                        requestCode = 1002,
-                                        onConnected = { viewModel.refreshStatus() },
-                                        onPermissionRequested = { viewModel.refreshStatus() }
-                                    )
+                                    viewModel.connectAdb()
                                 },
+                                enabled = !isConnecting,
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Text(if (status == ShellStatus.PERMISSION_DENIED) "Grant Access" else "Connect")
+                                Text(
+                                    text = if (isConnecting) "Connecting..." else "Connect Now",
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                             OutlinedButton(
                                 onClick = {
@@ -829,7 +829,7 @@ fun ShellCommandSheet(
         )
     }
 
-    // ==================== SHIZUKU SETUP HELP DIALOG ====================
+    // ==================== WIRELESS ADB SETUP HELP DIALOG ====================
     if (showHelpDialog) {
         AlertDialog(
             onDismissRequest = { viewModel.dismissHelp() },
@@ -842,20 +842,20 @@ fun ShellCommandSheet(
             },
             title = {
                 Text(
-                    text = "Shizuku Shell Authorization",
+                    text = "Wireless ADB Console Setup",
                     fontWeight = FontWeight.Bold
                 )
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        text = "This tool executes shell commands with device-level system permissions via Shizuku.",
+                        text = "This tool executes shell commands directly through Arwora Hyper Toolkit's built-in Wireless ADB engine.",
                         style = MaterialTheme.typography.bodyMedium
                     )
-                    Text("1. Install and open the **Shizuku** app.", style = MaterialTheme.typography.bodySmall)
-                    Text("2. Start Shizuku via **Wireless Debugging** (Android 11+) or **ADB** from a PC.", style = MaterialTheme.typography.bodySmall)
-                    Text("3. Grant permission to **Arwora Hyper Toolkit** in Shizuku's authorized apps.", style = MaterialTheme.typography.bodySmall)
-                    Text("4. Return here to run commands.", style = MaterialTheme.typography.bodySmall)
+                    Text("1. Connect your device to an active Wi-Fi network.", style = MaterialTheme.typography.bodySmall)
+                    Text("2. Enable Wireless Debugging in Developer Options.", style = MaterialTheme.typography.bodySmall)
+                    Text("3. Pair once using the Wireless Debugging wizard if this is your first connection.", style = MaterialTheme.typography.bodySmall)
+                    Text("4. Tap Connect Now to bind directly to the local ADB daemon.", style = MaterialTheme.typography.bodySmall)
                 }
             },
             confirmButton = {
@@ -863,15 +863,10 @@ fun ShellCommandSheet(
                     onClick = {
                         SoundEffectManager.playClick()
                         viewModel.dismissHelp()
-                        ShizukuConnectionManager.connect(
-                            context = context,
-                            requestCode = 1002,
-                            onConnected = { viewModel.refreshStatus() },
-                            onPermissionRequested = { viewModel.refreshStatus() }
-                        )
+                        viewModel.connectAdb()
                     }
                 ) {
-                    Text("Connect")
+                    Text("Connect Now", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {

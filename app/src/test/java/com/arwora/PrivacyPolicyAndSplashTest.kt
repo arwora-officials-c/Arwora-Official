@@ -38,7 +38,7 @@ class PrivacyPolicyAndSplashTest {
             "${section.title}\n${section.summary}\n${section.bullets.joinToString("\n")}"
         }
         assertTrue(allText.contains("offline", ignoreCase = true))
-        assertTrue(allText.contains("Shizuku", ignoreCase = true))
+        assertTrue(allText.contains("Wireless ADB", ignoreCase = true))
         assertTrue(allText.contains("Storage", ignoreCase = true))
         assertTrue(allText.contains("RECORD_AUDIO", ignoreCase = true))
         assertTrue(allText.contains("telemetry", ignoreCase = true))

@@ -6,7 +6,6 @@ import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
 import android.app.AlertDialog
-import rikka.shizuku.Shizuku
 
 object FakeDeviceHelper {
     private const val TAG = "FakeDeviceHelper"
@@ -41,9 +40,9 @@ object FakeDeviceHelper {
         dialog.show()
     }
 
-    fun isShizukuReady(): Boolean = FakeDeviceManager.isShizukuReady()
+    fun isAdbReady(): Boolean = FakeDeviceManager.isAdbReady()
 
-    fun executeCommandViaShizuku(command: String): Boolean = FakeDeviceManager.executeCommandViaShizuku(command)
+    fun executeCommandViaAdb(command: String): Boolean = FakeDeviceManager.executeCommandViaAdb(command)
 
     fun applyFakeDeviceName(context: Context, newName: String) {
         FakeDeviceManager.applyFakeDeviceName(context, newName)

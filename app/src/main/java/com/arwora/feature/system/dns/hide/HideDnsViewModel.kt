@@ -22,28 +22,31 @@ class HideDnsViewModel(application: Application) : AndroidViewModel(application)
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    private val _isShizukuAvailable = MutableStateFlow(false)
-    val isShizukuAvailable: StateFlow<Boolean> = _isShizukuAvailable.asStateFlow()
+    private val _isWifiConnected = MutableStateFlow(false)
+    val isWifiConnected: StateFlow<Boolean> = _isWifiConnected.asStateFlow()
 
-    private val _hasShizukuPermission = MutableStateFlow(false)
-    val hasShizukuPermission: StateFlow<Boolean> = _hasShizukuPermission.asStateFlow()
+    private val _isAdbConnected = MutableStateFlow(false)
+    val isAdbConnected: StateFlow<Boolean> = _isAdbConnected.asStateFlow()
 
     val isMasterEnabled: StateFlow<Boolean> = repository.isMasterEnabled
     val hiddenPackages: StateFlow<Set<String>> = repository.hiddenPackages
 
     init {
-        checkShizukuStatus()
+        checkAdbStatus()
         loadApps()
     }
 
-    fun checkShizukuStatus() {
-        val status = ShellExecutor.checkShizukuStatus(getApplication())
-        _isShizukuAvailable.value = (status != ShellStatus.SHIZUKU_REQUIRED)
-        _hasShizukuPermission.value = (status == ShellStatus.READY)
+    fun checkAdbStatus() {
+        val status = ShellExecutor.checkAdbStatus(getApplication())
+        _isWifiConnected.value = (status != ShellStatus.WIFI_REQUIRED)
+        _isAdbConnected.value = (status == ShellStatus.READY)
     }
 
-    fun requestShizukuPermission() {
-        ShellExecutor.requestPermission(1005)
+    fun connectAdb() {
+        viewModelScope.launch {
+            ShellExecutor.connectAdb(getApplication())
+            checkAdbStatus()
+        }
     }
 
     fun loadApps(forceRefresh: Boolean = false) {

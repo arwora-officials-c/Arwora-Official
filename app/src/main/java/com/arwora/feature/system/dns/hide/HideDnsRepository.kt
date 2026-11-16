@@ -151,14 +151,14 @@ class HideDnsRepository(private val context: Context) {
     }
 
     /**
-     * Core isolation logic: Uses Shizuku or shell commands to apply iptables/routing
+     * Core isolation logic: Uses Wireless ADB shell commands to apply iptables/routing
      * rules or drop DoT (port 853) traffic for target application UIDs.
      */
     private suspend fun applyDnsIsolationRules(masterEnabled: Boolean, hiddenPackages: Set<String>) {
         if (!masterEnabled || hiddenPackages.isEmpty()) {
-            // Clear any previous isolation rules via shell if Shizuku is active
+            // Clear any previous isolation rules via shell if Wireless ADB is active
             try {
-                if (ShellExecutor.checkShizukuStatus(context) == com.arwora.feature.system.shell.ShellStatus.READY) {
+                if (ShellExecutor.checkAdbStatus(context) == com.arwora.feature.system.shell.ShellStatus.READY) {
                     ShellExecutor.executeCommand("iptables -F ARWORA_HIDE_DNS 2>/dev/null || true")
                 }
             } catch (e: Exception) {
@@ -178,7 +178,7 @@ class HideDnsRepository(private val context: Context) {
                 }
             }
 
-            if (uids.isNotEmpty() && ShellExecutor.checkShizukuStatus(context) == com.arwora.feature.system.shell.ShellStatus.READY) {
+            if (uids.isNotEmpty() && ShellExecutor.checkAdbStatus(context) == com.arwora.feature.system.shell.ShellStatus.READY) {
                 val commands = StringBuilder()
                 commands.append("iptables -N ARWORA_HIDE_DNS 2>/dev/null || iptables -F ARWORA_HIDE_DNS;\n")
                 // Block DoT (port 853 - Private DNS) for specific UIDs so they fall back to standard DNS

@@ -86,7 +86,7 @@ object PrivacyPolicyContent {
             title = "3. Permission Transparency",
             summary = "Optional elevated and hardware permissions are only used for the specific tools you open:",
             bullets = listOf(
-                "Shizuku & Wireless ADB: Used strictly on-device for user-initiated App Ops inspection, animation scaling, and Private DNS toggling.",
+                "Wireless ADB: Used strictly on-device for user-initiated App Ops inspection, animation scaling, and Private DNS toggling.",
                 "Storage & Media / Photo Picker: Used locally for Storage Analyzer, APK extraction, HTML-to-APK packaging, metadata inspection/editing, and file exports.",
                 "Microphone (RECORD_AUDIO): Used in real time by the Sound Direction analyzer; audio is processed locally on-device and never transmitted.",
                 "Notification Access: Used solely to populate your private local Notification History Log inside the app.",

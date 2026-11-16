@@ -14,11 +14,8 @@ import android.os.*
 import android.provider.Settings
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.arwora.utils.NativeAdbManager
 import kotlinx.coroutines.*
-import rikka.shizuku.Shizuku
-import rikka.shizuku.ShizukuRemoteProcess
-import java.io.BufferedReader
-import java.io.InputStreamReader
 
 class ScreenOffOptimizerService : Service() {
 
@@ -290,12 +287,8 @@ class ScreenOffOptimizerService : Service() {
         val pm = packageManager
         val runningProcesses = am.runningAppProcesses ?: return 0
         
-        val useShizuku = ScreenOffOptimizerManager.useShizuku.value
-        val hasShizuku = if (useShizuku) {
-            try {
-                Shizuku.pingBinder() && Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED
-            } catch (_: Exception) { false }
-        } else false
+        val useAdb = ScreenOffOptimizerManager.useWirelessAdb.value
+        val hasAdb = useAdb && NativeAdbManager.isAdbReady()
 
         val protectedPackages = setOf(
             packageName, // Arwora Toolkit
@@ -305,8 +298,6 @@ class ScreenOffOptimizerService : Service() {
             "com.google.android.inputmethod.latin",
             "com.android.vending",
             "com.google.android.apps.maps",
-            "rikka.shizuku",
-            "moe.shizuku.privileged.api",
             "com.android.settings",
             "com.android.phone",
             "com.android.launcher3",
@@ -337,12 +328,12 @@ class ScreenOffOptimizerService : Service() {
                     
                     if (isSystemApp && !isUpdatedSystemApp) continue
                     
-                    if (hasShizuku) {
-                        // Aggressive cleanup for non-critical apps
-                        if (runShizukuCommand("am force-stop $pkg")) {
+                    if (hasAdb) {
+                        // Aggressive cleanup for non-critical apps via Wireless ADB
+                        if (runAdbCommand("am force-stop $pkg")) {
                             killedCount++
                             handledPackages.add(pkg)
-                            Log.d(TAG, "Shizuku cleanup: Force-stopped $pkg")
+                            Log.d(TAG, "Wireless ADB cleanup: Force-stopped $pkg")
                         }
                     } else {
                         // Standard API kill (safe fallback)
@@ -354,31 +345,27 @@ class ScreenOffOptimizerService : Service() {
             }
         }
         
-        // Final memory trim if Shizuku is available
-        if (hasShizuku) {
-            runShizukuCommand("am kill-all")
+        // Final memory trim if Wireless ADB is available
+        if (hasAdb) {
+            runAdbCommand("am kill-all")
         }
 
         return killedCount
     }
 
     private fun performRadioShutdown(): String {
-        val useShizuku = ScreenOffOptimizerManager.useShizuku.value
-        val hasShizuku = if (useShizuku) {
-            try {
-                Shizuku.pingBinder() && Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED
-            } catch (_: Exception) { false }
-        } else false
+        val useAdb = ScreenOffOptimizerManager.useWirelessAdb.value
+        val hasAdb = useAdb && NativeAdbManager.isAdbReady()
 
         var btSuccess = false
         var locSuccess = false
 
-        if (hasShizuku) {
-            btSuccess = runShizukuCommand("cmd bluetooth_manager disable") ||
-                        runShizukuCommand("service call bluetooth_manager 6") ||
-                        runShizukuCommand("svc bluetooth disable")
-            locSuccess = runShizukuCommand("cmd location set-location-enabled false") ||
-                         runShizukuCommand("settings put secure location_mode 0")
+        if (hasAdb) {
+            btSuccess = runAdbCommand("cmd bluetooth_manager disable") ||
+                        runAdbCommand("service call bluetooth_manager 6") ||
+                        runAdbCommand("svc bluetooth disable")
+            locSuccess = runAdbCommand("cmd location set-location-enabled false") ||
+                         runAdbCommand("settings put secure location_mode 0")
         }
 
         if (!btSuccess) {
@@ -420,30 +407,18 @@ class ScreenOffOptimizerService : Service() {
         }
 
         return when {
-            hasShizuku -> "Radios: Bluetooth & Location Disabled (Shizuku)"
+            hasAdb -> "Radios: Bluetooth & Location Disabled (Wireless ADB)"
             btSuccess -> "Radios: Bluetooth Disabled (Root/Shell)"
             else -> "Radios: Optimization Attempted"
         }
     }
 
-    private fun runShizukuCommand(command: String): Boolean {
-        var process: java.lang.Process? = null
+    private fun runAdbCommand(command: String): Boolean {
         return try {
-            val cmdArgs = command.split(" ").toTypedArray()
-            val newProcessMethod = Shizuku::class.java.getDeclaredMethod(
-                "newProcess",
-                Array<String>::class.java,
-                Array<String>::class.java,
-                String::class.java
-            )
-            newProcessMethod.isAccessible = true
-            process = newProcessMethod.invoke(null, cmdArgs, null, null) as? java.lang.Process
-            process?.waitFor() == 0
+            NativeAdbManager.executeCommandBlocking(command).success
         } catch (e: Exception) {
-            Log.e(TAG, "Shizuku CMD failed ($command): ${e.message}")
+            Log.e(TAG, "Wireless ADB CMD failed ($command): ${e.message}")
             false
-        } finally {
-            process?.destroy()
         }
     }
 
@@ -527,20 +502,16 @@ class ScreenOffOptimizerService : Service() {
         }
 
         // 3. Full Volume Maximization for ALL Streams:
-        // Attempt Shizuku-based maximization first if enabled, fallback to standard API
-        val useShizuku = ScreenOffOptimizerManager.useShizuku.value
-        val hasShizuku = if (useShizuku) {
-            try {
-                Shizuku.pingBinder() && Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED
-            } catch (_: Exception) { false }
-        } else false
+        // Attempt Wireless ADB maximization first if enabled, fallback to standard API
+        val useAdb = ScreenOffOptimizerManager.useWirelessAdb.value
+        val hasAdb = useAdb && NativeAdbManager.isAdbReady()
 
         var streamsMaxed = 0
-        if (hasShizuku) {
-            val shizukuSuccess = executeShizukuVolumeMaximization(audioManager)
-            if (shizukuSuccess) {
+        if (hasAdb) {
+            val adbSuccess = executeAdbVolumeMaximization(audioManager)
+            if (adbSuccess) {
                 streamsMaxed = 5
-                Log.d(TAG, "All streams maxed via Shizuku successfully.")
+                Log.d(TAG, "All streams maxed via Wireless ADB successfully.")
             }
         }
 
@@ -581,12 +552,12 @@ class ScreenOffOptimizerService : Service() {
         }
 
         isSilentActivatedByRoutine = true
-        val summary = "Audio: $ringerStatus • $dndStatus • $streamsMaxed/5 Streams Maxed ${if (hasShizuku) "(Shizuku)" else ""}"
+        val summary = "Audio: $ringerStatus • $dndStatus • $streamsMaxed/5 Streams Maxed ${if (hasAdb) "(Wireless ADB)" else ""}"
         ScreenOffOptimizerManager.updateLog(summary)
         return summary
     }
 
-    private fun executeShizukuVolumeMaximization(audioManager: AudioManager?): Boolean {
+    private fun executeAdbVolumeMaximization(audioManager: AudioManager?): Boolean {
         if (audioManager == null) return false
         var success = false
         // Stream mapping for 'cmd audio set-stream-volume':
@@ -603,9 +574,9 @@ class ScreenOffOptimizerService : Service() {
             try {
                 val maxVolume = audioManager.getStreamMaxVolume(streamType)
                 val command = "cmd audio set-stream-volume $streamId $maxVolume"
-                if (runShizukuCommand(command)) success = true
+                if (runAdbCommand(command)) success = true
             } catch (e: Exception) {
-                Log.e(TAG, "Shizuku volume command failed for stream $streamId: ${e.message}")
+                Log.e(TAG, "Wireless ADB volume command failed for stream $streamId: ${e.message}")
             }
         }
         return success
@@ -635,37 +606,6 @@ class ScreenOffOptimizerService : Service() {
         } else {
             ScreenOffOptimizerManager.updateLog("Screen turned back ON (No routine active)")
         }
-    }
-
-    private fun executeShizukuRadiosShutdown(): Boolean {
-        var success = false
-        val commands = arrayOf(
-            "svc bluetooth disable",
-            "settings put secure location_mode 0",
-            "cmd location set-location-enabled false"
-        )
-        for (command in commands) {
-            var process: java.lang.Process? = null
-            try {
-                val cmdArgs = command.split(" ").toTypedArray()
-                // Invoke Shizuku.newProcess via reflection to bypass Kotlin visibility restrictions
-                val newProcessMethod = Shizuku::class.java.getDeclaredMethod(
-                    "newProcess",
-                    Array<String>::class.java,
-                    Array<String>::class.java,
-                    String::class.java
-                )
-                newProcessMethod.isAccessible = true
-                process = newProcessMethod.invoke(null, cmdArgs, null, null) as? java.lang.Process
-                val exitCode = process?.waitFor() ?: -1
-                if (exitCode == 0) success = true
-            } catch (e: Exception) {
-                Log.e(TAG, "Shizuku command failed: ${e.message}")
-            } finally {
-                process?.destroy()
-            }
-        }
-        return success
     }
 
     private fun executeRootOrFallbackRadiosShutdown(): Boolean {

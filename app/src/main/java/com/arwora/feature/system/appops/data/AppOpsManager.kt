@@ -14,9 +14,9 @@ import android.util.Log
 import com.arwora.feature.system.appops.model.AppOpsItem
 import com.arwora.feature.system.appops.model.PermissionItem
 import com.arwora.feature.system.appops.model.StandbyBucketMode
+import com.arwora.utils.NativeAdbManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import rikka.shizuku.Shizuku
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.text.SimpleDateFormat
@@ -28,31 +28,24 @@ object AppOpsManager {
     private const val TAG = "AppOpsManager"
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
 
-    fun isShizukuAvailable(): Boolean {
-        return com.arwora.utils.ShizukuConnectionManager.hasShizukuPermission()
+    fun isAdbAvailable(): Boolean {
+        return NativeAdbManager.isAdbReady()
     }
 
     fun runShellCommand(command: String): String {
+        if (isAdbAvailable()) {
+            val adbRes = NativeAdbManager.executeCommandBlocking(command)
+            if (adbRes.success) {
+                return adbRes.output.trim()
+            }
+        }
         val result = StringBuilder()
         var process: Process? = null
         try {
-            if (isShizukuAvailable()) {
-                val cmdArgs = command.split(" ").toTypedArray()
-                val method = Shizuku::class.java.getDeclaredMethod(
-                    "newProcess",
-                    Array<String>::class.java,
-                    Array<String>::class.java,
-                    String::class.java
-                )
-                method.isAccessible = true
-                process = method.invoke(null, cmdArgs, null, null) as? Process
-            }
-            if (process == null) {
-                try {
-                    process = Runtime.getRuntime().exec(arrayOf("su", "-c", command))
-                } catch (_: Exception) {
-                    process = Runtime.getRuntime().exec(command)
-                }
+            try {
+                process = Runtime.getRuntime().exec(arrayOf("su", "-c", command))
+            } catch (_: Exception) {
+                process = Runtime.getRuntime().exec(command)
             }
 
             process?.let { p ->

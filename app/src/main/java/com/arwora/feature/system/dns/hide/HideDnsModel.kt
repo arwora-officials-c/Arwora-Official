@@ -32,8 +32,8 @@ sealed interface HideDnsUiState {
         val hiddenApps: List<HideDnsAppItem>,
         val totalAppsCount: Int,
         val hiddenCount: Int,
-        val isShizukuAvailable: Boolean,
-        val hasShizukuPermission: Boolean
+        val isWifiConnected: Boolean,
+        val isAdbConnected: Boolean
     ) : HideDnsUiState
     data class Error(val message: String) : HideDnsUiState
 }

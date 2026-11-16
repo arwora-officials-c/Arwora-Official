@@ -52,7 +52,15 @@ data class SavedWifiNetwork(
 
 enum class WifiSource {
     SYSTEM,
-    SHIZUKU_STORE,
+    ADB_SYSTEM_STORE,
     LOCAL_VAULT,
-    MANUAL_IMPORT
+    MANUAL_IMPORT;
+
+    companion object {
+        fun fromString(value: String?): WifiSource {
+            if (value == null) return LOCAL_VAULT
+            if (value == "SHIZUKU_STORE") return ADB_SYSTEM_STORE
+            return entries.firstOrNull { it.name == value } ?: LOCAL_VAULT
+        }
+    }
 }

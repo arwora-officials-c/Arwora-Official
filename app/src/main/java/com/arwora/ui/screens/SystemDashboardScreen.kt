@@ -41,7 +41,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -87,7 +86,9 @@ fun SystemDashboardScreen(
     }
 
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     LaunchedEffect(Unit) {
+        NativeAdbManager.init(context)
         com.arwora.utils.AppLockerManager.init(context)
     }
 
@@ -218,8 +219,7 @@ fun SystemDashboardScreen(
 
     // Animation & Refresh state
     var animScale by remember { mutableStateOf(AnimationTweakManager.getCurrentAnimationScale(context)) }
-    var isShizukuAvailable by remember { mutableStateOf(ShizukuConnectionManager.isShizukuRunning()) }
-    var hasShizukuPerm by remember { mutableStateOf(ShizukuConnectionManager.hasShizukuPermission()) }
+    val isAdbConnected by NativeAdbManager.isConnected.collectAsStateWithLifecycle()
     val hasNotificationAccess by WirelessPairingManager.notificationAccessGranted.collectAsStateWithLifecycle()
 
     // Fake Device State
@@ -254,8 +254,7 @@ fun SystemDashboardScreen(
 
     fun refreshDashboardStatuses() {
         checkNotificationPermissionStatus()
-        isShizukuAvailable = ShizukuConnectionManager.isShizukuRunning()
-        hasShizukuPerm = ShizukuConnectionManager.hasShizukuPermission()
+        NativeAdbManager.refreshConnectionStatus(context)
         animScale = AnimationTweakManager.getCurrentAnimationScale(context)
         selectedDnsProvider = DnsManager.getSelectedDns(context)
         shellViewModel.refreshStatus()
@@ -263,10 +262,6 @@ fun SystemDashboardScreen(
 
     DisposableEffect(lifecycleOwner, context) {
         refreshDashboardStatuses()
-        val shizukuListeners = ShizukuConnectionManager.registerListeners(
-            onBinderChanged = { refreshDashboardStatuses() },
-            onPermissionResult = { _, _ -> refreshDashboardStatuses() }
-        )
         val resumeObserver = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 refreshDashboardStatuses()
@@ -275,7 +270,6 @@ fun SystemDashboardScreen(
         lifecycleOwner.lifecycle.addObserver(resumeObserver)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(resumeObserver)
-            ShizukuConnectionManager.unregisterListeners(shizukuListeners)
         }
     }
 
@@ -286,18 +280,15 @@ fun SystemDashboardScreen(
                 FakeGpsManager.init(context)
                 val dns = DnsManager.getSelectedDns(context)
                 val scale = AnimationTweakManager.getCurrentAnimationScale(context)
-                val shizukuAvail = ShizukuConnectionManager.isShizukuRunning()
-                val shizukuP = ShizukuConnectionManager.hasShizukuPermission()
                 val preset = FakeGpsManager.getSavedPresetName(context)
                 val spoof = prefs.getString("selected_device", null) ?: defaultDeviceName
                 withContext(Dispatchers.Main) {
                     selectedDnsProvider = dns
                     animScale = scale
-                    isShizukuAvailable = shizukuAvail
-                    hasShizukuPerm = shizukuP
                     currentPresetName = preset
                     currentSpoof = spoof
                     checkNotificationPermissionStatus()
+                    NativeAdbManager.refreshConnectionStatus(context)
                     shellViewModel.refreshStatus()
                 }
             }
@@ -443,102 +434,9 @@ fun SystemDashboardScreen(
             // 2. HERO / SUMMARY CARD
             item {
                 AnimatedListItem(index = 2) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(22.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f)
-                        ),
-                        border = BorderStroke(
-                            width = 1.dp,
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                        )
-                    ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        @OptIn(ExperimentalLayoutApi::class)
-                        FlowRow(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            DashboardStatusBadge(
-                                text = "System Status: Online",
-                                dotColor = Color(0xFF10B981),
-                                containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
-                                borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.20f),
-                                textColor = MaterialTheme.colorScheme.primary,
-                                testTagName = "hero_system_status_chip",
-                                modifier = Modifier.align(Alignment.CenterVertically)
-                            )
-
-                            val notifChipColor = if (hasNotificationAccess) Color(0xFF10B981) else Color(0xFFF59E0B)
-                            DashboardStatusBadge(
-                                text = if (hasNotificationAccess) "Notifications: Granted" else "Notifications: Off",
-                                dotColor = notifChipColor,
-                                containerColor = notifChipColor.copy(alpha = 0.10f),
-                                borderColor = notifChipColor.copy(alpha = 0.25f),
-                                textColor = notifChipColor,
-                                testTagName = "hero_notification_status_chip",
-                                modifier = Modifier.align(Alignment.CenterVertically),
-                                onClick = {
-                                    SoundEffectManager.playClick()
-                                    if (!hasNotificationAccess) {
-                                        WirelessPairingManager.openNotificationAccessSettings(context)
-                                    } else {
-                                        navigateGuarded(Screen.NotificationHistory.route) {
-                                            navController.navigate(Screen.NotificationHistory.route)
-                                        }
-                                    }
-                                }
-                            )
-
-                            val shizukuChipColor = when {
-                                hasShizukuPerm && isShizukuAvailable -> Color(0xFF10B981)
-                                isShizukuAvailable -> Color(0xFFF59E0B)
-                                else -> MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                            DashboardStatusBadge(
-                                text = when {
-                                    hasShizukuPerm && isShizukuAvailable -> "Shizuku: Connected"
-                                    isShizukuAvailable -> "Shizuku: Authorize"
-                                    else -> "Shizuku: Inactive"
-                                },
-                                dotColor = shizukuChipColor,
-                                containerColor = shizukuChipColor.copy(alpha = 0.10f),
-                                borderColor = shizukuChipColor.copy(alpha = 0.25f),
-                                textColor = shizukuChipColor,
-                                testTagName = "hero_shizuku_status_chip",
-                                modifier = Modifier.align(Alignment.CenterVertically),
-                                onClick = {
-                                    SoundEffectManager.playClick()
-                                    ShizukuConnectionManager.connect(
-                                        context = context,
-                                        requestCode = 1001,
-                                        onConnected = { refreshDashboardStatuses() },
-                                        onPermissionRequested = { refreshDashboardStatuses() }
-                                    )
-                                }
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        Text(
-                            text = "Centralized Control Panel",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "A secure, user-controlled diagnostic environment. Toggle permissions, automate configurations, execute ADB shell operations, or shorten links locally with direct, authorized control.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
-                            lineHeight = 16.sp
-                        )
-                    }
+                    CentralizedControlPanelHeroCard()
                 }
             }
-        }
 
         // SECTION 1: CORE CONTROLS & SPOOFERS
         item {
@@ -987,11 +885,15 @@ fun SystemDashboardScreen(
                                         SoundEffectManager.playClick()
                                         DnsManager.saveSelectedDns(context, provider)
                                         selectedDnsProvider = provider
-                                        val applied = DnsSecureSettingsHelper.setPrivateDns(context, "hostname", provider.dotHost)
-                                        if (applied) {
-                                            Toast.makeText(context, "${provider.name} applied!", Toast.LENGTH_SHORT).show()
-                                        } else {
-                                            Toast.makeText(context, "Selected ${provider.name}. Tap below to apply via Settings or Shizuku", Toast.LENGTH_SHORT).show()
+                                        coroutineScope.launch {
+                                            val applied = withContext(Dispatchers.IO) {
+                                                DnsSecureSettingsHelper.setPrivateDns(context, "hostname", provider.dotHost)
+                                            }
+                                            if (applied) {
+                                                Toast.makeText(context, "${provider.name} applied!", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                Toast.makeText(context, "Selected ${provider.name}. Tap below to apply via Settings or Wireless ADB", Toast.LENGTH_SHORT).show()
+                                            }
                                         }
                                     },
                                 shape = RoundedCornerShape(14.dp),
@@ -2077,126 +1979,56 @@ fun SystemDashboardScreen(
                 }
             }
 
-            // WIRELESS DEBUGGING & SHIZUKU MANAGER CARD
+            // WIRELESS DEBUGGING & NATIVE ADB MANAGER CARD
             item {
                 val adbPrefs = remember { context.getSharedPreferences("adb_access_prefs", Context.MODE_PRIVATE) }
                 var isUserStopped by remember { mutableStateOf(adbPrefs.getBoolean("is_user_stopped", false)) }
-                var isShizukuStopped by remember { mutableStateOf(adbPrefs.getBoolean("is_shizuku_stopped", false)) }
-                var showShizukuInfoDialog by remember { mutableStateOf(false) }
+                var showAdbHelpDialog by remember { mutableStateOf(false) }
 
-                var shizukuAvailable by remember { mutableStateOf(false) }
-                var shizukuPermGranted by remember { mutableStateOf(false) }
-                var shizukuServiceVersion by remember { mutableStateOf(0) }
-
-                // Local IP & Wireless Debugging Port retrieval
-                val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
-                val ipAddressInt = wifiManager?.connectionInfo?.ipAddress ?: 0
-                val ipAddressStr = if (ipAddressInt != 0) {
-                    String.format(
-                        "%d.%d.%d.%d",
-                        ipAddressInt and 0xff,
-                        ipAddressInt shr 8 and 0xff,
-                        ipAddressInt shr 16 and 0xff,
-                        ipAddressInt shr 24 and 0xff
-                    )
-                } else {
-                    try {
-                        val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
-                        var foundIp = "127.0.0.1"
-                        while (interfaces.hasMoreElements()) {
-                            val iface = interfaces.nextElement()
-                            val addrs = iface.inetAddresses
-                            while (addrs.hasMoreElements()) {
-                                val addr = addrs.nextElement()
-                                if (!addr.isLoopbackAddress && addr is java.net.Inet4Address) {
-                                    foundIp = addr.hostAddress ?: "127.0.0.1"
-                                }
-                            }
-                        }
-                        foundIp
-                    } catch (e: Exception) {
-                        "127.0.0.1"
-                    }
+                val wifiIp = remember(isWirelessDebuggingExpanded, isAdbConnected) {
+                    NativeAdbManager.getLocalWifiIpAddress(context) ?: "127.0.0.1"
                 }
 
-                // Retrieve active wireless adb port & Developer ADB toggle from global settings (Android 11+)
                 var adbPort by remember { mutableIntStateOf(-1) }
                 var isWirelessAdbEnabled by remember { mutableStateOf(false) }
 
                 val cardLifecycleOwner = LocalLifecycleOwner.current
-                val updateShizukuStatus = {
-                    val avail = ShizukuConnectionManager.isShizukuRunning()
-                    val perm = ShizukuConnectionManager.hasShizukuPermission()
-                    val ver = try { if (avail) rikka.shizuku.Shizuku.getLatestServiceVersion() else 0 } catch (_: Throwable) { 0 }
-                    adbPort = try {
-                        android.provider.Settings.Global.getInt(context.contentResolver, "adb_wifi_server_port", -1)
-                    } catch (_: Exception) {
-                        -1
-                    }
-                    isWirelessAdbEnabled = try {
-                        android.provider.Settings.Global.getInt(context.contentResolver, "adb_enabled", 0) == 1 ||
-                        android.provider.Settings.Global.getInt(context.contentResolver, "adb_wifi_enabled", 0) == 1
-                    } catch (_: Exception) {
-                        false
-                    }
-                    shizukuAvailable = avail
-                    shizukuPermGranted = perm
-                    shizukuServiceVersion = ver
-                    isShizukuAvailable = avail
-                    hasShizukuPerm = perm
+                val updateAdbStatus = {
+                    adbPort = NativeAdbManager.getSystemWirelessDebugPort(context)
+                        ?: NativeAdbManager.connectedPort.value
+                        ?: -1
+                    isWirelessAdbEnabled = NativeAdbManager.isWirelessDebuggingSettingEnabled(context)
+                    isUserStopped = adbPrefs.getBoolean("is_user_stopped", false)
+                    NativeAdbManager.refreshConnectionStatus(context)
                     checkNotificationPermissionStatus()
                 }
 
                 DisposableEffect(cardLifecycleOwner) {
-                    updateShizukuStatus()
-                    val listeners = ShizukuConnectionManager.registerListeners(
-                        onBinderChanged = { updateShizukuStatus() },
-                        onPermissionResult = { requestCode, granted ->
-                            if (requestCode == 1001) {
-                                shizukuPermGranted = granted
-                            }
-                            updateShizukuStatus()
-                        }
-                    )
+                    updateAdbStatus()
                     val lifecycleObserver = androidx.lifecycle.LifecycleEventObserver { _, event ->
                         if (event == Lifecycle.Event.ON_RESUME) {
-                            updateShizukuStatus()
+                            updateAdbStatus()
                         }
                     }
                     cardLifecycleOwner.lifecycle.addObserver(lifecycleObserver)
-
                     onDispose {
                         cardLifecycleOwner.lifecycle.removeObserver(lifecycleObserver)
-                        ShizukuConnectionManager.unregisterListeners(listeners)
                     }
                 }
 
-                val activeProvider = when {
-                    isUserStopped || isShizukuStopped -> "None (Stopped by you)"
-                    shizukuPermGranted && shizukuAvailable -> "Shizuku Active"
-                    else -> "Disconnected"
-                }
-
-                val statusTextStr = when {
-                    isUserStopped || isShizukuStopped -> "Stopped by user"
-                    !shizukuAvailable -> "Wireless ADB / Shizuku Inactive"
-                    !shizukuPermGranted -> "Authorization Required"
-                    else -> "Connected & Ready"
-                }
-
                 val badgeColor = when {
-                    isUserStopped || isShizukuStopped -> MaterialTheme.colorScheme.error
-                    shizukuPermGranted && shizukuAvailable -> Color(0xFF10B981)
+                    isUserStopped && !isAdbConnected -> MaterialTheme.colorScheme.error
+                    isAdbConnected -> Color(0xFF10B981)
                     else -> Color(0xFFFF9800)
                 }
 
-                val connectionStatusText = if (shizukuPermGranted && shizukuAvailable) "Active" else "Inactive / Disconnected"
+                val connectionStatusText = if (isAdbConnected) "ADB Connected" else "Inactive / Disconnected"
 
                 SystemFeatureCard(
                     title = "Wireless Debugging",
-                    subtitle = "IP: $ipAddressStr${if (adbPort > 0) ":$adbPort" else ""} • Status: $connectionStatusText",
+                    subtitle = "IP: $wifiIp${if (adbPort > 0) ":$adbPort" else ""} • Status: $connectionStatusText",
                     icon = Icons.Default.Wifi,
-                    badge = if (shizukuPermGranted && shizukuAvailable) "Active" else "Inactive",
+                    badge = if (isAdbConnected) "ADB Connected" else "Inactive",
                     badgeColor = badgeColor,
                     statusDotColor = badgeColor,
                     isExpanded = isWirelessDebuggingExpanded,
@@ -2223,11 +2055,11 @@ fun SystemDashboardScreen(
                             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                     Text("Local IP Address:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text(ipAddressStr, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                    Text(wifiIp, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                                 }
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                     Text("Wireless Debug Port:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text(if (adbPort > 0) "$adbPort" else "Not Assigned", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                    Text(if (adbPort > 0) "$adbPort" else "Auto Detection", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                                 }
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                     Text("Developer ADB:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -2238,20 +2070,21 @@ fun SystemDashboardScreen(
 
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        // Copy IP & Port Button
                         OutlinedButton(
                             onClick = {
                                 SoundEffectManager.playClick()
-                                val endpoint = "$ipAddressStr${if (adbPort > 0) ":$adbPort" else ""}"
+                                val endpoint = "$wifiIp${if (adbPort > 0) ":$adbPort" else ""}"
                                 clipboardManager.setText(AnnotatedString(endpoint))
                                 Toast.makeText(context, "ADB address copied to clipboard", Toast.LENGTH_SHORT).show()
                             },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp),
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Copy IP & Port")
+                            Text("Copy IP & Port", fontWeight = FontWeight.Bold)
                         }
 
                         Spacer(modifier = Modifier.height(12.dp))
@@ -2272,17 +2105,19 @@ fun SystemDashboardScreen(
                                     SoundEffectManager.playClick()
                                     try {
                                         context.startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
-                                    } catch (e: Exception) {
+                                    } catch (_: Exception) {
                                         Toast.makeText(context, "Unable to open Developer Options. Please enable them in system settings.", Toast.LENGTH_LONG).show()
                                     }
                                 },
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp),
                                 shape = RoundedCornerShape(12.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                             ) {
                                 Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Open Developer Options")
+                                Text("Open Developer Options", fontWeight = FontWeight.Bold)
                             }
 
                             Row(
@@ -2292,44 +2127,44 @@ fun SystemDashboardScreen(
                                 OutlinedButton(
                                     onClick = {
                                         SoundEffectManager.playClick()
-                                        ShizukuConnectionManager.launchShizukuApp(context)
+                                        showAdbHelpDialog = true
                                     },
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp),
                                     shape = RoundedCornerShape(12.dp)
                                 ) {
-                                    Icon(Icons.Default.Launch, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Open Shizuku", fontSize = 11.sp)
+                                    Text("Pairing Help", fontWeight = FontWeight.SemiBold)
                                 }
 
-                                if (!shizukuPermGranted) {
-                                    Button(
-                                        onClick = {
-                                            SoundEffectManager.playClick()
-                                            ShizukuConnectionManager.connect(
-                                                context = context,
-                                                requestCode = 1001,
-                                                onConnected = { updateShizukuStatus() },
-                                                onPermissionRequested = { updateShizukuStatus() }
-                                            )
-                                        },
-                                        modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(12.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
-                                    ) {
-                                        Text(if (shizukuAvailable) "Authorize ADB" else "Connect", fontSize = 11.sp)
-                                    }
-                                } else {
-                                    OutlinedButton(
-                                        onClick = {
-                                            SoundEffectManager.playClick()
-                                            showShizukuInfoDialog = true
-                                        },
-                                        modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(12.dp)
-                                    ) {
-                                        Text("Pairing Help", fontSize = 11.sp)
-                                    }
+                                Button(
+                                    onClick = {
+                                        SoundEffectManager.playClick()
+                                        if (isAdbConnected) {
+                                            NativeAdbManager.disconnect(userInitiated = true)
+                                            updateAdbStatus()
+                                            Toast.makeText(context, "Wireless ADB disconnected", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            coroutineScope.launch {
+                                                val (_, msg) = NativeAdbManager.connectAutomatically(context)
+                                                updateAdbStatus()
+                                                refreshDashboardStatuses()
+                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (isAdbConnected) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary
+                                    )
+                                ) {
+                                    Text(
+                                        text = if (isAdbConnected) "Disconnect" else "Connect Now",
+                                        fontWeight = FontWeight.Bold
+                                    )
                                 }
                             }
                         }
@@ -2341,37 +2176,39 @@ fun SystemDashboardScreen(
                         // Native Automated Wireless Debugging Pairing System
                         com.arwora.ui.components.WirelessPairingWizard(
                             onPairingSuccess = {
-                                Toast.makeText(context, "Pairing successful! Re-checking connection...", Toast.LENGTH_SHORT).show()
-                                updateShizukuStatus()
+                                Toast.makeText(context, "Wireless ADB Connected!", Toast.LENGTH_SHORT).show()
+                                updateAdbStatus()
                                 refreshDashboardStatuses()
                             }
                         )
 
-                        if (showShizukuInfoDialog) {
+                        if (showAdbHelpDialog) {
                             AlertDialog(
-                                onDismissRequest = { showShizukuInfoDialog = false },
+                                onDismissRequest = { showAdbHelpDialog = false },
                                 title = { Text("Wireless Debugging & Pairing Guide") },
                                 text = {
                                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Text("How to pair Wireless Debugging locally:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                        Text("How to connect built-in Wireless ADB:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
                                         Text("1. Open System Settings > Developer Options.", style = MaterialTheme.typography.bodySmall)
-                                        Text("2. Enable 'Wireless Debugging' and tap 'Pair device with pairing code'.", style = MaterialTheme.typography.bodySmall)
-                                        Text("3. Enter the 6-digit code and pairing port inside the Shizuku app notification or pairing dialog.", style = MaterialTheme.typography.bodySmall)
-                                        Text("4. Once paired, Shizuku will activate local ADB execution instantly.", style = MaterialTheme.typography.bodySmall)
+                                        Text("2. Connect to Wi-Fi and enable 'Wireless Debugging'.", style = MaterialTheme.typography.bodySmall)
+                                        Text("3. If pairing for the first time, tap 'Pair device with pairing code' and enter the code in Mode 1 or use Mode 2.", style = MaterialTheme.typography.bodySmall)
+                                        Text("4. Tap 'Connect Now' to bind directly to the local ADB daemon.", style = MaterialTheme.typography.bodySmall)
                                     }
                                 },
                                 confirmButton = {
                                     Button(
                                         onClick = {
-                                            showShizukuInfoDialog = false
-                                            ShizukuConnectionManager.launchShizukuApp(context)
+                                            showAdbHelpDialog = false
+                                            try {
+                                                context.startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
+                                            } catch (_: Exception) {}
                                         }
                                     ) {
-                                        Text("Open Shizuku App")
+                                        Text("Open Developer Options")
                                     }
                                 },
                                 dismissButton = {
-                                    TextButton(onClick = { showShizukuInfoDialog = false }) {
+                                    TextButton(onClick = { showAdbHelpDialog = false }) {
                                         Text("Dismiss")
                                     }
                                 }
@@ -2387,8 +2224,8 @@ fun SystemDashboardScreen(
                     title = "Animation Speed",
                     subtitle = "Window/Transition/Animator scales: ${animScale}x",
                     icon = Icons.Default.Speed,
-                    badge = if (hasShizukuPerm) "ADB Ready" else "Shizuku Required",
-                    badgeColor = if (hasShizukuPerm) Color(0xFF10B981) else MaterialTheme.colorScheme.error,
+                    badge = if (isAdbConnected) "ADB Ready" else "ADB Required",
+                    badgeColor = if (isAdbConnected) Color(0xFF10B981) else MaterialTheme.colorScheme.error,
                     isExpanded = isAnimationExpanded,
                     onToggleExpand = {
                         SoundEffectManager.playClick()
@@ -2413,8 +2250,16 @@ fun SystemDashboardScreen(
                                 Button(
                                     onClick = {
                                         SoundEffectManager.playClick()
-                                        AnimationTweakManager.setAnimationScales(context, scale)
-                                        animScale = scale
+                                        coroutineScope.launch {
+                                            val ok = withContext(Dispatchers.IO) {
+                                                AnimationTweakManager.setAnimationScales(context, scale)
+                                            }
+                                            if (ok) {
+                                                animScale = scale
+                                            } else {
+                                                Toast.makeText(context, "Connect Wireless ADB first", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
                                     },
                                     modifier = Modifier.weight(1f),
                                     shape = RoundedCornerShape(12.dp),
@@ -3012,53 +2857,34 @@ fun SystemCard(
 }
 
 @Composable
-private fun DashboardStatusBadge(
-    text: String,
-    dotColor: Color,
-    containerColor: Color,
-    borderColor: Color,
-    textColor: Color,
-    testTagName: String,
-    modifier: Modifier = Modifier,
-    onClick: (() -> Unit)? = null
+internal fun CentralizedControlPanelHeroCard(
+    modifier: Modifier = Modifier
 ) {
-    val pillShape = RoundedCornerShape(50.dp)
-    Surface(
-        shape = pillShape,
-        color = containerColor,
-        border = BorderStroke(1.dp, borderColor),
+    Card(
         modifier = modifier
-            .defaultMinSize(minHeight = 32.dp)
-            .clip(pillShape)
-            .then(
-                if (onClick != null) {
-                    Modifier.clickable(role = Role.Button, onClick = onClick)
-                } else {
-                    Modifier
-                }
-            )
-            .testTag(testTagName)
+            .fillMaxWidth()
+            .testTag("centralized_control_panel_card"),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f)
+        ),
+        border = BorderStroke(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+        )
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(6.dp)
-                    .clip(CircleShape)
-                    .background(dotColor)
-            )
+        Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = text,
-                fontSize = 12.sp,
-                lineHeight = 16.sp,
-                fontWeight = FontWeight.Medium,
-                color = textColor,
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Ellipsis
+                text = "Centralized Control Panel",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "A secure, user-controlled diagnostic environment. Toggle permissions, automate configurations, execute ADB shell operations, or shorten links locally with direct, authorized control.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                lineHeight = 16.sp
             )
         }
     }

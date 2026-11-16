@@ -35,8 +35,8 @@ class AppOpsViewModel(application: Application) : AndroidViewModel(application) 
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    private val _isShizukuConnected = MutableStateFlow(false)
-    val isShizukuConnected: StateFlow<Boolean> = _isShizukuConnected.asStateFlow()
+    private val _isAdbConnected = MutableStateFlow(false)
+    val isAdbConnected: StateFlow<Boolean> = _isAdbConnected.asStateFlow()
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
@@ -97,20 +97,31 @@ class AppOpsViewModel(application: Application) : AndroidViewModel(application) 
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
-        checkShizuku()
+        checkAdbStatus()
         loadApps()
     }
 
-    fun checkShizuku() {
+    fun checkAdbStatus() {
         viewModelScope.launch(Dispatchers.IO) {
-            _isShizukuConnected.value = AppOpsManager.isShizukuAvailable()
+            com.arwora.utils.NativeAdbManager.refreshConnectionStatus(getApplication())
+            _isAdbConnected.value = AppOpsManager.isAdbAvailable()
+        }
+    }
+
+    fun connectAdb() {
+        viewModelScope.launch {
+            val (ok, _) = com.arwora.utils.NativeAdbManager.connectAutomatically(getApplication())
+            checkAdbStatus()
+            if (ok) {
+                loadApps()
+            }
         }
     }
 
     fun loadApps() {
         viewModelScope.launch(Dispatchers.IO) {
             _isLoading.value = true
-            checkShizuku()
+            checkAdbStatus()
             val apps = AppOpsManager.getInstalledApps(getApplication())
             _rawApps.value = apps
             _isLoading.value = false

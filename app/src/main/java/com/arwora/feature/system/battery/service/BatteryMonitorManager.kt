@@ -51,7 +51,7 @@ object BatteryMonitorManager {
             BatteryAppStat("com.instagram.android", "Instagram", 10.4f, 270, 50, 190, BatteryDrainStatus.HIGH_DRAIN),
             BatteryAppStat("com.spotify.music", "Spotify", 8.2f, 210, 90, 60, BatteryDrainStatus.NORMAL),
             BatteryAppStat("com.android.chrome", "Google Chrome", 6.8f, 175, 30, 45, BatteryDrainStatus.NORMAL),
-            BatteryAppStat("com.aistudio.hypertoolkit.fresh", "Arwora Hyper Toolkit", 2.1f, 55, 12, 10, BatteryDrainStatus.OPTIMIZED)
+            BatteryAppStat("com.arworahyper.toolkit", "Arwora Hyper Toolkit", 2.1f, 55, 12, 10, BatteryDrainStatus.OPTIMIZED)
         )
     )
     val appStats: StateFlow<List<BatteryAppStat>> = _appStats.asStateFlow()

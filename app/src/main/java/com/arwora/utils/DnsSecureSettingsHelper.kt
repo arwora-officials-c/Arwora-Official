@@ -7,70 +7,34 @@ import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
-import rikka.shizuku.Shizuku
-import java.io.BufferedReader
-import java.io.InputStreamReader
 
 object DnsSecureSettingsHelper {
     private const val TAG = "DnsSecureSettings"
-
-    private var isListenerRegistered = false
-    private var pendingAction: (() -> Unit)? = null
-
-    /**
-     * Registers the Shizuku permission listener if it hasn't been registered yet.
-     */
-    fun registerPermissionListener() {
-        if (isListenerRegistered) return
-        try {
-            Shizuku.addRequestPermissionResultListener { _, grantResult ->
-                if (grantResult == PackageManager.PERMISSION_GRANTED) {
-                    Log.d(TAG, "Shizuku permission granted! Executing pending action.")
-                    pendingAction?.invoke()
-                    pendingAction = null
-                }
-            }
-            isListenerRegistered = true
-        } catch (e: Throwable) {
-            Log.e(TAG, "Failed to register Shizuku permission listener", e)
-        }
-    }
-
-    /**
-     * Sets a pending action to execute as soon as Shizuku permission is granted.
-     */
-    fun setPendingAction(action: () -> Unit) {
-        this.pendingAction = action
-    }
 
     /**
      * Launches Android's native Private DNS settings with a direct intent or fallback sequence.
      */
     fun openPrivateDnsSettings(context: Context) {
         try {
-            // a) Direct private DNS settings
             val intent = Intent("android.settings.PRIVATE_DNS_SETTINGS")
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(intent)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             try {
-                // b) Fallback 1: Wireless Settings
                 val intent = Intent(Settings.ACTION_WIRELESS_SETTINGS)
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 context.startActivity(intent)
-            } catch (ex: Exception) {
+            } catch (_: Exception) {
                 try {
-                    // b) Fallback 2: Network Operator Settings
                     val intent = Intent(Settings.ACTION_NETWORK_OPERATOR_SETTINGS)
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     context.startActivity(intent)
-                } catch (exc: Exception) {
+                } catch (_: Exception) {
                     try {
-                        // Final Fallback: Base Settings
                         val intent = Intent(Settings.ACTION_SETTINGS)
                         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         context.startActivity(intent)
-                    } catch (finalEx: Exception) {
+                    } catch (_: Exception) {
                         Toast.makeText(context, "Could not open settings.", Toast.LENGTH_SHORT).show()
                     }
                 }
@@ -78,44 +42,7 @@ object DnsSecureSettingsHelper {
         }
     }
 
-    /**
-     * Checks if Shizuku is running.
-     */
-    fun isShizukuAvailable(): Boolean {
-        return try {
-            Shizuku.pingBinder()
-        } catch (e: Throwable) {
-            false
-        }
-    }
-
-    /**
-     * Checks if Shizuku permission is granted.
-     */
-    fun hasShizukuPermission(): Boolean {
-        if (!isShizukuAvailable()) return false
-        return try {
-            if (Shizuku.getLatestServiceVersion() >= 11) {
-                Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-            } else {
-                // Older versions
-                true
-            }
-        } catch (e: Throwable) {
-            false
-        }
-    }
-
-    /**
-     * Requests Shizuku permission.
-     */
-    fun requestShizukuPermission(requestCode: Int) {
-        try {
-            Shizuku.requestPermission(requestCode)
-        } catch (e: Throwable) {
-            Log.e(TAG, "Failed to request Shizuku permission", e)
-        }
-    }
+    fun isAdbAvailable(): Boolean = NativeAdbManager.isAdbReady()
 
     /**
      * Checks if the app has WRITE_SECURE_SETTINGS permission natively.
@@ -136,7 +63,7 @@ object DnsSecureSettingsHelper {
             val process = Runtime.getRuntime().exec(arrayOf("which", "su"))
             val exitCode = process.waitFor()
             exitCode == 0
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             false
         }
     }
@@ -144,53 +71,43 @@ object DnsSecureSettingsHelper {
     /**
      * Attempts to update Private DNS settings using:
      * 1. Direct secure settings write (if WRITE_SECURE_SETTINGS is granted)
-     * 2. Shizuku API (if Shizuku is active and authorized)
+     * 2. Native Wireless ADB connection (NativeAdbManager)
      * 3. Root superuser (if su is available)
-     *
-     * Returns true if any method succeeds, false otherwise.
      */
     fun setPrivateDns(context: Context, mode: String, specifier: String?): Boolean {
-        // Private DNS was introduced in Android 9 (API 28 - P)
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
             Log.w(TAG, "Private DNS is not supported on this Android version (API ${Build.VERSION.SDK_INT})")
             return false
         }
 
-        Log.d(TAG, "Attempting to set Private DNS. Mode: $mode, Specifier: $specifier")
-
-        // 1. Try Direct Secure Settings Write (requires WRITE_SECURE_SETTINGS ADB permission)
+        // 1. Direct Secure Settings Write (requires WRITE_SECURE_SETTINGS ADB permission)
         if (hasWriteSecureSettingsPermission(context)) {
             try {
                 Settings.Global.putString(context.contentResolver, "private_dns_mode", mode)
                 if (mode == "hostname" && specifier != null) {
                     Settings.Global.putString(context.contentResolver, "private_dns_specifier", specifier)
                 }
-                Log.d(TAG, "Successfully updated DNS via direct Secure Settings write.")
                 return true
             } catch (e: Exception) {
                 Log.e(TAG, "Direct Secure Settings write failed", e)
             }
         }
 
-        // 2. Try Shizuku API
-        if (isShizukuAvailable() && hasShizukuPermission()) {
-            try {
-                val modeSuccess = executeShizukuCommand("settings put global private_dns_mode $mode")
-                val specifierSuccess = if (mode == "hostname" && specifier != null) {
-                    executeShizukuCommand("settings put global private_dns_specifier $specifier")
-                } else {
-                    true
-                }
-                if (modeSuccess && specifierSuccess) {
-                    Log.d(TAG, "Successfully updated DNS via Shizuku shell process.")
-                    return true
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Shizuku settings write failed", e)
+        // 2. Native Wireless ADB shell execution (safe across main/worker callers via executeCommandBlocking)
+        NativeAdbManager.init(context)
+        if (NativeAdbManager.isAdbReady()) {
+            val modeSuccess = NativeAdbManager.executeCommandBlocking("settings put global private_dns_mode $mode").success
+            val specifierSuccess = if (mode == "hostname" && specifier != null) {
+                NativeAdbManager.executeCommandBlocking("settings put global private_dns_specifier $specifier").success
+            } else {
+                true
+            }
+            if (modeSuccess && specifierSuccess) {
+                return true
             }
         }
 
-        // 3. Try Root SU execution
+        // 3. Root SU fallback execution
         if (isRootAvailable()) {
             try {
                 val modeCmd = "settings put global private_dns_mode $mode"
@@ -199,12 +116,9 @@ object DnsSecureSettingsHelper {
                 } else {
                     null
                 }
-
                 val modeSuccess = executeRootCommand(modeCmd)
                 val specifierSuccess = if (specifierCmd != null) executeRootCommand(specifierCmd) else true
-
                 if (modeSuccess && specifierSuccess) {
-                    Log.d(TAG, "Successfully updated DNS via Root command execution.")
                     return true
                 }
             } catch (e: Exception) {
@@ -213,29 +127,6 @@ object DnsSecureSettingsHelper {
         }
 
         return false
-    }
-
-    private fun executeShizukuCommand(command: String): Boolean {
-        var process: Process? = null
-        return try {
-            val cmdArgs = command.split(" ").toTypedArray()
-            // Invoke Shizuku.newProcess via reflection to bypass Kotlin visibility restrictions
-            val newProcessMethod = Shizuku::class.java.getDeclaredMethod(
-                "newProcess",
-                Array<String>::class.java,
-                Array<String>::class.java,
-                String::class.java
-            )
-            newProcessMethod.isAccessible = true
-            process = newProcessMethod.invoke(null, cmdArgs, null, null) as Process
-            val exitValue = process.waitFor()
-            exitValue == 0
-        } catch (e: Exception) {
-            Log.e(TAG, "Error executing Shizuku command: $command", e)
-            false
-        } finally {
-            process?.destroy()
-        }
     }
 
     private fun executeRootCommand(command: String): Boolean {

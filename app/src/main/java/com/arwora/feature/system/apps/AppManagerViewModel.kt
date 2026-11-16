@@ -85,18 +85,16 @@ class AppManagerViewModel(application: Application) : AndroidViewModel(applicati
         _capability.value = Capabilities.detectCapability(context)
     }
 
-    fun requestShizukuPermission() {
-        val requested = Capabilities.requestShizukuPermission()
-        if (requested) {
-            viewModelScope.launch {
-                _snackbarMessage.emit("Requested Shizuku permission. Please grant in the prompt.")
-            }
-        } else {
-            viewModelScope.launch {
-                _snackbarMessage.emit("Shizuku is not installed or service is not running.")
+    fun connectWirelessAdb() {
+        viewModelScope.launch {
+            val (ok, msg) = Capabilities.connectWirelessAdb(context)
+            refreshCapability()
+            if (ok) {
+                _snackbarMessage.emit("Wireless ADB connected.")
+            } else {
+                _snackbarMessage.emit(msg)
             }
         }
-        refreshCapability()
     }
 
     private fun observeHistoryCount() {
@@ -252,7 +250,7 @@ class AppManagerViewModel(application: Application) : AndroidViewModel(applicati
 
         if (cap == AppManagerCapability.NONE) {
             viewModelScope.launch {
-                _snackbarMessage.emit("Requires Shizuku or Device Owner to enable/disable.")
+                _snackbarMessage.emit("Requires Wireless ADB or Device Owner to enable/disable.")
             }
             return
         }

@@ -42,7 +42,7 @@ import com.arwora.feature.system.apps.revert.RevertSheet
 import com.arwora.ui.components.ArworaAnimatedSwitch
 import com.arwora.ui.navigation.Screen
 import com.arwora.ui.screens.SystemFeatureCard
-import com.arwora.utils.ShizukuConnectionManager
+import com.arwora.utils.NativeAdbManager
 import com.arwora.utils.SoundEffectManager
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -83,14 +83,15 @@ fun AppManagerCard(
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf(AppFilter.ALL) }
 
+    val nativeAdbConnected by NativeAdbManager.isConnected.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
+
+    LaunchedEffect(nativeAdbConnected) {
+        viewModel.refreshCapability()
+    }
 
     DisposableEffect(lifecycleOwner) {
         viewModel.refreshCapability()
-        val listeners = ShizukuConnectionManager.registerListeners(
-            onBinderChanged = { viewModel.refreshCapability() },
-            onPermissionResult = { _, _ -> viewModel.refreshCapability() }
-        )
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 viewModel.refreshCapability()
@@ -99,7 +100,6 @@ fun AppManagerCard(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            ShizukuConnectionManager.unregisterListeners(listeners)
         }
     }
 
@@ -146,7 +146,7 @@ fun AppManagerCard(
             // Capability Banner
             Surface(
                 color = when (capability) {
-                    AppManagerCapability.SHIZUKU -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                    AppManagerCapability.WIRELESS_ADB -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
                     AppManagerCapability.DEVICE_OWNER -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f)
                     AppManagerCapability.NONE -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
                 },
@@ -166,12 +166,12 @@ fun AppManagerCard(
                     ) {
                         Icon(
                             imageVector = when (capability) {
-                                AppManagerCapability.SHIZUKU, AppManagerCapability.DEVICE_OWNER -> Icons.Default.VerifiedUser
+                                AppManagerCapability.WIRELESS_ADB, AppManagerCapability.DEVICE_OWNER -> Icons.Default.VerifiedUser
                                 AppManagerCapability.NONE -> Icons.Default.Info
                             },
                             contentDescription = null,
                             tint = when (capability) {
-                                AppManagerCapability.SHIZUKU -> MaterialTheme.colorScheme.primary
+                                AppManagerCapability.WIRELESS_ADB -> MaterialTheme.colorScheme.primary
                                 AppManagerCapability.DEVICE_OWNER -> MaterialTheme.colorScheme.tertiary
                                 AppManagerCapability.NONE -> MaterialTheme.colorScheme.onSurfaceVariant
                             },
@@ -180,7 +180,7 @@ fun AppManagerCard(
                         Column {
                             Text(
                                 text = when (capability) {
-                                    AppManagerCapability.SHIZUKU -> "Privilege: Shizuku Active"
+                                    AppManagerCapability.WIRELESS_ADB -> "Privilege: Wireless ADB Active"
                                     AppManagerCapability.DEVICE_OWNER -> "Privilege: Device Owner"
                                     AppManagerCapability.NONE -> "Privilege: Standard Mode"
                                 },
@@ -189,9 +189,9 @@ fun AppManagerCard(
                             )
                             Text(
                                 text = when (capability) {
-                                    AppManagerCapability.SHIZUKU -> "Silent app enable/disable via PM shell"
+                                    AppManagerCapability.WIRELESS_ADB -> "Silent app enable/disable via PM shell"
                                     AppManagerCapability.DEVICE_OWNER -> "Direct policy hide/unhide control"
-                                    AppManagerCapability.NONE -> "Requires Shizuku or Device Owner to toggle"
+                                    AppManagerCapability.NONE -> "Requires Wireless ADB or Device Owner to toggle"
                                 },
                                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -203,17 +203,12 @@ fun AppManagerCard(
                         FilledTonalButton(
                             onClick = {
                                 SoundEffectManager.playClick()
-                                ShizukuConnectionManager.connect(
-                                    context = context,
-                                    requestCode = 1001,
-                                    onConnected = { viewModel.refreshCapability() },
-                                    onPermissionRequested = { viewModel.refreshCapability() }
-                                )
+                                viewModel.connectWirelessAdb()
                             },
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                             modifier = Modifier.height(34.dp)
                         ) {
-                            Text("Connect", style = MaterialTheme.typography.labelSmall)
+                            Text("Connect Now", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -409,7 +404,7 @@ fun AppManagerCard(
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Text(
-                        "You can enable Shizuku (adb) or configure Device Owner for 1-tap silent control, or open System App Info to toggle manually.",
+                        "You can connect built-in Wireless ADB or configure Device Owner for 1-tap silent control, or open System App Info to toggle manually.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -431,10 +426,10 @@ fun AppManagerCard(
                 TextButton(
                     onClick = {
                         showPrivilegeDialog = false
-                        viewModel.requestShizukuPermission()
+                        viewModel.connectWirelessAdb()
                     }
                 ) {
-                    Text("Connect Shizuku")
+                    Text("Connect Now", fontWeight = FontWeight.Bold)
                 }
             }
         )

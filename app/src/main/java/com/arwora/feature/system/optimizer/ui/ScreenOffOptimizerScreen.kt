@@ -37,8 +37,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.arwora.feature.system.optimizer.service.ScreenOffOptimizerManager
 import com.arwora.ui.components.ArworaAnimatedSwitch
+import com.arwora.utils.NativeAdbManager
 import com.arwora.utils.SoundEffectManager
-import rikka.shizuku.Shizuku
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,6 +47,7 @@ fun ScreenOffOptimizerScreen(
     navController: NavController
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     BackHandler { navController.popBackStack() }
     val haptic = LocalHapticFeedback.current
 
@@ -55,8 +57,9 @@ fun ScreenOffOptimizerScreen(
     val enableSilent by ScreenOffOptimizerManager.enableSilentMode.collectAsStateWithLifecycle()
     val disableSilent by ScreenOffOptimizerManager.disableSilentMode.collectAsStateWithLifecycle()
     val turnOffRadios by ScreenOffOptimizerManager.turnOffRadios.collectAsStateWithLifecycle()
-    val useShizuku by ScreenOffOptimizerManager.useShizuku.collectAsStateWithLifecycle()
-    val shizukuPermissionGranted by ScreenOffOptimizerManager.shizukuPermissionGranted.collectAsStateWithLifecycle()
+    val useWirelessAdb by ScreenOffOptimizerManager.useWirelessAdb.collectAsStateWithLifecycle()
+    val adbConnected by ScreenOffOptimizerManager.adbConnected.collectAsStateWithLifecycle()
+    val nativeAdbConnected by NativeAdbManager.isConnected.collectAsStateWithLifecycle()
     val mediaVolume by ScreenOffOptimizerManager.mediaVolume.collectAsStateWithLifecycle()
     val ringtoneVolume by ScreenOffOptimizerManager.ringtoneVolume.collectAsStateWithLifecycle()
     val notificationVolume by ScreenOffOptimizerManager.notificationVolume.collectAsStateWithLifecycle()
@@ -96,19 +99,15 @@ fun ScreenOffOptimizerScreen(
         }
     }
 
+    LaunchedEffect(nativeAdbConnected) {
+        ScreenOffOptimizerManager.setAdbConnected(nativeAdbConnected)
+    }
+
     // Dynamic pre-check handler on ON_RESUME: auto-resumes service immediately once permission is granted!
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
-        val shizukuListeners = com.arwora.utils.ShizukuConnectionManager.registerListeners(
-            onBinderChanged = {
-                ScreenOffOptimizerManager.setShizukuPermissionGranted(
-                    com.arwora.utils.ShizukuConnectionManager.hasShizukuPermission()
-                )
-            },
-            onPermissionResult = { _, granted ->
-                ScreenOffOptimizerManager.setShizukuPermissionGranted(granted)
-            }
-        )
+        NativeAdbManager.refreshConnectionStatus(context)
+        ScreenOffOptimizerManager.setAdbConnected(NativeAdbManager.isAdbReady())
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 val granted = notificationManager?.isNotificationPolicyAccessGranted == true
@@ -116,9 +115,9 @@ fun ScreenOffOptimizerScreen(
                 hasPolicyAccess = granted
                 ScreenOffOptimizerManager.checkAndSyncDndPermission(context)
 
-                // Check Shizuku permission cleanly
-                val shizukuGranted = com.arwora.utils.ShizukuConnectionManager.hasShizukuPermission()
-                ScreenOffOptimizerManager.setShizukuPermissionGranted(shizukuGranted)
+                // Refresh Wireless ADB connection state
+                NativeAdbManager.refreshConnectionStatus(context)
+                ScreenOffOptimizerManager.setAdbConnected(NativeAdbManager.isAdbReady())
 
                 // Auto-start / auto-resume service immediately when user returns with permission granted
                 if (granted) {
@@ -132,7 +131,6 @@ fun ScreenOffOptimizerScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            com.arwora.utils.ShizukuConnectionManager.unregisterListeners(shizukuListeners)
         }
     }
 
@@ -683,32 +681,29 @@ fun ScreenOffOptimizerScreen(
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         Column(modifier = Modifier.weight(1f)) {
-                                            Text(text = "Use Shizuku API", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                            Text(text = "Use Wireless ADB", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                                             Text(
-                                                text = if (shizukuPermissionGranted) "Status: Authorized" else "Status: Unauthorized / Not Running",
+                                                text = if (adbConnected) "Status: ADB Connected" else "Status: ADB Offline",
                                                 style = MaterialTheme.typography.labelSmall,
-                                                color = if (shizukuPermissionGranted) Color(0xFF10B981) else Color(0xFFEF4444)
+                                                color = if (adbConnected) Color(0xFF10B981) else Color(0xFFEF4444)
                                             )
                                         }
                                         ArworaAnimatedSwitch(
-                                            checked = useShizuku,
+                                            checked = useWirelessAdb,
                                             onCheckedChange = { checked ->
                                                 haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                                                 SoundEffectManager.playClick()
-                                                if (checked && !shizukuPermissionGranted) {
-                                                    com.arwora.utils.ShizukuConnectionManager.connect(
-                                                        context = context,
-                                                        requestCode = 101,
-                                                        onConnected = {
-                                                            ScreenOffOptimizerManager.setShizukuPermissionGranted(true)
-                                                        }
-                                                    )
+                                                if (checked && !adbConnected) {
+                                                    coroutineScope.launch {
+                                                        val (ok, _) = NativeAdbManager.connectAutomatically(context)
+                                                        ScreenOffOptimizerManager.setAdbConnected(ok)
+                                                    }
                                                 }
-                                                ScreenOffOptimizerManager.setUseShizuku(checked)
+                                                ScreenOffOptimizerManager.setUseWirelessAdb(checked)
                                             }
                                         )
                                     }
-                                    if (useShizuku && !shizukuPermissionGranted) {
+                                    if (useWirelessAdb && !adbConnected) {
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
@@ -717,7 +712,7 @@ fun ScreenOffOptimizerScreen(
                                             horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
                                             Text(
-                                                text = "Shizuku inactive: will fall back to system shell.",
+                                                text = "Wireless ADB offline: will fall back to system shell.",
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = MaterialTheme.colorScheme.error,
                                                 modifier = Modifier.weight(1f)
@@ -725,17 +720,15 @@ fun ScreenOffOptimizerScreen(
                                             TextButton(
                                                 onClick = {
                                                     SoundEffectManager.playClick(context)
-                                                    com.arwora.utils.ShizukuConnectionManager.connect(
-                                                        context = context,
-                                                        requestCode = 101,
-                                                        onConnected = {
-                                                            ScreenOffOptimizerManager.setShizukuPermissionGranted(true)
-                                                        }
-                                                    )
+                                                    coroutineScope.launch {
+                                                        val (ok, msg) = NativeAdbManager.connectAutomatically(context)
+                                                        ScreenOffOptimizerManager.setAdbConnected(ok)
+                                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                    }
                                                 },
                                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                                             ) {
-                                                Text("Connect Shizuku", fontWeight = FontWeight.Bold)
+                                                Text("Connect Now", fontWeight = FontWeight.Bold)
                                             }
                                         }
                                     }

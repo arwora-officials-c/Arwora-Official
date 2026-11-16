@@ -11,24 +11,11 @@ import android.provider.Settings
 import com.arwora.feature.system.apps.capability.AppManagerCapability
 import com.arwora.feature.system.apps.capability.Capabilities
 import com.arwora.feature.system.apps.util.SafeBlocklist
+import com.arwora.utils.NativeAdbManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import rikka.shizuku.Shizuku
-import java.io.BufferedReader
-import java.io.InputStreamReader
 
 object AppActions {
-
-    private fun executeShizukuProcess(cmdArgs: Array<String>): Process {
-        val newProcessMethod = Shizuku::class.java.getDeclaredMethod(
-            "newProcess",
-            Array<String>::class.java,
-            Array<String>::class.java,
-            String::class.java
-        )
-        newProcessMethod.isAccessible = true
-        return newProcessMethod.invoke(null, cmdArgs, null, null) as Process
-    }
 
     suspend fun enableApp(
         packageName: String,
@@ -36,15 +23,13 @@ object AppActions {
         context: Context
     ): Result<Boolean> = withContext(Dispatchers.IO) {
         when (capability) {
-            AppManagerCapability.SHIZUKU -> {
+            AppManagerCapability.WIRELESS_ADB -> {
                 try {
-                    val process = executeShizukuProcess(arrayOf("pm", "enable", packageName))
-                    val exitCode = process.waitFor()
-                    if (exitCode == 0) {
+                    val res = NativeAdbManager.executeShellCommand("pm enable $packageName")
+                    if (res.success && !res.output.contains("Exception", ignoreCase = true)) {
                         Result.success(true)
                     } else {
-                        val err = BufferedReader(InputStreamReader(process.errorStream)).readText()
-                        Result.failure(Exception(if (err.isNotBlank()) err.trim() else "pm enable exited with code $exitCode"))
+                        Result.failure(Exception(res.output.ifBlank { "pm enable exited with code ${res.exitCode}" }))
                     }
                 } catch (e: Exception) {
                     Result.failure(e)
@@ -68,7 +53,7 @@ object AppActions {
                 }
             }
             AppManagerCapability.NONE -> {
-                Result.failure(IllegalStateException("Requires Shizuku or Device Owner"))
+                Result.failure(IllegalStateException("Requires Wireless ADB or Device Owner"))
             }
         }
     }
@@ -83,15 +68,13 @@ object AppActions {
         }
 
         when (capability) {
-            AppManagerCapability.SHIZUKU -> {
+            AppManagerCapability.WIRELESS_ADB -> {
                 try {
-                    val process = executeShizukuProcess(arrayOf("pm", "disable-user", "--user", "0", packageName))
-                    val exitCode = process.waitFor()
-                    if (exitCode == 0) {
+                    val res = NativeAdbManager.executeShellCommand("pm disable-user --user 0 $packageName")
+                    if (res.success && !res.output.contains("Exception", ignoreCase = true)) {
                         Result.success(true)
                     } else {
-                        val err = BufferedReader(InputStreamReader(process.errorStream)).readText()
-                        Result.failure(Exception(if (err.isNotBlank()) err.trim() else "pm disable-user exited with code $exitCode"))
+                        Result.failure(Exception(res.output.ifBlank { "pm disable-user exited with code ${res.exitCode}" }))
                     }
                 } catch (e: Exception) {
                     Result.failure(e)
@@ -108,7 +91,7 @@ object AppActions {
                 }
             }
             AppManagerCapability.NONE -> {
-                Result.failure(IllegalStateException("Requires Shizuku or Device Owner"))
+                Result.failure(IllegalStateException("Requires Wireless ADB or Device Owner"))
             }
         }
     }

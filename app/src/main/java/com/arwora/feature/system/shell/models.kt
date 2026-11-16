@@ -3,17 +3,17 @@ package com.arwora.feature.system.shell
 import java.util.UUID
 
 /**
- * Represents the current Shizuku service and permission status for Shell execution.
+ * Represents the current built-in Wireless ADB status for Shell execution.
  */
 enum class ShellStatus(val label: String) {
     READY("Ready"),
-    SHIZUKU_REQUIRED("Shizuku Required"),
-    PERMISSION_DENIED("Permission Denied"),
-    STOPPED_BY_YOU("Stopped by You")
+    ADB_REQUIRED("ADB Required"),
+    WIFI_REQUIRED("Wi-Fi Required"),
+    DISCONNECTED("Disconnected")
 }
 
 /**
- * Result of a shell command execution via Shizuku.
+ * Result of a shell command execution via built-in Wireless ADB.
  */
 data class ShellCommandResult(
     val command: String,

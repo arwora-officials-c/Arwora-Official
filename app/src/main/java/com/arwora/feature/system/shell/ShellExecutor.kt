@@ -1,49 +1,37 @@
 package com.arwora.feature.system.shell
 
 import android.content.Context
-import android.content.pm.PackageManager
 import android.os.SystemClock
 import android.util.Log
+import com.arwora.utils.NativeAdbManager
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
-import rikka.shizuku.Shizuku
-import java.io.BufferedReader
-import java.io.InputStreamReader
 
 object ShellExecutor {
     private const val TAG = "ShellExecutor"
 
     /**
-     * Checks the availability and permission of Shizuku.
+     * Checks the availability of built-in Wireless ADB.
      */
-    fun checkShizukuStatus(context: Context): ShellStatus {
+    fun checkAdbStatus(context: Context): ShellStatus {
         return try {
-            if (!com.arwora.utils.ShizukuConnectionManager.isShizukuRunning()) {
-                ShellStatus.SHIZUKU_REQUIRED
-            } else if (com.arwora.utils.ShizukuConnectionManager.hasShizukuPermission()) {
-                ShellStatus.READY
-            } else {
-                ShellStatus.PERMISSION_DENIED
+            NativeAdbManager.refreshConnectionStatus(context)
+            when {
+                NativeAdbManager.isAdbReady() -> ShellStatus.READY
+                !NativeAdbManager.isWifiConnected(context) -> ShellStatus.WIFI_REQUIRED
+                else -> ShellStatus.ADB_REQUIRED
             }
         } catch (e: Throwable) {
-            Log.e(TAG, "Failed checking Shizuku status", e)
-            ShellStatus.SHIZUKU_REQUIRED
+            Log.e(TAG, "Failed checking Wireless ADB status", e)
+            ShellStatus.DISCONNECTED
         }
     }
 
     /**
-     * Request Shizuku permission when binder is running.
+     * Automatically detects active Wi-Fi and binds to the local ADB daemon.
      */
-    fun requestPermission(requestCode: Int = 1002) {
-        try {
-            if (com.arwora.utils.ShizukuConnectionManager.isShizukuRunning()) {
-                Shizuku.requestPermission(requestCode)
-            }
-        } catch (e: Throwable) {
-            Log.e(TAG, "Failed to request Shizuku permission", e)
-        }
+    suspend fun connectAdb(context: Context): Pair<Boolean, String> {
+        return NativeAdbManager.connectAutomatically(context)
     }
 
     /**
@@ -60,89 +48,49 @@ object ShellExecutor {
         )
         return dangerousKeywords.any { keyword ->
             trimmed.startsWith(keyword, ignoreCase = true) ||
-            trimmed.contains(" $keyword", ignoreCase = true) ||
-            trimmed.contains(";$keyword", ignoreCase = true) ||
-            trimmed.contains("&&$keyword", ignoreCase = true) ||
-            trimmed.contains("||$keyword", ignoreCase = true)
+                trimmed.contains(" $keyword", ignoreCase = true) ||
+                trimmed.contains(";$keyword", ignoreCase = true) ||
+                trimmed.contains("&&$keyword", ignoreCase = true) ||
+                trimmed.contains("||$keyword", ignoreCase = true)
         }
     }
 
     /**
-     * Executes a shell command via Shizuku on Dispatchers.IO with a timeout.
+     * Executes a shell command via built-in Wireless ADB on Dispatchers.IO.
      */
     suspend fun executeCommand(command: String): ShellCommandResult = withContext(Dispatchers.IO) {
         val startTime = SystemClock.elapsedRealtime()
-        var process: Process? = null
         try {
-            val cmdArgs = arrayOf("sh", "-c", command)
-            
-            // Invoke Shizuku newProcess via reflection
-            val newProcessMethod = Shizuku::class.java.getDeclaredMethod(
-                "newProcess",
-                Array<String>::class.java,
-                Array<String>::class.java,
-                String::class.java
+            if (!NativeAdbManager.isAdbReady()) {
+                val elapsed = SystemClock.elapsedRealtime() - startTime
+                return@withContext ShellCommandResult(
+                    command = command,
+                    stdout = "",
+                    stderr = "Wireless ADB is not connected. Enable Wi-Fi & Wireless Debugging and tap Connect Now.",
+                    exitCode = -1,
+                    executionTimeMs = elapsed
+                )
+            }
+
+            val result = NativeAdbManager.executeShellCommand(command, timeoutMs = 30_000L)
+            val executionTimeMs = SystemClock.elapsedRealtime() - startTime
+            ShellCommandResult(
+                command = command,
+                stdout = if (result.success) result.output else "",
+                stderr = if (result.success) "" else result.output,
+                exitCode = result.exitCode,
+                executionTimeMs = executionTimeMs
             )
-            newProcessMethod.isAccessible = true
-            process = newProcessMethod.invoke(null, cmdArgs, null, null) as Process
-
-            kotlinx.coroutines.withTimeoutOrNull(30000L) {
-                coroutineScope {
-                    val p = process ?: throw IllegalStateException("Process creation failed")
-                    val stdoutDeferred = async(Dispatchers.IO) {
-                        try {
-                            val reader = BufferedReader(InputStreamReader(p.inputStream))
-                            val sb = StringBuilder()
-                            var line: String?
-                            while (reader.readLine().also { line = it } != null) {
-                                sb.append(line).append("\n")
-                            }
-                            reader.close()
-                            sb.toString().trimEnd()
-                        } catch (e: Exception) { "" }
-                    }
-
-                    val stderrDeferred = async(Dispatchers.IO) {
-                        try {
-                            val reader = BufferedReader(InputStreamReader(p.errorStream))
-                            val sb = StringBuilder()
-                            var line: String?
-                            while (reader.readLine().also { line = it } != null) {
-                                sb.append(line).append("\n")
-                            }
-                            reader.close()
-                            sb.toString().trimEnd()
-                        } catch (e: Exception) { "" }
-                    }
-
-                    val exitCode = try { p.waitFor() } catch (_: Exception) { -1 }
-                    val stdout = stdoutDeferred.await()
-                    val stderr = stderrDeferred.await()
-                    val executionTimeMs = SystemClock.elapsedRealtime() - startTime
-
-                    ShellCommandResult(
-                        command = command,
-                        stdout = stdout,
-                        stderr = stderr,
-                        exitCode = exitCode,
-                        executionTimeMs = executionTimeMs
-                    )
-                }
-            } ?: throw java.util.concurrent.TimeoutException("Command execution timed out after 30s")
         } catch (e: Throwable) {
             Log.e(TAG, "Error executing shell command: $command", e)
             val executionTimeMs = SystemClock.elapsedRealtime() - startTime
             ShellCommandResult(
                 command = command,
                 stdout = "",
-                stderr = e.message ?: "Failed to execute command via Shizuku binder",
+                stderr = e.message ?: "Failed to execute command via Wireless ADB",
                 exitCode = -1,
                 executionTimeMs = executionTimeMs
             )
-        } finally {
-            try {
-                process?.destroy()
-            } catch (ignored: Exception) {}
         }
     }
 }

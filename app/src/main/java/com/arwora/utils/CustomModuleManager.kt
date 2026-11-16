@@ -4,7 +4,6 @@ import android.content.Context
 import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
-import rikka.shizuku.Shizuku
 import java.io.BufferedReader
 import java.io.InputStreamReader
 
@@ -246,8 +245,8 @@ object CustomModuleManager {
     }
 
     private fun executeCommand(command: String): Boolean {
-        if (isShizukuAvailable() && hasShizukuPermission()) {
-            if (executeViaShizuku(command)) return true
+        if (NativeAdbManager.isAdbReady()) {
+            if (NativeAdbManager.executeCommandBlocking(command).success) return true
         }
         if (isRootAvailable()) {
             if (executeViaRoot(command)) return true
@@ -255,52 +254,7 @@ object CustomModuleManager {
         return executeLocally(command)
     }
 
-    fun isShizukuReady(): Boolean {
-        return isShizukuAvailable() && hasShizukuPermission()
-    }
-
-    private fun isShizukuAvailable(): Boolean {
-        return try {
-            Shizuku.pingBinder()
-        } catch (e: Throwable) {
-            false
-        }
-    }
-
-    private fun hasShizukuPermission(): Boolean {
-        if (!isShizukuAvailable()) return false
-        return try {
-            if (Shizuku.getLatestServiceVersion() >= 11) {
-                Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED
-            } else {
-                true
-            }
-        } catch (e: Throwable) {
-            false
-        }
-    }
-
-    private fun executeViaShizuku(command: String): Boolean {
-        var process: Process? = null
-        return try {
-            val cmdArgs = arrayOf("sh", "-c", command)
-            val newProcessMethod = Shizuku::class.java.getDeclaredMethod(
-                "newProcess",
-                Array<String>::class.java,
-                Array<String>::class.java,
-                String::class.java
-            )
-            newProcessMethod.isAccessible = true
-            process = newProcessMethod.invoke(null, cmdArgs, null, null) as Process
-            val exitCode = process.waitFor()
-            exitCode == 0
-        } catch (e: Exception) {
-            Log.e(TAG, "Shizuku execution error: $command", e)
-            false
-        } finally {
-            process?.destroy()
-        }
-    }
+    fun isAdbReady(): Boolean = NativeAdbManager.isAdbReady()
 
     private fun isRootAvailable(): Boolean {
         return try {

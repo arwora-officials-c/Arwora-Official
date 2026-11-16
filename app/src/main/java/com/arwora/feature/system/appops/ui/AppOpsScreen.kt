@@ -53,7 +53,7 @@ import com.arwora.feature.system.appops.model.AppOpsItem
 import com.arwora.feature.system.appops.model.AppOpsSort
 import com.arwora.feature.system.appops.model.StandbyBucketMode
 import com.arwora.ui.components.GoogleStyleLoadingView
-import com.arwora.utils.ShizukuConnectionManager
+import com.arwora.utils.NativeAdbManager
 import com.arwora.utils.SoundEffectManager
 
 @Composable
@@ -107,7 +107,8 @@ fun AppOpsScreen(
     val rawApps by vm.rawApps.collectAsStateWithLifecycle()
     val filteredApps by vm.filteredApps.collectAsStateWithLifecycle()
     val isLoading by vm.isLoading.collectAsStateWithLifecycle()
-    val isShizukuConnected by vm.isShizukuConnected.collectAsStateWithLifecycle()
+    val isAdbConnected by vm.isAdbConnected.collectAsStateWithLifecycle()
+    val nativeAdbConnected by NativeAdbManager.isConnected.collectAsStateWithLifecycle()
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
     val selectedFilter by vm.selectedFilter.collectAsStateWithLifecycle()
     val selectedSort by vm.selectedSort.collectAsStateWithLifecycle()
@@ -117,26 +118,20 @@ fun AppOpsScreen(
     var showSortMenu by remember { mutableStateOf(false) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
+    LaunchedEffect(nativeAdbConnected) {
+        vm.checkAdbStatus()
+    }
+
     DisposableEffect(lifecycleOwner) {
-        vm.checkShizuku()
-        val shizukuListeners = ShizukuConnectionManager.registerListeners(
-            onBinderChanged = { vm.checkShizuku() },
-            onPermissionResult = { _, granted ->
-                vm.checkShizuku()
-                if (granted) {
-                    vm.loadApps()
-                }
-            }
-        )
+        vm.checkAdbStatus()
         val lifecycleObserver = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                vm.checkShizuku()
+                vm.checkAdbStatus()
             }
         }
         lifecycleOwner.lifecycle.addObserver(lifecycleObserver)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(lifecycleObserver)
-            ShizukuConnectionManager.unregisterListeners(shizukuListeners)
         }
     }
 
@@ -273,7 +268,7 @@ fun AppOpsScreen(
             if (selectedApp != null) {
                 AppOpsDetailView(
                     app = selectedApp!!,
-                    isShizukuConnected = isShizukuConnected,
+                    isAdbConnected = isAdbConnected,
                     onBack = {
                         SoundEffectManager.playClick()
                         vm.clearSelectedApp()
@@ -287,7 +282,7 @@ fun AppOpsScreen(
                             if (success) {
                                 Toast.makeText(context, "App Op $opName set to $mode", Toast.LENGTH_SHORT).show()
                             } else {
-                                Toast.makeText(context, "Failed (Requires Shizuku or Root)", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Failed (Requires Wireless ADB or Root)", Toast.LENGTH_SHORT).show()
                             }
                         }
                     },
@@ -296,29 +291,19 @@ fun AppOpsScreen(
                             if (success) {
                                 Toast.makeText(context, "Revoked all sensitive ops successfully", Toast.LENGTH_SHORT).show()
                             } else {
-                                Toast.makeText(context, "Failed to revoke ops (Requires Shizuku/Root)", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Failed to revoke ops (Requires Wireless ADB or Root)", Toast.LENGTH_SHORT).show()
                             }
                         }
                     },
-                    onRequestShizuku = {
+                    onConnectAdb = {
                         SoundEffectManager.playClick()
-                        ShizukuConnectionManager.connect(
-                            context = context,
-                            requestCode = 100,
-                            onConnected = {
-                                vm.checkShizuku()
-                                vm.loadApps()
-                            },
-                            onPermissionRequested = {
-                                vm.checkShizuku()
-                            }
-                        )
+                        vm.connectAdb()
                     }
                 )
             } else {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    // Shizuku Connection Fallback Banner if not connected
-                    if (!isShizukuConnected) {
+                    // Wireless ADB Connection Banner if not connected
+                    if (!isAdbConnected) {
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -340,13 +325,13 @@ fun AppOpsScreen(
                                     Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error)
                                     Column {
                                         Text(
-                                            text = "Shizuku / Root Inactive",
+                                            text = "Wireless ADB / Root Inactive",
                                             style = MaterialTheme.typography.bodySmall,
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.error
                                         )
                                         Text(
-                                            text = "Direct App Ops modification requires Shizuku or Root permissions.",
+                                            text = "Direct App Ops modification requires Wireless ADB or Root permissions.",
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -355,21 +340,11 @@ fun AppOpsScreen(
                                 TextButton(
                                     onClick = {
                                         SoundEffectManager.playClick()
-                                        ShizukuConnectionManager.connect(
-                                            context = context,
-                                            requestCode = 100,
-                                            onConnected = {
-                                                vm.checkShizuku()
-                                                vm.loadApps()
-                                            },
-                                            onPermissionRequested = {
-                                                vm.checkShizuku()
-                                            }
-                                        )
+                                        vm.connectAdb()
                                     },
                                     modifier = Modifier.testTag("app_ops_connect_button")
                                 ) {
-                                    Text("Connect", fontWeight = FontWeight.Bold)
+                                    Text("Connect Now", fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -716,12 +691,12 @@ fun StatusTag(
 @Composable
 fun AppOpsDetailView(
     app: AppOpsItem,
-    isShizukuConnected: Boolean,
+    isAdbConnected: Boolean,
     onBack: () -> Unit,
     onStandbyBucketChange: (StandbyBucketMode) -> Unit,
     onUpdateAppOp: (String, String) -> Unit,
     onRevokeAll: () -> Unit,
-    onRequestShizuku: () -> Unit
+    onConnectAdb: () -> Unit
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
@@ -734,7 +709,7 @@ fun AppOpsDetailView(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        if (!isShizukuConnected) {
+        if (!isAdbConnected) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
@@ -748,22 +723,22 @@ fun AppOpsDetailView(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Shizuku / Root Inactive",
+                            text = "Wireless ADB / Root Inactive",
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.error
                         )
                         Text(
-                            text = "App Op toggles require Shizuku or Root shell execution.",
+                            text = "App Op toggles require Wireless ADB or Root shell execution.",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     TextButton(
-                        onClick = onRequestShizuku,
+                        onClick = onConnectAdb,
                         modifier = Modifier.testTag("app_ops_detail_connect_button")
                     ) {
-                        Text("Connect", fontWeight = FontWeight.Bold)
+                        Text("Connect Now", fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -944,7 +919,7 @@ fun AppOpsDetailView(
                 }
 
                 Text(
-                    text = "Configure high-level system permissions via direct Shizuku / Root shell execution:",
+                    text = "Configure high-level system permissions via direct Wireless ADB / Root shell execution:",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

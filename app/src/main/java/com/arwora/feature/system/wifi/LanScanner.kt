@@ -454,19 +454,19 @@ object LanScanner {
 
         val merged = parseArpAndNeighOutput(arpText, neighText).toMutableMap()
 
-        // 3. If neighbor entries are empty and Shizuku is granted, read via elevated ADB shell
-        if (merged.isEmpty() && com.arwora.utils.ShizukuConnectionManager.hasShizukuPermission()) {
+        // 3. If neighbor entries are empty and Wireless ADB is connected, read via elevated ADB shell
+        if (merged.isEmpty() && com.arwora.utils.NativeAdbManager.isAdbReady()) {
             try {
-                val shizukuOut = runBlocking {
+                val adbOut = runBlocking {
                     com.arwora.feature.system.shell.ShellExecutor.executeCommand(
                         "ip neigh show 2>/dev/null; echo '---ARP---'; cat /proc/net/arp 2>/dev/null"
                     )
                 }
-                if (shizukuOut.stdout.isNotBlank()) {
-                    val parts = shizukuOut.stdout.split("---ARP---", limit = 2)
-                    val shizukuNeigh = parts.getOrNull(0)
-                    val shizukuArp = parts.getOrNull(1)
-                    merged.putAll(parseArpAndNeighOutput(shizukuArp, shizukuNeigh))
+                if (adbOut.stdout.isNotBlank()) {
+                    val parts = adbOut.stdout.split("---ARP---", limit = 2)
+                    val adbNeigh = parts.getOrNull(0)
+                    val adbArp = parts.getOrNull(1)
+                    merged.putAll(parseArpAndNeighOutput(adbArp, adbNeigh))
                 }
             } catch (_: Exception) {
             }

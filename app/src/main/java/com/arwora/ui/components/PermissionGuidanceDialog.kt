@@ -18,16 +18,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.unit.sp
-import com.arwora.utils.ShizukuConnectionManager
+import com.arwora.utils.NativeAdbManager
+import kotlinx.coroutines.launch
 
 @Composable
-fun ShizukuGuidanceDialog(
+fun WirelessAdbGuidanceDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    val isRunning = ShizukuConnectionManager.isShizukuRunning()
-    val isGranted = ShizukuConnectionManager.hasShizukuPermission()
+    val isConnected = NativeAdbManager.isAdbReady()
+    val coroutineScope = rememberCoroutineScope()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -41,7 +43,7 @@ fun ShizukuGuidanceDialog(
         },
         title = {
             Text(
-                text = "Shizuku Privileges",
+                text = "Wireless ADB Privileges",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
             )
@@ -50,8 +52,8 @@ fun ShizukuGuidanceDialog(
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Surface(
                     shape = RoundedCornerShape(12.dp),
-                    color = if (isRunning) Color(0xFF10B981).copy(alpha = 0.12f) else MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
-                    border = BorderStroke(1.dp, if (isRunning) Color(0xFF10B981) else MaterialTheme.colorScheme.error)
+                    color = if (isConnected) Color(0xFF10B981).copy(alpha = 0.12f) else MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
+                    border = BorderStroke(1.dp, if (isConnected) Color(0xFF10B981) else MaterialTheme.colorScheme.error)
                 ) {
                     Row(
                         modifier = Modifier
@@ -60,16 +62,14 @@ fun ShizukuGuidanceDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = if (isRunning) Icons.Default.CheckCircle else Icons.Default.Warning,
+                            imageVector = if (isConnected) Icons.Default.CheckCircle else Icons.Default.Warning,
                             contentDescription = null,
-                            tint = if (isRunning) Color(0xFF10B981) else MaterialTheme.colorScheme.error,
+                            tint = if (isConnected) Color(0xFF10B981) else MaterialTheme.colorScheme.error,
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = if (isRunning) {
-                                if (isGranted) "Shizuku Service Running & Authorized" else "Shizuku Running (Needs Authorization)"
-                            } else "Shizuku Service Not Running",
+                            text = if (isConnected) "Wireless ADB Connected & Ready" else "Wireless ADB Disconnected",
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.bodySmall
                         )
@@ -77,13 +77,13 @@ fun ShizukuGuidanceDialog(
                 }
 
                 Text(
-                    text = "Shizuku allows Arwora Hyper Toolkit to execute elevated system commands without needing root access (e.g. changing system Private DNS and terminal commands).",
+                    text = "Built-in Wireless ADB allows Arwora Hyper Toolkit to execute elevated system commands directly over local Wi-Fi without needing external helper apps or root access.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
                 Text(
-                    text = "How to start Shizuku:\n1. Open Shizuku app\n2. Select 'Start via Wireless Debugging'\n3. Pair using Developer Options port and code",
+                    text = "How to enable:\n1. Connect to Wi-Fi\n2. Enable Wireless Debugging in Developer Options\n3. Tap Connect Now to bind the local ADB daemon",
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.Medium
                 )
@@ -92,14 +92,13 @@ fun ShizukuGuidanceDialog(
         confirmButton = {
             Button(
                 onClick = {
+                    coroutineScope.launch {
+                        NativeAdbManager.connectAutomatically(context)
+                    }
                     onDismiss()
-                    ShizukuConnectionManager.connect(
-                        context = context,
-                        requestCode = 1001
-                    )
                 }
             ) {
-                Text(if (isRunning && !isGranted) "Authorize Permission" else "Connect Shizuku")
+                Text("Connect Now", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {

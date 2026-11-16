@@ -33,11 +33,11 @@ object ScreenOffOptimizerManager {
     private val _turnOffRadios = MutableStateFlow(false)
     val turnOffRadios: StateFlow<Boolean> = _turnOffRadios.asStateFlow()
 
-    private val _useShizuku = MutableStateFlow(false)
-    val useShizuku: StateFlow<Boolean> = _useShizuku.asStateFlow()
+    private val _useWirelessAdb = MutableStateFlow(false)
+    val useWirelessAdb: StateFlow<Boolean> = _useWirelessAdb.asStateFlow()
 
-    private val _shizukuPermissionGranted = MutableStateFlow(false)
-    val shizukuPermissionGranted: StateFlow<Boolean> = _shizukuPermissionGranted.asStateFlow()
+    private val _adbConnected = MutableStateFlow(false)
+    val adbConnected: StateFlow<Boolean> = _adbConnected.asStateFlow()
 
     private val _mediaVolume = MutableStateFlow(100)
     val mediaVolume: StateFlow<Int> = _mediaVolume.asStateFlow()
@@ -90,12 +90,12 @@ object ScreenOffOptimizerManager {
         _turnOffRadios.value = enabled
     }
 
-    fun setUseShizuku(enabled: Boolean) {
-        _useShizuku.value = enabled
+    fun setUseWirelessAdb(enabled: Boolean) {
+        _useWirelessAdb.value = enabled
     }
 
-    fun setShizukuPermissionGranted(granted: Boolean) {
-        _shizukuPermissionGranted.value = granted
+    fun setAdbConnected(connected: Boolean) {
+        _adbConnected.value = connected
     }
 
     fun setMediaVolume(volume: Int) {

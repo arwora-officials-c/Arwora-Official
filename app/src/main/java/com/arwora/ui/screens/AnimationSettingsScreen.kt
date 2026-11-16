@@ -24,10 +24,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arwora.utils.AnimationTweakManager
+import com.arwora.utils.NativeAdbManager
 import com.arwora.utils.RefreshRateManager
-import com.arwora.utils.ShizukuConnectionManager
 import com.arwora.utils.SoundEffectManager
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -35,12 +37,12 @@ fun AnimationSettingsScreen(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     var currentScale by remember { mutableStateOf(AnimationTweakManager.getCurrentAnimationScale(context)) }
     var currentPeakRate by remember { mutableStateOf(RefreshRateManager.getCurrentPeakRefreshRate(context)) }
     var currentMinRate by remember { mutableStateOf(RefreshRateManager.getCurrentMinRefreshRate(context)) }
 
-    var isShizukuRunning by remember { mutableStateOf(AnimationTweakManager.isShizukuAvailable() || RefreshRateManager.isShizukuAvailable()) }
-    var hasShizukuPerm by remember { mutableStateOf(AnimationTweakManager.hasShizukuPermission() || RefreshRateManager.hasShizukuPermission()) }
+    val isAdbConnected by NativeAdbManager.isConnected.collectAsStateWithLifecycle()
     var showPermissionDialog by remember { mutableStateOf(false) }
 
     // Custom peak & min slider states
@@ -49,9 +51,8 @@ fun AnimationSettingsScreen(
 
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    fun refreshShizukuAndMetrics() {
-        isShizukuRunning = ShizukuConnectionManager.isShizukuRunning()
-        hasShizukuPerm = ShizukuConnectionManager.hasShizukuPermission()
+    fun refreshAdbAndMetrics() {
+        NativeAdbManager.refreshConnectionStatus(context)
         currentScale = AnimationTweakManager.getCurrentAnimationScale(context)
         currentPeakRate = RefreshRateManager.getCurrentPeakRefreshRate(context)
         currentMinRate = RefreshRateManager.getCurrentMinRefreshRate(context)
@@ -60,20 +61,15 @@ fun AnimationSettingsScreen(
     }
 
     DisposableEffect(lifecycleOwner) {
-        refreshShizukuAndMetrics()
-        val listeners = ShizukuConnectionManager.registerListeners(
-            onBinderChanged = { refreshShizukuAndMetrics() },
-            onPermissionResult = { _, _ -> refreshShizukuAndMetrics() }
-        )
+        refreshAdbAndMetrics()
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                refreshShizukuAndMetrics()
+                refreshAdbAndMetrics()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            ShizukuConnectionManager.unregisterListeners(listeners)
         }
     }
 
@@ -139,30 +135,29 @@ fun AnimationSettingsScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = if (isShizukuRunning && hasShizukuPerm) {
-                            "Shizuku ADB permission active. Changes apply instantly to system settings."
+                        text = if (isAdbConnected) {
+                            "Wireless ADB active. Changes apply instantly to system settings."
                         } else {
-                            "Shizuku permission required for global ADB settings tuning."
+                            "Wireless ADB connection required for global ADB settings tuning."
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                     )
 
-                    if (!isShizukuRunning || !hasShizukuPerm) {
+                    if (!isAdbConnected) {
                         Spacer(modifier = Modifier.height(12.dp))
                         Button(
                             onClick = {
                                 SoundEffectManager.playClick(context)
-                                ShizukuConnectionManager.connect(
-                                    context = context,
-                                    requestCode = 1002,
-                                    onConnected = { refreshShizukuAndMetrics() },
-                                    onPermissionRequested = { refreshShizukuAndMetrics() }
-                                )
+                                coroutineScope.launch {
+                                    val (ok, msg) = NativeAdbManager.connectAutomatically(context)
+                                    refreshAdbAndMetrics()
+                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                         ) {
-                            Text("Connect Shizuku")
+                            Text("Connect Now", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -206,7 +201,7 @@ fun AnimationSettingsScreen(
                             selected = currentPeakRate == 60f && currentMinRate == 60f,
                             onClick = {
                                 SoundEffectManager.playClick(context)
-                                if (!isShizukuRunning || !hasShizukuPerm) {
+                                if (!isAdbConnected) {
                                     showPermissionDialog = true
                                     return@FilterChip
                                 }
@@ -218,7 +213,7 @@ fun AnimationSettingsScreen(
                                     customMin = 60f
                                     Toast.makeText(context, "Refresh Rate set to 60 Hz (Power Saving)", Toast.LENGTH_SHORT).show()
                                 } else {
-                                    Toast.makeText(context, "Failed to apply refresh rate via Shizuku/ADB", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Failed to apply refresh rate via Wireless ADB", Toast.LENGTH_SHORT).show()
                                 }
                             },
                             label = { Text("60 Hz") },
@@ -229,7 +224,7 @@ fun AnimationSettingsScreen(
                             selected = currentPeakRate == 90f && currentMinRate == 90f,
                             onClick = {
                                 SoundEffectManager.playClick(context)
-                                if (!isShizukuRunning || !hasShizukuPerm) {
+                                if (!isAdbConnected) {
                                     showPermissionDialog = true
                                     return@FilterChip
                                 }
@@ -241,7 +236,7 @@ fun AnimationSettingsScreen(
                                     customMin = 90f
                                     Toast.makeText(context, "Refresh Rate set to 90 Hz (Smooth)", Toast.LENGTH_SHORT).show()
                                 } else {
-                                    Toast.makeText(context, "Failed to apply refresh rate via Shizuku/ADB", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Failed to apply refresh rate via Wireless ADB", Toast.LENGTH_SHORT).show()
                                 }
                             },
                             label = { Text("90 Hz") },
@@ -252,7 +247,7 @@ fun AnimationSettingsScreen(
                             selected = currentPeakRate >= 120f,
                             onClick = {
                                 SoundEffectManager.playClick(context)
-                                if (!isShizukuRunning || !hasShizukuPerm) {
+                                if (!isAdbConnected) {
                                     showPermissionDialog = true
                                     return@FilterChip
                                 }
@@ -264,7 +259,7 @@ fun AnimationSettingsScreen(
                                     customMin = 120f
                                     Toast.makeText(context, "Refresh Rate set to 120 Hz (Ultra Smooth)", Toast.LENGTH_SHORT).show()
                                 } else {
-                                    Toast.makeText(context, "Failed to apply refresh rate via Shizuku/ADB", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Failed to apply refresh rate via Wireless ADB", Toast.LENGTH_SHORT).show()
                                 }
                             },
                             label = { Text("120 Hz") },
@@ -276,7 +271,7 @@ fun AnimationSettingsScreen(
                     OutlinedButton(
                         onClick = {
                             SoundEffectManager.playClick(context)
-                            if (!isShizukuRunning || !hasShizukuPerm) {
+                            if (!isAdbConnected) {
                                 showPermissionDialog = true
                                 return@OutlinedButton
                             }
@@ -307,7 +302,7 @@ fun AnimationSettingsScreen(
                         value = customPeak,
                         onValueChange = { customPeak = it },
                         onValueChangeFinished = {
-                            if (isShizukuRunning && hasShizukuPerm) {
+                            if (isAdbConnected) {
                                 RefreshRateManager.setRefreshRates(context, customPeak, customMin)
                                 currentPeakRate = customPeak
                                 Toast.makeText(context, "Peak Refresh Rate set to ${customPeak.toInt()} Hz", Toast.LENGTH_SHORT).show()
@@ -350,7 +345,7 @@ fun AnimationSettingsScreen(
                     Button(
                         onClick = {
                             SoundEffectManager.playClick(context)
-                            if (!isShizukuRunning || !hasShizukuPerm) {
+                            if (!isAdbConnected) {
                                 showPermissionDialog = true
                                 return@Button
                             }
@@ -381,7 +376,7 @@ fun AnimationSettingsScreen(
                     Button(
                         onClick = {
                             SoundEffectManager.playClick(context)
-                            if (!isShizukuRunning || !hasShizukuPerm) {
+                            if (!isAdbConnected) {
                                 showPermissionDialog = true
                                 return@Button
                             }
@@ -412,7 +407,7 @@ fun AnimationSettingsScreen(
                     Button(
                         onClick = {
                             SoundEffectManager.playClick(context)
-                            if (!isShizukuRunning || !hasShizukuPerm) {
+                            if (!isAdbConnected) {
                                 showPermissionDialog = true
                                 return@Button
                             }
@@ -446,28 +441,26 @@ fun AnimationSettingsScreen(
     if (showPermissionDialog) {
         AlertDialog(
             onDismissRequest = { showPermissionDialog = false },
-            title = { Text("Shizuku is Inactive") },
+            title = { Text("Wireless ADB is Offline") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Privileged actions are currently blocked because Shizuku is not active or authorized.", style = MaterialTheme.typography.bodyMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                    Text("1. Install and open the Shizuku app.", style = MaterialTheme.typography.bodySmall)
-                    Text("2. Start the Shizuku service (via Wireless Debugging or root).", style = MaterialTheme.typography.bodySmall)
-                    Text("3. Return here and tap 'Grant Permission'.", style = MaterialTheme.typography.bodySmall)
+                    Text("Privileged actions require an active local Wireless ADB connection.", style = MaterialTheme.typography.bodyMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                    Text("1. Connect to Wi-Fi and enable Wireless Debugging in Developer Options.", style = MaterialTheme.typography.bodySmall)
+                    Text("2. Tap 'Connect Now' below or in System Dashboard -> Wireless Debugging.", style = MaterialTheme.typography.bodySmall)
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
                         showPermissionDialog = false
-                        ShizukuConnectionManager.connect(
-                            context = context,
-                            requestCode = 1002,
-                            onConnected = { refreshShizukuAndMetrics() },
-                            onPermissionRequested = { refreshShizukuAndMetrics() }
-                        )
+                        coroutineScope.launch {
+                            val (_, msg) = NativeAdbManager.connectAutomatically(context)
+                            refreshAdbAndMetrics()
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        }
                     }
                 ) {
-                    Text("Connect Shizuku")
+                    Text("Connect Now", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {

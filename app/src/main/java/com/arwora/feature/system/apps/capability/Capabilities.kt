@@ -3,25 +3,22 @@ package com.arwora.feature.system.apps.capability
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
-import android.content.pm.PackageManager
 import com.arwora.deviceadmin.AppDeviceAdminReceiver
-import rikka.shizuku.Shizuku
+import com.arwora.utils.NativeAdbManager
 
 enum class AppManagerCapability {
-    SHIZUKU,
+    WIRELESS_ADB,
     DEVICE_OWNER,
     NONE
 }
 
 object Capabilities {
     fun detectCapability(context: Context): AppManagerCapability {
-        // 1. Check Shizuku
+        // 1. Check built-in Wireless ADB
         try {
-            if (Shizuku.pingBinder()) {
-                val check = Shizuku.checkSelfPermission()
-                if (check == PackageManager.PERMISSION_GRANTED) {
-                    return AppManagerCapability.SHIZUKU
-                }
+            NativeAdbManager.refreshConnectionStatus(context)
+            if (NativeAdbManager.isAdbReady()) {
+                return AppManagerCapability.WIRELESS_ADB
             }
         } catch (_: Throwable) {}
 
@@ -38,29 +35,13 @@ object Capabilities {
         return AppManagerCapability.NONE
     }
 
-    fun isShizukuInstalledAndRunning(): Boolean {
-        return try {
-            Shizuku.pingBinder()
-        } catch (_: Throwable) {
-            false
-        }
+    fun isAdbConnected(context: Context): Boolean {
+        NativeAdbManager.refreshConnectionStatus(context)
+        return NativeAdbManager.isAdbReady()
     }
 
-    fun requestShizukuPermission(requestCode: Int = 1001): Boolean {
-        return try {
-            if (Shizuku.pingBinder()) {
-                if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
-                    Shizuku.requestPermission(requestCode)
-                    true
-                } else {
-                    true
-                }
-            } else {
-                false
-            }
-        } catch (_: Throwable) {
-            false
-        }
+    suspend fun connectWirelessAdb(context: Context): Pair<Boolean, String> {
+        return NativeAdbManager.connectAutomatically(context)
     }
 
     fun getAdminComponent(context: Context): ComponentName {

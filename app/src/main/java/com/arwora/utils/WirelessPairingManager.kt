@@ -202,7 +202,7 @@ object WirelessPairingManager {
         }
         com.arwora.service.WifiAutoPairMonitor.syncWithPreference(context.applicationContext)
         _lastWifiEventSummary.value = if (enabled) {
-            "Monitoring TRANSPORT_WIFI state changes for automatic pairing & Shizuku reconnection."
+            "Monitoring TRANSPORT_WIFI state changes for automatic Wireless ADB connection."
         } else {
             "Auto-pair on Wi-Fi paused."
         }
@@ -340,12 +340,19 @@ object WirelessPairingManager {
         pairingJob?.cancel()
         pairingJob = CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
             try {
-                if (rikka.shizuku.Shizuku.pingBinder()) {
+                updateUiState {
+                    _status.value = PairingStatus.PairingInProgress(
+                        port = cachedConnectPort ?: 5555,
+                        host = targetHost,
+                        stageMessage = "Detecting local ADB daemon..."
+                    )
+                }
+
+                val (nativeOk, nativeMsg) = NativeAdbManager.connectAutomatically(appContext)
+                if (nativeOk) {
                     updateUiState {
-                        _lastWifiEventSummary.value = "Wi-Fi connected • Shizuku binder already active."
-                        if (_status.value !is PairingStatus.Success) {
-                            _status.value = PairingStatus.Success(STAGE_CONNECTED)
-                        }
+                        _lastWifiEventSummary.value = nativeMsg
+                        _status.value = PairingStatus.Success(STAGE_CONNECTED)
                     }
                     return@launch
                 }
@@ -353,15 +360,22 @@ object WirelessPairingManager {
                 startMdnsDiscovery(appContext)
                 delay(1500L)
 
-                val connectPort = _savedConnectPort.value ?: cachedConnectPort
+                val connectPort = NativeAdbManager.getSystemWirelessDebugPort(appContext)
+                    ?: _savedConnectPort.value
+                    ?: cachedConnectPort
                 val pairingPort = _discoveredPort.value ?: cachedPairingPort
 
                 if (connectPort != null) {
-                    updateUiState {
-                        _status.value = PairingStatus.PairingInProgress(connectPort, targetHost, STAGE_ESTABLISHING_PAIRING)
+                    val (retryOk, retryMsg) = NativeAdbManager.connectToEndpoint(appContext, targetHost, connectPort)
+                    if (retryOk) {
+                        updateUiState {
+                            _lastWifiEventSummary.value = retryMsg
+                            _status.value = PairingStatus.Success(STAGE_CONNECTED)
+                        }
+                        return@launch
                     }
-                    val connected = tryShellConnect(targetHost, connectPort) || tryTcpReachable(targetHost, connectPort, 1500)
-                    if (connected) {
+                    val shellOk = tryShellConnect(targetHost, connectPort) || tryTcpReachable(targetHost, connectPort, 1500)
+                    if (shellOk) {
                         onPairingSuccess(appContext, STAGE_CONNECTED)
                         return@launch
                     }
@@ -530,8 +544,8 @@ object WirelessPairingManager {
 
         timeoutJob = scope.launch {
             try {
-                // Fast-path check: if Shizuku binder is already live, connect immediately
-                if (rikka.shizuku.Shizuku.pingBinder()) {
+                // Fast-path check: if native Wireless ADB is already connected, finish immediately
+                if (NativeAdbManager.isAdbReady()) {
                     onPairingSuccess(appContext, STAGE_CONNECTED)
                     return@launch
                 }
@@ -539,6 +553,7 @@ object WirelessPairingManager {
                 startMdnsDiscovery(appContext)
 
                 val candidatePorts = buildList {
+                    NativeAdbManager.getSystemWirelessDebugPort(appContext)?.let { add(it) }
                     _discoveredPort.value?.let { add(it) }
                     _savedConnectPort.value?.let { add(it) }
                     add(5555)
@@ -594,7 +609,9 @@ object WirelessPairingManager {
                                         progress = 0.85f
                                     )
                                 }
-                                if (tryShellConnect("127.0.0.1", activePort) || rikka.shizuku.Shizuku.pingBinder()) {
+                                if (NativeAdbManager.connectToEndpoint(appContext, "127.0.0.1", activePort).first ||
+                                    tryShellConnect("127.0.0.1", activePort)
+                                ) {
                                     onPairingSuccess(appContext, STAGE_CONNECTED)
                                     return@launch
                                 }
@@ -607,7 +624,9 @@ object WirelessPairingManager {
 
                     // 3. If an active connect port was discovered via _adb-tls-connect._tcp, test binding
                     if (liveConnectPort != null && tryTcpReachable("127.0.0.1", liveConnectPort, SOCKET_PROBE_TIMEOUT_MS)) {
-                        if (tryShellConnect("127.0.0.1", liveConnectPort) || rikka.shizuku.Shizuku.pingBinder()) {
+                        if (NativeAdbManager.connectToEndpoint(appContext, "127.0.0.1", liveConnectPort).first ||
+                            tryShellConnect("127.0.0.1", liveConnectPort)
+                        ) {
                             onPairingSuccess(appContext, STAGE_CONNECTED)
                             return@launch
                         }
@@ -795,7 +814,9 @@ object WirelessPairingManager {
         }
         stopListening()
         withContext(Dispatchers.IO) {
-            tryStartShizuku(context)
+            if (!NativeAdbManager.isAdbReady()) {
+                NativeAdbManager.connectAutomatically(context)
+            }
         }
     }
 
@@ -961,23 +982,6 @@ object WirelessPairingManager {
             try {
                 socket?.close()
             } catch (_: Exception) {}
-        }
-    }
-
-    private fun tryStartShizuku(context: Context) {
-        try {
-            if (rikka.shizuku.Shizuku.pingBinder()) {
-                Log.i(TAG, "Shizuku binder is already connected!")
-                return
-            }
-
-            val scriptPath = "/sdcard/Android/data/moe.shizuku.privileged.api/start.sh"
-            val file = File(scriptPath)
-            if (file.exists()) {
-                Runtime.getRuntime().exec(arrayOf("sh", scriptPath))
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not auto-start Shizuku: ${e.message}")
         }
     }
 

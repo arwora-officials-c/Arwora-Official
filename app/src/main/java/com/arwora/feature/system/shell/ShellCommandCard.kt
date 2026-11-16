@@ -33,9 +33,9 @@ fun ShellCommandCard(
 
     val badgeColor = when (status) {
         ShellStatus.READY -> Color(0xFF10B981)
-        ShellStatus.SHIZUKU_REQUIRED -> MaterialTheme.colorScheme.error
-        ShellStatus.PERMISSION_DENIED -> MaterialTheme.colorScheme.error
-        ShellStatus.STOPPED_BY_YOU -> MaterialTheme.colorScheme.outline
+        ShellStatus.ADB_REQUIRED -> MaterialTheme.colorScheme.error
+        ShellStatus.WIFI_REQUIRED -> MaterialTheme.colorScheme.error
+        ShellStatus.DISCONNECTED -> MaterialTheme.colorScheme.outline
     }
 
     SystemCard(
@@ -90,7 +90,7 @@ fun ShellCommandCard(
                 )
                 Spacer(modifier = Modifier.height(1.dp))
                 Text(
-                    text = "Run advanced shell commands using Shizuku",
+                    text = "Run advanced shell commands using Wireless ADB",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                     maxLines = 1,

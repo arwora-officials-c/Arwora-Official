@@ -23,33 +23,8 @@ import com.arwora.ui.MainViewModel
 import com.arwora.ui.MainViewModelFactory
 import com.arwora.ui.theme.NameGenProTheme
 import androidx.core.view.WindowCompat
-import rikka.shizuku.Shizuku
 
-class MainActivity : ComponentActivity(), Shizuku.OnRequestPermissionResultListener {
-    
-    fun checkAndRequestShizukuPermission() {
-        try {
-            if (Shizuku.pingBinder()) {
-                if (Shizuku.checkSelfPermission() != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                    Shizuku.requestPermission(1001)
-                } else {
-                    // Permission already granted
-                }
-            } else {
-                // android.widget.Toast.makeText(this, "Shizuku service is not running!", android.widget.Toast.LENGTH_SHORT).show()
-            }
-        } catch (e: Throwable) {
-            e.printStackTrace()
-        }
-    }
-
-    override fun onRequestPermissionResult(requestCode: Int, grantResult: Int) {
-        if (grantResult == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            android.widget.Toast.makeText(this, "Shizuku Permission Granted", android.widget.Toast.LENGTH_SHORT).show()
-        } else {
-            android.widget.Toast.makeText(this, "Shizuku Permission Denied", android.widget.Toast.LENGTH_SHORT).show()
-        }
-    }
+class MainActivity : ComponentActivity() {
 
     fun checkNotificationPermissionStatus() {
         com.arwora.utils.WirelessPairingManager.checkNotificationPermissionStatus(this)
@@ -62,11 +37,6 @@ class MainActivity : ComponentActivity(), Shizuku.OnRequestPermissionResultListe
 
     override fun onDestroy() {
         super.onDestroy()
-        try {
-            Shizuku.removeRequestPermissionResultListener(this)
-        } catch (e: Throwable) {
-            e.printStackTrace()
-        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -76,14 +46,9 @@ class MainActivity : ComponentActivity(), Shizuku.OnRequestPermissionResultListe
         }
         super.onCreate(savedInstanceState)
         com.arwora.feature.common.metrics.StartupMetrics.onActivityCreate()
-        
-        // Register Shizuku permission listener without auto-requesting permission prompts on startup
-        com.arwora.utils.DnsSecureSettingsHelper.registerPermissionListener()
-        try {
-            Shizuku.addRequestPermissionResultListener(this)
-        } catch (e: Throwable) {
-            e.printStackTrace()
-        }
+
+        com.arwora.utils.NativeAdbManager.init(this)
+        com.arwora.service.WifiAutoPairMonitor.syncWithPreference(this)
         
         enableEdgeToEdge()
         WindowCompat.setDecorFitsSystemWindows(window, false)

@@ -2,7 +2,6 @@ package com.arwora.utils
 
 import android.content.Context
 import android.widget.Toast
-import rikka.shizuku.Shizuku
 
 /**
  * Data class representing a complete Android device profile with real-world specs.
@@ -379,43 +378,22 @@ object FakeDeviceManager {
             .apply()
     }
 
-    fun isShizukuReady(): Boolean {
-        return try {
-            Shizuku.pingBinder() && Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED
-        } catch (e: Exception) {
-            false
-        }
-    }
+    fun isAdbReady(): Boolean = NativeAdbManager.isAdbReady()
 
-    fun executeCommandViaShizuku(command: String): Boolean {
-        if (!isShizukuReady()) return false
-        var process: Process? = null
-        return try {
-            val cmdArgs = arrayOf("sh", "-c", command)
-            val newProcessMethod = Shizuku::class.java.getDeclaredMethod(
-                "newProcess",
-                Array<String>::class.java,
-                Array<String>::class.java,
-                String::class.java
-            )
-            newProcessMethod.isAccessible = true
-            process = newProcessMethod.invoke(null, cmdArgs, null, null) as Process
-            val exitCode = process.waitFor()
-            exitCode == 0
-        } catch (e: Exception) {
-            e.printStackTrace()
-            false
-        } finally {
-            process?.destroy()
-        }
+    fun executeCommandViaAdb(command: String): Boolean {
+        return NativeAdbManager.executeCommandBlocking(command).success
     }
 
     fun applyDeviceProfile(context: Context, profile: FakeDeviceProfile, useShortName: Boolean = isShortNameMode(context)): Boolean {
         saveSelectedProfile(context, profile)
         setShortNameMode(context, useShortName)
         val targetName = if (useShortName) profile.shortName else profile.fullName
-        if (!isShizukuReady()) {
-            Toast.makeText(context, "Saved profile: $targetName (${if (useShortName) "Short" else "Full"})\n(Grant Shizuku permission for system-level injection)", Toast.LENGTH_LONG).show()
+        if (!isAdbReady()) {
+            Toast.makeText(
+                context,
+                "Saved profile: $targetName (${if (useShortName) "Short" else "Full"})\n(Connect Wireless ADB for system-level injection)",
+                Toast.LENGTH_LONG
+            ).show()
             return false
         }
 
@@ -432,7 +410,7 @@ object FakeDeviceManager {
 
         var successCount = 0
         for (cmd in commands) {
-            if (executeCommandViaShizuku(cmd)) {
+            if (executeCommandViaAdb(cmd)) {
                 successCount++
             }
         }
@@ -441,7 +419,7 @@ object FakeDeviceManager {
         if (isSuccess) {
             Toast.makeText(context, "$targetName (${if (useShortName) "Short Name" else "Full Name"}) active!", Toast.LENGTH_SHORT).show()
         } else {
-            Toast.makeText(context, "Failed to apply profile via Shizuku", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Failed to apply profile via Wireless ADB", Toast.LENGTH_SHORT).show()
         }
         return isSuccess
     }

@@ -44,6 +44,7 @@ fun NetworkSettingsScreen(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     var selectedProvider by remember { mutableStateOf(DnsManager.getSelectedDns(context)) }
     var customHostInput by remember { mutableStateOf(if (selectedProvider.id == "custom") selectedProvider.dotHost else "") }
     var expanded by remember { mutableStateOf(false) }
@@ -366,19 +367,10 @@ fun NetworkSettingsScreen(
                                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                     clipboard.setPrimaryClip(ClipData.newPlainText("DNS Hostname", finalHost))
 
-                                    val modeToApply = "hostname"
-                                    if (DnsSecureSettingsHelper.isShizukuAvailable() && !DnsSecureSettingsHelper.hasShizukuPermission()) {
-                                        DnsSecureSettingsHelper.setPendingAction {
-                                            val success = DnsSecureSettingsHelper.setPrivateDns(context, modeToApply, finalHost)
-                                            if (success) {
-                                                refreshLiveDnsState()
-                                                Toast.makeText(context, "System Private DNS updated!", Toast.LENGTH_LONG).show()
-                                            }
+                                    coroutineScope.launch {
+                                        val success = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                            DnsSecureSettingsHelper.setPrivateDns(context, "hostname", finalHost)
                                         }
-                                        DnsSecureSettingsHelper.requestShizukuPermission(1001)
-                                        Toast.makeText(context, "Authorizing Shizuku access...", Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        val success = DnsSecureSettingsHelper.setPrivateDns(context, modeToApply, finalHost)
                                         if (success) {
                                             refreshLiveDnsState()
                                             Toast.makeText(context, "System Private DNS updated!", Toast.LENGTH_LONG).show()
@@ -402,12 +394,16 @@ fun NetworkSettingsScreen(
                             OutlinedButton(
                                 onClick = {
                                     SoundEffectManager.playClick()
-                                    val success = DnsSecureSettingsHelper.setPrivateDns(context, "opportunistic", null)
-                                    if (success) {
-                                        refreshLiveDnsState()
-                                        Toast.makeText(context, "Restored to Automatic DNS!", Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        DnsSecureSettingsHelper.openPrivateDnsSettings(context)
+                                    coroutineScope.launch {
+                                        val success = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                            DnsSecureSettingsHelper.setPrivateDns(context, "opportunistic", null)
+                                        }
+                                        if (success) {
+                                            refreshLiveDnsState()
+                                            Toast.makeText(context, "Restored to Automatic DNS!", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            DnsSecureSettingsHelper.openPrivateDnsSettings(context)
+                                        }
                                     }
                                 },
                                 modifier = Modifier
@@ -563,7 +559,7 @@ fun NetworkSettingsScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        text = "Android restricts direct changes to system Private DNS unless granted via ADB Secure Settings or authorized via Shizuku.",
+                        text = "Android restricts direct changes to system Private DNS unless granted via ADB Secure Settings or active Wireless ADB.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -587,7 +583,7 @@ fun NetworkSettingsScreen(
             dismissButton = {
                 TextButton(
                     onClick = {
-                        val adbCmd = "adb shell pm grant com.aistudio.hypertoolkit.fresh android.permission.WRITE_SECURE_SETTINGS"
+                        val adbCmd = "adb shell pm grant com.arworahyper.toolkit android.permission.WRITE_SECURE_SETTINGS"
                         val clip = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         clip.setPrimaryClip(ClipData.newPlainText("ADB Command", adbCmd))
                         Toast.makeText(context, "ADB command copied to clipboard!", Toast.LENGTH_SHORT).show()

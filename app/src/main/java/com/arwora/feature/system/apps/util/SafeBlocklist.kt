@@ -12,9 +12,7 @@ object SafeBlocklist {
         "com.android.settings",
         "com.android.vending",
         "com.google.android.gms",
-        "com.google.android.gsf",
-        "rikka.shizuku",
-        "moe.shizuku.privileged.api"
+        "com.google.android.gsf"
     )
 
     fun isSafeBlocklisted(packageName: String, context: Context): Boolean {

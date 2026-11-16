@@ -7,8 +7,8 @@ import android.content.Context
 import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.arwora.utils.ShizukuConnectionManager
-import com.arwora.utils.ShizukuConnectionState
+import com.arwora.utils.NativeAdbConnectionState
+import com.arwora.utils.NativeAdbManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -40,7 +40,7 @@ class WifiPasswordViewModel(application: Application) : AndroidViewModel(applica
     val isAddDialogOpen: StateFlow<Boolean> = _isAddDialogOpen.asStateFlow()
 
     val isElevatedModeAvailable: StateFlow<Boolean> = repository.isElevatedModeAvailable
-    val shizukuState: StateFlow<ShizukuConnectionState> = repository.shizukuState
+    val adbState: StateFlow<NativeAdbConnectionState> = repository.adbState
 
     val filteredNetworks: StateFlow<List<SavedWifiNetwork>> = combine(
         repository.networks,
@@ -63,10 +63,10 @@ class WifiPasswordViewModel(application: Application) : AndroidViewModel(applica
         refresh()
     }
 
-    fun refreshShizukuStatus() {
+    fun refreshAdbStatus() {
         val prevElevated = isElevatedModeAvailable.value
-        val state = repository.refreshShizukuState()
-        if (!prevElevated && state == ShizukuConnectionState.CONNECTED) {
+        val state = repository.refreshAdbState()
+        if (!prevElevated && state == NativeAdbConnectionState.CONNECTED) {
             refresh()
         }
     }
@@ -105,7 +105,7 @@ class WifiPasswordViewModel(application: Application) : AndroidViewModel(applica
         if (newState) {
             val allIds = filteredNetworks.value.map { it.id }.toSet()
             _revealedPasswordIds.value = allIds
-            if (repository.networks.value.isEmpty() || repository.refreshShizukuState() == ShizukuConnectionState.CONNECTED) {
+            if (repository.networks.value.isEmpty() || repository.refreshAdbState() == NativeAdbConnectionState.CONNECTED) {
                 refresh(revealAfter = true)
             }
         } else {
@@ -231,15 +231,14 @@ class WifiPasswordViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
-    fun connectShizuku(context: Context) {
-        ShizukuConnectionManager.connect(
-            context = context,
-            requestCode = 1002,
-            showFeedback = true,
-            onConnected = {
+    fun connectAdb(context: Context) {
+        viewModelScope.launch {
+            val (ok, msg) = NativeAdbManager.connectAutomatically(context)
+            repository.refreshAdbState()
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+            if (ok) {
                 refresh()
             }
-        )
-        repository.refreshShizukuState()
+        }
     }
 }

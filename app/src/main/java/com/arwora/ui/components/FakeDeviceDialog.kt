@@ -23,10 +23,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arwora.utils.FakeDeviceManager
 import com.arwora.utils.FakeDeviceProfile
-import com.arwora.utils.ShizukuConnectionManager
+import com.arwora.utils.NativeAdbManager
 import com.arwora.utils.SoundEffectManager
+import kotlinx.coroutines.launch
 
 @Composable
 fun FakeDeviceDialog(
@@ -39,17 +41,11 @@ fun FakeDeviceDialog(
 
     // Toggle state: false = Full Name (Default), true = Short Name
     var isShortNameMode by remember { mutableStateOf(FakeDeviceManager.isShortNameMode(context)) }
-    var isShizukuReady by remember { mutableStateOf(FakeDeviceManager.isShizukuReady()) }
+    val isAdbReady by NativeAdbManager.isConnected.collectAsStateWithLifecycle()
+    val coroutineScope = rememberCoroutineScope()
 
-    DisposableEffect(Unit) {
-        isShizukuReady = FakeDeviceManager.isShizukuReady()
-        val listeners = ShizukuConnectionManager.registerListeners(
-            onBinderChanged = { isShizukuReady = FakeDeviceManager.isShizukuReady() },
-            onPermissionResult = { _, _ -> isShizukuReady = FakeDeviceManager.isShizukuReady() }
-        )
-        onDispose {
-            ShizukuConnectionManager.unregisterListeners(listeners)
-        }
+    LaunchedEffect(Unit) {
+        NativeAdbManager.refreshConnectionStatus(context)
     }
 
     val filteredProfiles = remember(searchQuery) {
@@ -77,7 +73,7 @@ fun FakeDeviceDialog(
             Column(
                 modifier = Modifier.fillMaxWidth()
             ) {
-                if (!isShizukuReady) {
+                if (!isAdbReady) {
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -94,7 +90,7 @@ fun FakeDeviceDialog(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(
-                                text = "Shizuku inactive: selections save locally; connect Shizuku for system spoofing.",
+                                text = "Wireless ADB offline: selections save locally; connect Wireless ADB for system spoofing.",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onErrorContainer,
                                 modifier = Modifier.weight(1f)
@@ -103,15 +99,13 @@ fun FakeDeviceDialog(
                             TextButton(
                                 onClick = {
                                     SoundEffectManager.playClick(context)
-                                    ShizukuConnectionManager.connect(
-                                        context = context,
-                                        onConnected = { isShizukuReady = FakeDeviceManager.isShizukuReady() },
-                                        onPermissionRequested = { isShizukuReady = FakeDeviceManager.isShizukuReady() }
-                                    )
+                                    coroutineScope.launch {
+                                        NativeAdbManager.connectAutomatically(context)
+                                    }
                                 },
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                             ) {
-                                Text("Connect", fontWeight = FontWeight.Bold)
+                                Text("Connect Now", fontWeight = FontWeight.Bold)
                             }
                         }
                     }

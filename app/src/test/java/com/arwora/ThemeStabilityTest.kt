@@ -15,6 +15,7 @@ import com.arwora.ui.components.indexOfMainTabRoute
 import com.arwora.ui.navigation.Screen
 import com.arwora.ui.theme.ThemeManager
 import com.arwora.ui.theme.ThemeMode
+import android.os.Looper
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -23,11 +24,23 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class ThemeStabilityTest {
+
+    private fun awaitMainCondition(timeoutMs: Long = 5_000L, predicate: () -> Boolean) {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            Shadows.shadowOf(Looper.getMainLooper()).idle()
+            if (predicate()) return
+            Thread.sleep(20)
+        }
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+        assertTrue("Timed out waiting for theme state update", predicate())
+    }
 
     @Test
     fun `theme manager resolves all theme modes deterministically`() {
@@ -69,7 +82,7 @@ class ThemeStabilityTest {
     }
 
     @Test
-    fun `live accent preview updates theme colors without persisting until confirmed`() = runBlocking {
+    fun `live accent preview updates theme colors without persisting until confirmed`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()
         val setRepo = SettingsRepository(context.dataStore)
@@ -80,26 +93,30 @@ class ThemeStabilityTest {
             SavedTextRepository(db.savedTextDao())
         )
 
-        val initialSaved = setRepo.uiColorFlow.first()
+        val initialSaved = runBlocking { setRepo.uiColorFlow.first() }
         val previewColor = 0xFF00C853L
 
         viewModel.setLiveAccentPreview(previewColor)
-        assertEquals(previewColor, viewModel.uiColor.first { it == previewColor })
-        assertEquals(previewColor, viewModel.buttonColor.first { it == previewColor })
+        awaitMainCondition { viewModel.uiColor.value == previewColor && viewModel.buttonColor.value == previewColor }
         // Disk DataStore value stays untouched during live drag preview
-        assertEquals(initialSaved, setRepo.uiColorFlow.first())
+        assertEquals(initialSaved, runBlocking { setRepo.uiColorFlow.first() })
 
         // Dismiss clears preview cleanly
         viewModel.setLiveAccentPreview(null)
-        assertEquals(initialSaved, viewModel.uiColor.first { it == initialSaved })
+        awaitMainCondition { viewModel.uiColor.value == initialSaved }
 
         // Confirm atomically persists both accent keys
         val confirmedColor = 0xFF1E88E5L
         viewModel.setAccentColors(confirmedColor, confirmedColor)
-        assertEquals(confirmedColor, setRepo.uiColorFlow.first { it == confirmedColor })
-        assertEquals(confirmedColor, setRepo.buttonColorFlow.first { it == confirmedColor })
+        awaitMainCondition {
+            runBlocking {
+                setRepo.uiColorFlow.first() == confirmedColor &&
+                    setRepo.buttonColorFlow.first() == confirmedColor
+            }
+        }
 
         viewModel.resetColors()
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
         db.close()
     }
 }

@@ -39,7 +39,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.arwora.ui.components.ArworaAnimatedSwitch
 import com.arwora.ui.components.GoogleStyleLoadingView
-import com.arwora.utils.ShizukuConnectionManager
+import com.arwora.utils.NativeAdbManager
 import com.arwora.utils.SoundEffectManager
 
 /**
@@ -105,26 +105,25 @@ fun HidePrivateDnsScreen(
     val visibleCount by viewModel.totalVisibleCount.collectAsStateWithLifecycle()
     val hiddenCount by viewModel.totalHiddenCount.collectAsStateWithLifecycle()
 
-    val isShizukuAvailable by viewModel.isShizukuAvailable.collectAsStateWithLifecycle()
-    val hasShizukuPermission by viewModel.hasShizukuPermission.collectAsStateWithLifecycle()
-    val context = LocalContext.current
+    val isWifiConnected by viewModel.isWifiConnected.collectAsStateWithLifecycle()
+    val isAdbConnected by viewModel.isAdbConnected.collectAsStateWithLifecycle()
+    val nativeAdbConnected by NativeAdbManager.isConnected.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
 
+    LaunchedEffect(nativeAdbConnected) {
+        viewModel.checkAdbStatus()
+    }
+
     DisposableEffect(lifecycleOwner) {
-        viewModel.checkShizukuStatus()
-        val listeners = ShizukuConnectionManager.registerListeners(
-            onBinderChanged = { viewModel.checkShizukuStatus() },
-            onPermissionResult = { _, _ -> viewModel.checkShizukuStatus() }
-        )
+        viewModel.checkAdbStatus()
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                viewModel.checkShizukuStatus()
+                viewModel.checkAdbStatus()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            ShizukuConnectionManager.unregisterListeners(listeners)
         }
     }
 
@@ -186,8 +185,8 @@ fun HidePrivateDnsScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Shizuku / Root info banner if not granted
-            if (!hasShizukuPermission) {
+            // Wireless ADB info banner if not connected
+            if (!isAdbConnected) {
                 Surface(
                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
                     shape = RoundedCornerShape(14.dp),
@@ -216,8 +215,8 @@ fun HidePrivateDnsScreen(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = if (isShizukuAvailable) "Shizuku ready. Grant permission for strict system iptables isolation."
-                                else "Hiding preferences saved. Connect Shizuku for hardware-level DNS firewall enforcement.",
+                                text = if (isWifiConnected) "Wi-Fi active. Tap Connect Now to bind Wireless ADB for strict iptables isolation."
+                                else "Hiding preferences saved. Enable Wi-Fi & Wireless Debugging to bind Wireless ADB.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -225,16 +224,11 @@ fun HidePrivateDnsScreen(
                         TextButton(
                             onClick = {
                                 SoundEffectManager.playClick()
-                                ShizukuConnectionManager.connect(
-                                    context = context,
-                                    requestCode = 1005,
-                                    onConnected = { viewModel.checkShizukuStatus() },
-                                    onPermissionRequested = { viewModel.checkShizukuStatus() }
-                                )
+                                viewModel.connectAdb()
                             },
-                            modifier = Modifier.testTag("hide_dns_grant_shizuku_button")
+                            modifier = Modifier.testTag("hide_dns_grant_adb_button")
                         ) {
-                            Text(if (isShizukuAvailable) "Grant" else "Connect", fontWeight = FontWeight.Bold)
+                            Text("Connect Now", fontWeight = FontWeight.Bold)
                         }
                     }
                 }

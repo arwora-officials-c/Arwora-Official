@@ -9,8 +9,8 @@ import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import com.arwora.feature.system.shell.ShellExecutor
-import com.arwora.utils.ShizukuConnectionManager
-import com.arwora.utils.ShizukuConnectionState
+import com.arwora.utils.NativeAdbConnectionState
+import com.arwora.utils.NativeAdbManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,8 +34,8 @@ class WifiPasswordRepository(private val context: Context) {
     private val _isElevatedModeAvailable = MutableStateFlow(false)
     val isElevatedModeAvailable: StateFlow<Boolean> = _isElevatedModeAvailable.asStateFlow()
 
-    private val _shizukuState = MutableStateFlow(ShizukuConnectionManager.getConnectionState(appContext))
-    val shizukuState: StateFlow<ShizukuConnectionState> = _shizukuState.asStateFlow()
+    private val _adbState = MutableStateFlow(NativeAdbManager.connectionState.value)
+    val adbState: StateFlow<NativeAdbConnectionState> = _adbState.asStateFlow()
 
     companion object {
         private const val TAG = "WifiPasswordRepo"
@@ -46,15 +46,16 @@ class WifiPasswordRepository(private val context: Context) {
         loadCachedVault()
     }
 
-    fun refreshShizukuState(): ShizukuConnectionState {
-        val state = ShizukuConnectionManager.getConnectionState(appContext)
-        _shizukuState.value = state
-        _isElevatedModeAvailable.value = (state == ShizukuConnectionState.CONNECTED)
+    fun refreshAdbState(): NativeAdbConnectionState {
+        NativeAdbManager.refreshConnectionStatus(appContext)
+        val state = NativeAdbManager.connectionState.value
+        _adbState.value = state
+        _isElevatedModeAvailable.value = (state == NativeAdbConnectionState.CONNECTED)
         return state
     }
 
     /**
-     * Refreshes the saved Wi-Fi networks from System WifiManager, Shizuku/Root store,
+     * Refreshes the saved Wi-Fi networks from System WifiManager, Wireless ADB/Root store,
      * and the local persistent vault.
      */
     suspend fun refreshSavedNetworks() = withContext(Dispatchers.IO) {
@@ -108,10 +109,10 @@ class WifiPasswordRepository(private val context: Context) {
             Log.w(TAG, "Cannot read configuredNetworks directly: ${e.message}")
         }
 
-        // 4. Query elevated system Wi-Fi stores and dumps via Shizuku / ADB
+        // 4. Query elevated system Wi-Fi stores and dumps via Wireless ADB
         try {
-            val connectionState = refreshShizukuState()
-            if (connectionState == ShizukuConnectionState.CONNECTED) {
+            val connectionState = refreshAdbState()
+            if (connectionState == NativeAdbConnectionState.CONNECTED) {
                 var parsedXmlOrSupplicant = false
                 val storePaths = listOf(
                     "/data/misc/wifi/WifiConfigStore.xml",
@@ -121,7 +122,7 @@ class WifiPasswordRepository(private val context: Context) {
                 for (path in storePaths) {
                     var cmdResult = ShellExecutor.executeCommand("cat $path 2>/dev/null")
                     if (cmdResult.exitCode != 0 || cmdResult.stdout.isBlank()) {
-                        // On rooted devices running Shizuku in shell mode, attempt su fallback
+                        // On rooted devices, attempt su fallback
                         cmdResult = ShellExecutor.executeCommand("su -c 'cat $path' 2>/dev/null")
                     }
                     if (cmdResult.exitCode == 0 && cmdResult.stdout.isNotBlank()) {
@@ -154,7 +155,7 @@ class WifiPasswordRepository(private val context: Context) {
                 }
             }
         } catch (e: Throwable) {
-            Log.w(TAG, "Shizuku inspection error: ${e.message}")
+            Log.w(TAG, "Wireless ADB inspection error: ${e.message}")
         }
 
         // Clean any legacy synthetic placeholder password labels from old vault entries
@@ -230,7 +231,7 @@ class WifiPasswordRepository(private val context: Context) {
                     networkId = -1,
                     isHiddenSsid = hiddenSsid,
                     currentSsid = currentSsid,
-                    source = WifiSource.SHIZUKU_STORE
+                    source = WifiSource.ADB_SYSTEM_STORE
                 )
                 extractedCount++
             }
@@ -370,7 +371,7 @@ class WifiPasswordRepository(private val context: Context) {
                 networkId = -1,
                 isHiddenSsid = false,
                 currentSsid = currentSsid,
-                source = WifiSource.SHIZUKU_STORE
+                source = WifiSource.ADB_SYSTEM_STORE
             )
             count++
         }
@@ -404,7 +405,7 @@ class WifiPasswordRepository(private val context: Context) {
                 networkId = -1,
                 isHiddenSsid = body.contains("scan_ssid=1"),
                 currentSsid = currentSsid,
-                source = WifiSource.SHIZUKU_STORE
+                source = WifiSource.ADB_SYSTEM_STORE
             )
             count++
         }
@@ -436,7 +437,7 @@ class WifiPasswordRepository(private val context: Context) {
                 networkId = networkId,
                 isHiddenSsid = false,
                 currentSsid = currentSsid,
-                source = WifiSource.SHIZUKU_STORE
+                source = WifiSource.ADB_SYSTEM_STORE
             )
             count++
         }
@@ -477,7 +478,7 @@ class WifiPasswordRepository(private val context: Context) {
                 networkId = activeNetId,
                 isHiddenSsid = false,
                 currentSsid = currentSsid,
-                source = WifiSource.SHIZUKU_STORE
+                source = WifiSource.ADB_SYSTEM_STORE
             )
             count++
             activeSsid = null
@@ -606,7 +607,7 @@ class WifiPasswordRepository(private val context: Context) {
             Log.w(TAG, "Failed to remove network from WifiManager: ${e.message}")
         }
 
-        // Also try shell command if Shizuku is active
+        // Also try shell command if Wireless ADB is active
         try {
             if (_isElevatedModeAvailable.value) {
                 ShellExecutor.executeCommand("cmd -w wifi forget-network \"${network.ssid}\"")
@@ -787,7 +788,7 @@ class WifiPasswordRepository(private val context: Context) {
                         bssid = obj.optString("bssid", null),
                         isCurrentlyConnected = obj.optBoolean("isCurrentlyConnected", false),
                         lastConnectedTimestamp = obj.optLong("lastConnectedTimestamp", System.currentTimeMillis()),
-                        source = WifiSource.valueOf(obj.optString("source", WifiSource.LOCAL_VAULT.name))
+                        source = WifiSource.fromString(obj.optString("source", WifiSource.LOCAL_VAULT.name))
                     )
                 )
             }

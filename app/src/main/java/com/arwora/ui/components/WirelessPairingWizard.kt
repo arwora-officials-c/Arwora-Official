@@ -41,10 +41,12 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arwora.service.WifiAutoPairMonitor
+import com.arwora.utils.NativeAdbManager
 import com.arwora.utils.PairingStatus
 import com.arwora.utils.SoundEffectManager
 import com.arwora.utils.WirelessPairingManager
 import com.arwora.utils.WirelessPairingMode
+import kotlinx.coroutines.launch
 
 @Composable
 fun WirelessPairingWizard(
@@ -53,6 +55,7 @@ fun WirelessPairingWizard(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val coroutineScope = rememberCoroutineScope()
 
     val selectedMode by WirelessPairingManager.selectedMode.collectAsStateWithLifecycle()
     val pairingStatus by WirelessPairingManager.status.collectAsStateWithLifecycle()
@@ -61,18 +64,17 @@ fun WirelessPairingWizard(
     val hasNotificationAccess by WirelessPairingManager.notificationAccessGranted.collectAsStateWithLifecycle()
     val autoPairOnWifiEnabled by WirelessPairingManager.autoPairOnWifiEnabled.collectAsStateWithLifecycle()
     val savedHost by WirelessPairingManager.savedHost.collectAsStateWithLifecycle()
-    val savedConnectPort by WirelessPairingManager.savedConnectPort.collectAsStateWithLifecycle()
     val isWifiConnected by WirelessPairingManager.isWifiConnected.collectAsStateWithLifecycle()
     val lastWifiEventSummary by WirelessPairingManager.lastWifiEventSummary.collectAsStateWithLifecycle()
+    val isNativeAdbConnected by NativeAdbManager.isConnected.collectAsStateWithLifecycle()
 
     var manualHostInput by remember { mutableStateOf(savedHost) }
     var manualCodeInput by remember { mutableStateOf("") }
     var manualPortInput by remember { mutableStateOf("") }
-    var wifiTargetHostInput by remember { mutableStateOf(savedHost) }
-    var wifiTargetPortInput by remember { mutableStateOf(savedConnectPort?.toString() ?: "") }
 
     // Synchronize persisted preferences and connectivity state on mount
     LaunchedEffect(Unit) {
+        NativeAdbManager.init(context)
         WirelessPairingManager.init(context)
         WifiAutoPairMonitor.syncWithPreference(context)
     }
@@ -80,12 +82,6 @@ fun WirelessPairingWizard(
     LaunchedEffect(savedHost) {
         if (savedHost.isNotBlank()) {
             manualHostInput = savedHost
-            wifiTargetHostInput = savedHost
-        }
-    }
-    LaunchedEffect(savedConnectPort) {
-        if (savedConnectPort != null) {
-            wifiTargetPortInput = savedConnectPort.toString()
         }
     }
     LaunchedEffect(capturedCode) {
@@ -215,30 +211,21 @@ fun WirelessPairingWizard(
                     AutoPairOnWifiCard(
                         enabled = autoPairOnWifiEnabled,
                         isWifiConnected = isWifiConnected,
-                        hostInput = wifiTargetHostInput,
-                        onHostChange = { wifiTargetHostInput = it },
-                        portInput = wifiTargetPortInput,
-                        onPortChange = { if (it.length <= 5 && it.all { c -> c.isDigit() }) wifiTargetPortInput = it },
+                        isAdbConnected = isNativeAdbConnected,
                         lastEventSummary = lastWifiEventSummary,
                         isBusy = pairingStatus is PairingStatus.PairingInProgress,
                         onToggleEnabled = { checked ->
                             SoundEffectManager.playClick()
                             WirelessPairingManager.setAutoPairOnWifiEnabled(context, checked)
                         },
-                        onSaveAndTriggerNow = {
+                        onConnectNow = {
                             SoundEffectManager.playClick()
-                            val parsedPort = wifiTargetPortInput.toIntOrNull()
-                            if (wifiTargetPortInput.isNotBlank() && (parsedPort == null || parsedPort !in 1024..65535)) {
-                                Toast.makeText(context, "Port must be between 1024 and 65535", Toast.LENGTH_SHORT).show()
-                                return@AutoPairOnWifiCard
-                            }
-                            WirelessPairingManager.saveTargetInfo(context, wifiTargetHostInput, parsedPort)
                             if (WifiAutoPairMonitor.isWifiCurrentlyConnected(context)) {
                                 WirelessPairingManager.onWifiNetworkConnected(context, forceManualTrigger = true)
                             } else {
                                 Toast.makeText(
                                     context,
-                                    "Target saved. Auto-pair will trigger when Wi-Fi connects.",
+                                    "Connect to Wi-Fi first to bind the local ADB daemon.",
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }
@@ -301,7 +288,7 @@ private fun PairingStatusBannerCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Wireless ADB & Shizuku Pairing",
+                        text = "Wireless ADB Pairing",
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -775,14 +762,11 @@ private fun AutomaticWizardPairingCard(
 private fun AutoPairOnWifiCard(
     enabled: Boolean,
     isWifiConnected: Boolean,
-    hostInput: String,
-    onHostChange: (String) -> Unit,
-    portInput: String,
-    onPortChange: (String) -> Unit,
+    isAdbConnected: Boolean,
     lastEventSummary: String?,
     isBusy: Boolean,
     onToggleEnabled: (Boolean) -> Unit,
-    onSaveAndTriggerNow: () -> Unit
+    onConnectNow: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -816,7 +800,7 @@ private fun AutoPairOnWifiCard(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Automatically attempt pairing or ADB re-connect whenever any Wi-Fi connects.",
+                            text = "Automatically detect active Wi-Fi and bind directly to the local Wireless ADB daemon.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -832,38 +816,70 @@ private fun AutoPairOnWifiCard(
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
 
-            Text(
-                text = "Cached Wireless Debugging Target",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = (if (isWifiConnected) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant).copy(alpha = 0.12f),
+                    border = BorderStroke(
+                        1.dp,
+                        (if (isWifiConnected) Color(0xFF10B981) else MaterialTheme.colorScheme.outline).copy(alpha = 0.35f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isWifiConnected) Icons.Default.Wifi else Icons.Default.WifiOff,
+                            contentDescription = null,
+                            tint = if (isWifiConnected) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = if (isWifiConnected) "Wi-Fi Online" else "Wi-Fi Offline",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isWifiConnected) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
 
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = hostInput,
-                    onValueChange = onHostChange,
-                    label = { Text("Target Host") },
-                    placeholder = { Text("127.0.0.1") },
-                    singleLine = true,
-                    modifier = Modifier
-                        .weight(1.3f)
-                        .testTag("wifi_auto_host_input"),
-                    shape = RoundedCornerShape(12.dp)
-                )
+                if (isAdbConnected) {
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = Color(0xFF10B981).copy(alpha = 0.14f),
+                        border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.4f)),
+                        modifier = Modifier.testTag("wifi_auto_adb_status_badge")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(7.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF10B981))
+                            )
+                            Text(
+                                text = "ADB Connected",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF10B981)
+                            )
+                        }
+                    }
+                }
+            }
 
-                OutlinedTextField(
-                    value = portInput,
-                    onValueChange = onPortChange,
-                    label = { Text("ADB Port (Opt.)") },
-                    placeholder = { Text("Auto mDNS") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("wifi_auto_port_input"),
-                    shape = RoundedCornerShape(12.dp)
-                )
+            if (isBusy) {
+                GooglePlayLinearProgressBar(modifier = Modifier.fillMaxWidth())
             }
 
             if (!lastEventSummary.isNullOrBlank()) {
@@ -894,7 +910,7 @@ private fun AutoPairOnWifiCard(
             }
 
             Button(
-                onClick = onSaveAndTriggerNow,
+                onClick = onConnectNow,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp)
@@ -902,20 +918,10 @@ private fun AutoPairOnWifiCard(
                 shape = RoundedCornerShape(12.dp),
                 enabled = !isBusy
             ) {
-                if (isBusy) {
-                    GooglePlayCompactLinearProgress(
-                        width = 28.dp,
-                        height = 4.dp,
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Connecting...", fontWeight = FontWeight.Bold)
-                } else {
-                    Text(
-                        if (isWifiConnected) "Save Target & Re-Connect Now" else "Save Target Config",
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+                Text(
+                    text = if (isBusy) "Connecting..." else "Connect Now",
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }
