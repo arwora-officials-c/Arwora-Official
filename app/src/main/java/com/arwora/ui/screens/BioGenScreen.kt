@@ -28,6 +28,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.arwora.ui.MainViewModel
 import com.arwora.ui.components.ArworaAnimatedSwitch
+import com.arwora.ui.components.ArworaDesignTokens
 import com.arwora.utils.BioGenerator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -90,9 +91,10 @@ fun BioGenScreen(navController: NavController, viewModel: MainViewModel) {
                         selected = selectedCategory == cat,
                         onClick = { viewModel.setBioCategory(cat) },
                         label = { Text(cat) },
+                        shape = ArworaDesignTokens.PillShape,
                         colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primary,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     )
                 }
@@ -107,9 +109,10 @@ fun BioGenScreen(navController: NavController, viewModel: MainViewModel) {
                         selected = selectedLength == len,
                         onClick = { viewModel.setBioLength(len) },
                         label = { Text(len) },
+                        shape = ArworaDesignTokens.PillShape,
                         colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primary,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     )
                 }
@@ -138,10 +141,10 @@ fun BioGenScreen(navController: NavController, viewModel: MainViewModel) {
                         }
                     }
                 },
-                modifier = Modifier.fillMaxWidth().height(64.dp),
-                shape = RoundedCornerShape(20.dp)
+                modifier = Modifier.fillMaxWidth().height(54.dp),
+                shape = ArworaDesignTokens.PillShape
             ) {
-                Text("GENERATE BIOS", fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                Text("Generate Bios", fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
             
             Spacer(modifier = Modifier.height(32.dp))
@@ -172,10 +175,10 @@ fun BioCard(bio: String, viewModel: MainViewModel, context: Context, onRegenerat
     
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        shape = ArworaDesignTokens.CardShape,
+        colors = CardDefaults.cardColors(containerColor = ArworaDesignTokens.cardContainerColor()),
+        border = ArworaDesignTokens.cardBorder(),
+        elevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Text(

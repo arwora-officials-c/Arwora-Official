@@ -45,6 +45,11 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.arwora.ui.MainViewModel
+import com.arwora.ui.components.ArworaDesignTokens
+import com.arwora.ui.components.ArworaPillBadge
+import com.arwora.ui.components.ArworaTonalIconBadge
+import com.arwora.ui.components.ExpressiveCompactLoadingIndicator
+import com.arwora.ui.components.ExpressiveWavyLinearProgressIndicator
 import com.arwora.utils.SoundEffectManager
 import com.arwora.ui.navigation.Screen
 import kotlinx.coroutines.launch
@@ -133,11 +138,10 @@ fun SocialScreen(
             )
         }
     ) { padding ->
-        val isLight = MaterialTheme.colorScheme.background.red > 0.8f
-        val outlineAlpha = if (isLight) 0.25f else 0.4f
-        val cardBgColor = if (isLight) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)
-        val cardShape = RoundedCornerShape(22.dp)
-        val cardBorder = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = outlineAlpha))
+        val cardBgColor = ArworaDesignTokens.cardContainerColor()
+        val cardShape = ArworaDesignTokens.CardShape
+        val cardBorder = ArworaDesignTokens.cardBorder()
+        val cardElevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
 
         LazyColumn(
             state = listState,
@@ -178,7 +182,7 @@ fun SocialScreen(
                 shape = cardShape,
                 colors = CardDefaults.cardColors(containerColor = cardBgColor),
                 border = cardBorder,
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                elevation = cardElevation
             ) {
                 Column(
                     modifier = Modifier
@@ -191,20 +195,11 @@ fun SocialScreen(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Tune,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
+                        ArworaTonalIconBadge(
+                            icon = Icons.Default.Tune,
+                            size = 46.dp,
+                            iconSize = 23.dp
+                        )
                         Spacer(modifier = Modifier.width(14.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
@@ -224,17 +219,7 @@ fun SocialScreen(
                             )
                         }
                         Spacer(modifier = Modifier.width(8.dp))
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                        ) {
-                            Text(
-                                text = "PHOTO & VIDEO",
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
+                        ArworaPillBadge(text = "PHOTO & VIDEO")
                     }
 
                     HorizontalDivider(
@@ -259,13 +244,13 @@ fun SocialScreen(
                             val mediaFeatures = listOf("GPS Location", "Camera Specs", "Video Codecs", "Wipe Privacy")
                             mediaFeatures.forEach { name ->
                                 Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                                    shape = ArworaDesignTokens.PillShape,
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                    border = ArworaDesignTokens.innerTileBorder()
                                 ) {
                                     Text(
                                         text = name,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                                         style = MaterialTheme.typography.labelSmall.copy(
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Medium
@@ -298,8 +283,8 @@ fun SocialScreen(
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(48.dp),
-                            shape = RoundedCornerShape(14.dp),
+                                .height(50.dp),
+                            shape = ArworaDesignTokens.PillShape,
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.primary,
                                 contentColor = MaterialTheme.colorScheme.onPrimary
@@ -326,8 +311,8 @@ fun SocialScreen(
                                 },
                                 modifier = Modifier
                                     .weight(1f)
-                                    .height(44.dp),
-                                shape = RoundedCornerShape(14.dp)
+                                    .height(46.dp),
+                                shape = ArworaDesignTokens.PillShape
                             ) {
                                 Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
@@ -346,9 +331,9 @@ fun SocialScreen(
                                 },
                                 modifier = Modifier
                                     .weight(1f)
-                                    .height(44.dp),
-                                shape = RoundedCornerShape(14.dp),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                                    .height(46.dp),
+                                shape = ArworaDesignTokens.PillShape,
+                                border = ArworaDesignTokens.cardBorder()
                             ) {
                                 Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
@@ -373,7 +358,7 @@ fun SocialScreen(
                 shape = cardShape,
                 colors = CardDefaults.cardColors(containerColor = cardBgColor),
                 border = cardBorder,
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                elevation = cardElevation
             ) {
                 Column(
                     modifier = Modifier
@@ -385,27 +370,18 @@ fun SocialScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(RoundedCornerShape(14.dp))
                             .clickable {
                                 SoundEffectManager.playClick()
                                 isOcrExpanded = !isOcrExpanded
                             },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.DocumentScanner,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
+                        ArworaTonalIconBadge(
+                            icon = Icons.Default.DocumentScanner,
+                            size = 46.dp,
+                            iconSize = 23.dp
+                        )
                         Spacer(modifier = Modifier.width(14.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
@@ -425,17 +401,7 @@ fun SocialScreen(
                             )
                         }
                         Spacer(modifier = Modifier.width(8.dp))
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                        ) {
-                            Text(
-                                text = "OCR",
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
+                        ArworaPillBadge(text = "OCR")
                     }
 
                     // Collapsible Content
@@ -464,23 +430,27 @@ fun SocialScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     val ocrFeatures = listOf("Instant OCR", "On-Device", "Multi-Line", "Fast Copy")
                                     ocrFeatures.forEach { name ->
                                         Surface(
-                                            shape = RoundedCornerShape(8.dp),
-                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                                            shape = ArworaDesignTokens.PillShape,
+                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                            border = ArworaDesignTokens.innerTileBorder()
                                         ) {
                                             Text(
                                                 text = name,
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                                                 style = MaterialTheme.typography.labelSmall.copy(
                                                     fontSize = 11.sp,
                                                     fontWeight = FontWeight.Medium
                                                 ),
+                                                softWrap = false,
+                                                maxLines = 1,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         }
@@ -508,25 +478,30 @@ fun SocialScreen(
                                 }
                             }
 
-                            // Processing state
+                            // Processing state (M3 Expressive Loading + Wavy Progress)
                             if (isOcrProcessing) {
                                 Column(
                                     modifier = Modifier.fillMaxWidth(),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Text(
-                                        text = "Scanning and recognizing text in image...",
-                                        style = MaterialTheme.typography.labelSmall,
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        ExpressiveCompactLoadingIndicator(size = 18.dp)
+                                        Text(
+                                            text = "Scanning and recognizing text in image...",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                    ExpressiveWavyLinearProgressIndicator(
+                                        progress = null,
+                                        modifier = Modifier.fillMaxWidth(),
                                         color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    LinearProgressIndicator(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(6.dp)
-                                            .clip(RoundedCornerShape(3.dp)),
-                                        color = MaterialTheme.colorScheme.primary,
-                                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                        height = 10.dp
                                     )
                                 }
                             }
@@ -597,7 +572,7 @@ fun SocialScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(50.dp),
-                                    shape = RoundedCornerShape(14.dp),
+                                    shape = ArworaDesignTokens.PillShape,
                                     colors = ButtonDefaults.buttonColors(
                                         containerColor = MaterialTheme.colorScheme.primary,
                                         contentColor = MaterialTheme.colorScheme.onPrimary
@@ -650,7 +625,7 @@ fun SocialScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(50.dp),
-                                shape = RoundedCornerShape(14.dp),
+                                shape = ArworaDesignTokens.PillShape,
                                 colors = if (extractedText.isNotBlank()) {
                                     ButtonDefaults.buttonColors(
                                         containerColor = MaterialTheme.colorScheme.surfaceVariant,

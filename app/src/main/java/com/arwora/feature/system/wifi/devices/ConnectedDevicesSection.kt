@@ -33,6 +33,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import com.arwora.ui.components.ExpressiveWavyLinearProgressIndicator
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.arwora.feature.system.wifi.DeviceAlert
@@ -150,12 +151,10 @@ fun ConnectedDevicesSection(
             // Scanning progress indicator
             if (isScanning) {
                 Spacer(modifier = Modifier.height(10.dp))
-                LinearProgressIndicator(
-                    progress = { scanProgress },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(4.dp)
-                        .clip(RoundedCornerShape(2.dp))
+                ExpressiveWavyLinearProgressIndicator(
+                    progress = scanProgress,
+                    modifier = Modifier.fillMaxWidth(),
+                    height = 8.dp
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(

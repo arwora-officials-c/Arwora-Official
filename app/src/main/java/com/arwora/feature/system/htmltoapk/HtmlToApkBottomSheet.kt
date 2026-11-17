@@ -42,6 +42,9 @@ import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import androidx.core.content.FileProvider
 import com.arwora.ui.components.ArworaAnimatedSwitch
+import com.arwora.ui.components.ArworaDesignTokens
+import com.arwora.ui.components.ExpressiveCompactLoadingIndicator
+import com.arwora.ui.components.ExpressiveWavyLinearProgressIndicator
 import com.arwora.utils.MediaDownloadUtils
 import com.arwora.utils.SoundEffectManager
 import kotlinx.coroutines.delay
@@ -627,7 +630,7 @@ fun HtmlToApkBottomSheet(
             if (isBuilding) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = ArworaDesignTokens.CardShape,
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
                 ) {
@@ -637,21 +640,25 @@ fun HtmlToApkBottomSheet(
                             .padding(16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text(
-                            text = buildStatusText,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            ExpressiveCompactLoadingIndicator(size = 18.dp)
+                            Text(
+                                text = buildStatusText,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                         Spacer(modifier = Modifier.height(10.dp))
-                        LinearProgressIndicator(
-                            progress = { buildProgress },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(8.dp)
-                                .clip(CircleShape),
+                        ExpressiveWavyLinearProgressIndicator(
+                            progress = buildProgress,
+                            modifier = Modifier.fillMaxWidth(),
                             color = MaterialTheme.colorScheme.primary,
-                            trackColor = MaterialTheme.colorScheme.surfaceVariant
+                            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                            height = 10.dp
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(

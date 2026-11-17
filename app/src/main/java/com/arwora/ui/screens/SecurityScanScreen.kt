@@ -3,6 +3,7 @@ package com.arwora.ui.screens
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -25,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.os.Build
 import android.content.pm.PackageManager
+import com.arwora.ui.components.ArworaDesignTokens
 import com.arwora.ui.components.GooglePlayCompactLinearProgress
 import com.arwora.ui.components.GooglePlayLinearProgressBar
 import kotlinx.coroutines.Dispatchers
@@ -194,8 +196,8 @@ fun SecurityScanScreen(onBack: () -> Unit) {
                     onClick = { if (isScanning) stopScan() else startScan() },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(56.dp),
-                    shape = RoundedCornerShape(28.dp),
+                        .height(54.dp),
+                    shape = ArworaDesignTokens.PillShape,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = if (isScanning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                     )
@@ -308,8 +310,9 @@ fun SecurityScanScreen(onBack: () -> Unit) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                            .clip(ArworaDesignTokens.InnerTileShape)
+                            .background(ArworaDesignTokens.cardContainerColor())
+                            .border(ArworaDesignTokens.innerTileBorder(), ArworaDesignTokens.InnerTileShape)
                             .padding(horizontal = 16.dp, vertical = 20.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween

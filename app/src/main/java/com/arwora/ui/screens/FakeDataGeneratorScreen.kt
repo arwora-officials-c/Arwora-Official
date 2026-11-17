@@ -17,6 +17,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.arwora.ui.components.ArworaDesignTokens
 import com.arwora.utils.SoundEffectManager
 import kotlin.random.Random
 
@@ -62,15 +63,17 @@ fun FakeDataGeneratorScreen(navController: NavController) {
             // Data Display Area
             Card(
                 modifier = Modifier.fillMaxWidth().height(200.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                shape = ArworaDesignTokens.CardShape,
+                colors = CardDefaults.cardColors(containerColor = ArworaDesignTokens.cardContainerColor()),
+                border = ArworaDesignTokens.cardBorder(),
+                elevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
             ) {
                 Column(
                     modifier = Modifier.fillMaxSize().padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    Text(text = currentTitle, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(text = currentTitle, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(text = generatedData.ifBlank { "Generated data will appear here" }, style = MaterialTheme.typography.bodyLarge)
                 }
@@ -82,33 +85,36 @@ fun FakeDataGeneratorScreen(navController: NavController) {
                         SoundEffectManager.playClick()
                         clipboardManager.setText(AnnotatedString(generatedData))
                     },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    modifier = Modifier.fillMaxWidth().height(54.dp),
+                    shape = ArworaDesignTokens.PillShape
                 ) {
                     Icon(Icons.Default.ContentCopy, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Copy to Clipboard")
+                    Text("Copy to Clipboard", fontWeight = FontWeight.Bold)
                 }
             }
 
             // Categories
             Text("Categories", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             categories.forEach { (name, generator) ->
-                OutlinedCard(
+                Card(
                     modifier = Modifier.fillMaxWidth().clickable {
                         SoundEffectManager.playClick()
                         currentTitle = name
                         generatedData = generator()
                     },
-                    shape = RoundedCornerShape(12.dp)
+                    shape = ArworaDesignTokens.CardShape,
+                    colors = CardDefaults.cardColors(containerColor = ArworaDesignTokens.cardContainerColor()),
+                    border = ArworaDesignTokens.cardBorder(),
+                    elevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
                 ) {
                     Row(
                         modifier = Modifier.padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.Edit, contentDescription = null)
+                        Icon(Icons.Default.Edit, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                         Spacer(modifier = Modifier.width(16.dp))
-                        Text(name, style = MaterialTheme.typography.bodyLarge)
+                        Text(name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
                     }
                 }
             }

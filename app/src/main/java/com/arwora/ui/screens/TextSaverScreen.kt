@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.arwora.ui.MainViewModel
+import com.arwora.ui.components.ArworaDesignTokens
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -69,9 +70,10 @@ fun TextSaverScreen(navController: NavController, viewModel: MainViewModel) {
             // Input Area Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                shape = ArworaDesignTokens.CardShape,
+                colors = CardDefaults.cardColors(containerColor = ArworaDesignTokens.cardContainerColor()),
+                border = ArworaDesignTokens.cardBorder(),
+                elevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -101,8 +103,8 @@ fun TextSaverScreen(navController: NavController, viewModel: MainViewModel) {
                                     Toast.makeText(context, "Text Saved to List", Toast.LENGTH_SHORT).show()
                                 }
                             },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
+                            modifier = Modifier.weight(1f).height(48.dp),
+                            shape = ArworaDesignTokens.PillShape
                         ) {
                             Icon(Icons.Default.Save, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
@@ -115,13 +117,14 @@ fun TextSaverScreen(navController: NavController, viewModel: MainViewModel) {
                                     viewModel.clearSavedText()
                                     Toast.makeText(context, "All saved items cleared", Toast.LENGTH_SHORT).show()
                                 },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f).height(48.dp),
+                                shape = ArworaDesignTokens.PillShape,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.45f)),
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
                             ) {
                                 Icon(Icons.Default.DeleteSweep, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
-                                Text("Clear All")
+                                Text("Clear All", fontWeight = FontWeight.SemiBold)
                             }
                         }
                     }
@@ -152,8 +155,10 @@ fun TextSaverScreen(navController: NavController, viewModel: MainViewModel) {
                     itemsIndexed(savedList) { index, itemText ->
                         Card(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            shape = ArworaDesignTokens.CardShape,
+                            colors = CardDefaults.cardColors(containerColor = ArworaDesignTokens.cardContainerColor()),
+                            border = ArworaDesignTokens.cardBorder(),
+                            elevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
                         ) {
                             Column(
                                 modifier = Modifier.padding(14.dp),

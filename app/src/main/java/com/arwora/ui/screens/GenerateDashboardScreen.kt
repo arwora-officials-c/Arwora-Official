@@ -38,6 +38,9 @@ import androidx.navigation.NavController
 import android.os.SystemClock
 import android.util.Log
 import com.arwora.ui.MainViewModel
+import com.arwora.ui.components.ArworaDesignTokens
+import com.arwora.ui.components.ArworaPillBadge
+import com.arwora.ui.components.ArworaTonalIconBadge
 import com.arwora.ui.navigation.Screen
 
 @Immutable
@@ -101,11 +104,10 @@ fun GenerateDashboardScreen(navController: NavController, viewModel: MainViewMod
         }
     ) { padding ->
         val gridState = rememberSaveable(saver = LazyGridState.Saver) { LazyGridState() }
-        val isLight = MaterialTheme.colorScheme.background.red > 0.8f
-        val outlineAlpha = if (isLight) 0.25f else 0.4f
-        val cardBgColor = if (isLight) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)
-        val cardShape = RoundedCornerShape(22.dp)
-        val cardBorder = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = outlineAlpha))
+        val cardBgColor = ArworaDesignTokens.cardContainerColor()
+        val cardShape = ArworaDesignTokens.CardShape
+        val cardBorder = ArworaDesignTokens.cardBorder()
+        val cardElevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
 
         LazyVerticalGrid(
             state = gridState,
@@ -128,7 +130,7 @@ fun GenerateDashboardScreen(navController: NavController, viewModel: MainViewMod
                     shape = cardShape,
                     colors = CardDefaults.cardColors(containerColor = cardBgColor),
                     border = cardBorder,
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                    elevation = cardElevation
                 ) {
                     Column(
                         modifier = Modifier
@@ -140,34 +142,29 @@ fun GenerateDashboardScreen(navController: NavController, viewModel: MainViewMod
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Icon(
-                                    imageVector = Icons.Filled.History,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(24.dp)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                ArworaTonalIconBadge(
+                                    icon = Icons.Filled.History,
+                                    size = 38.dp,
+                                    iconSize = 20.dp,
+                                    cornerRadius = 12.dp
                                 )
                                 Text(
                                     text = "Generation History",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
                             
-                            Text(
-                                text = "View All",
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
+                            ArworaPillBadge(text = "View All")
                         }
                         
                         Spacer(modifier = Modifier.height(12.dp))
                         
                         if (history.isEmpty()) {
                             Text(
-                                text = "Your generation history is empty. Try creating some names or passwords above!",
+                                text = "Your generation history is empty. Try creating some names or passwords below!",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -180,13 +177,13 @@ fun GenerateDashboardScreen(navController: NavController, viewModel: MainViewMod
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f))
-                                            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(12.dp))
+                                            .clip(ArworaDesignTokens.InnerTileShape)
+                                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))
+                                            .border(ArworaDesignTokens.innerTileBorder(), ArworaDesignTokens.InnerTileShape)
                                             .clickable {
                                                 copyToClipboard(context, item.content, item.type, viewModel)
                                             }
-                                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                                            .padding(horizontal = 12.dp, vertical = 9.dp),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
@@ -219,38 +216,40 @@ fun GenerateDashboardScreen(navController: NavController, viewModel: MainViewMod
             }
 
             items(tools) { tool ->
+                val resolvedTint = tool.color ?: tileIconColor
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(140.dp)
-                        .clickable {
-                            com.arwora.utils.SoundEffectManager.playClick()
-                            navController.navigate(tool.route)
-                        },
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                        .height(144.dp),
+                    onClick = {
+                        com.arwora.utils.SoundEffectManager.playClick()
+                        navController.navigate(tool.route)
+                    },
+                    shape = cardShape,
+                    colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                    border = cardBorder,
+                    elevation = cardElevation
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(20.dp),
-                        verticalArrangement = Arrangement.Center,
+                            .padding(18.dp),
+                        verticalArrangement = Arrangement.SpaceBetween,
                         horizontalAlignment = Alignment.Start
                     ) {
-                        Icon(
-                            imageVector = tool.icon,
+                        ArworaTonalIconBadge(
+                            icon = tool.icon,
                             contentDescription = tool.name,
-                            tint = tool.color ?: tileIconColor,
-                            modifier = Modifier.size(36.dp)
+                            tint = resolvedTint,
+                            size = ArworaDesignTokens.IconBadgeSize,
+                            iconSize = 22.dp
                         )
-                        Spacer(modifier = Modifier.height(16.dp))
                         Text(
                             text = tool.name,
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 2
                         )
                     }
                 }

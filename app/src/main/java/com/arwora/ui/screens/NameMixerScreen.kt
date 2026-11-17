@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.arwora.ui.MainViewModel
+import com.arwora.ui.components.ArworaDesignTokens
 import com.arwora.utils.NameMixer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -93,11 +94,11 @@ fun NameMixerScreen(navController: NavController, viewModel: MainViewModel) {
                 onClick = {
                     viewModel.mixNames(firstName, lastName, middleName)
                 },
-                modifier = Modifier.fillMaxWidth().height(64.dp),
-                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier.fillMaxWidth().height(54.dp),
+                shape = ArworaDesignTokens.PillShape,
                 enabled = firstName.isNotBlank() || lastName.isNotBlank()
             ) {
-                Text("MIX NAMES", fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                Text("Mix Names", fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
             
             Spacer(modifier = Modifier.height(32.dp))
@@ -121,8 +122,10 @@ fun MixerCard(name: String, viewModel: MainViewModel, context: Context) {
     
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha=0.3f))
+        shape = ArworaDesignTokens.CardShape,
+        colors = CardDefaults.cardColors(containerColor = ArworaDesignTokens.cardContainerColor()),
+        border = ArworaDesignTokens.cardBorder(),
+        elevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(20.dp),

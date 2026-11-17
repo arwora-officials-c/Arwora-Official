@@ -33,6 +33,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Refresh
 import com.arwora.ui.MainViewModel
+import com.arwora.ui.components.ArworaDesignTokens
 import com.arwora.utils.PasswordGenerator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -138,10 +139,10 @@ fun PasswordGenScreen(navController: NavController, viewModel: MainViewModel) {
                                 }
                             )
                         },
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
-                    shape = RoundedCornerShape(18.dp),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                    colors = CardDefaults.cardColors(containerColor = ArworaDesignTokens.cardContainerColor()),
+                    shape = ArworaDesignTokens.CardShape,
+                    border = ArworaDesignTokens.cardBorder(),
+                    elevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
                 ) {
                     Column(
                         modifier = Modifier
@@ -335,10 +336,10 @@ fun PasswordGenScreen(navController: NavController, viewModel: MainViewModel) {
             
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
-                shape = RoundedCornerShape(18.dp),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                colors = CardDefaults.cardColors(containerColor = ArworaDesignTokens.cardContainerColor()),
+                shape = ArworaDesignTokens.CardShape,
+                border = ArworaDesignTokens.cardBorder(),
+                elevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     options.forEach { (label, value) ->
@@ -383,11 +384,11 @@ fun PasswordGenScreen(navController: NavController, viewModel: MainViewModel) {
             
             Button(
                 onClick = { generate() },
-                modifier = Modifier.fillMaxWidth().height(64.dp),
-                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier.fillMaxWidth().height(54.dp),
+                shape = ArworaDesignTokens.PillShape,
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {
-                Text("GENERATE PASSWORD", fontSize = 16.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                Text("Generate Password", fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
             
             Spacer(modifier = Modifier.height(32.dp))

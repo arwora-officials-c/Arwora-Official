@@ -26,6 +26,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.arwora.feature.system.wifi.speedtest.SpeedTestPhase
 import com.arwora.feature.system.wifi.speedtest.SpeedTestState
+import com.arwora.ui.components.ArworaDesignTokens
+import com.arwora.ui.components.ArworaPillBadge
+import com.arwora.ui.components.ExpressiveCompactLoadingIndicator
+import com.arwora.ui.components.ExpressiveWavyLinearProgressIndicator
 import java.util.Locale
 
 @Composable
@@ -106,18 +110,10 @@ fun SpeedTestCard(
         icon = Icons.Default.Speed,
         iconTint = Color(0xFF3B82F6),
         statusBadge = {
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = badgeColor.copy(alpha = 0.12f),
-                border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.3f))
-            ) {
-                Text(
-                    text = if (isRunning) "Testing" else if (speedTestState.phase == SpeedTestPhase.COMPLETED) "Completed" else if (speedTestState.phase == SpeedTestPhase.ERROR) "Error" else "Ready",
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold),
-                    color = badgeColor,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                )
-            }
+            ArworaPillBadge(
+                text = if (isRunning) "Testing" else if (speedTestState.phase == SpeedTestPhase.COMPLETED) "Completed" else if (speedTestState.phase == SpeedTestPhase.ERROR) "Error" else "Ready",
+                tint = badgeColor
+            )
         },
         modifier = modifier
     ) {
@@ -131,12 +127,10 @@ fun SpeedTestCard(
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
             } else {
-                LinearProgressIndicator(
-                    progress = { speedTestState.progress },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(6.dp)
-                        .clip(RoundedCornerShape(3.dp))
+                ExpressiveWavyLinearProgressIndicator(
+                    progress = speedTestState.progress,
+                    modifier = Modifier.fillMaxWidth(),
+                    height = 10.dp
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Row(
@@ -144,11 +138,17 @@ fun SpeedTestCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = phaseLabel,
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        ExpressiveCompactLoadingIndicator(size = 15.dp)
+                        Text(
+                            text = phaseLabel,
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                     Text(
                         text = "${(speedTestState.progress * 100).toInt()}%",
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp, fontWeight = FontWeight.Bold),
@@ -289,8 +289,8 @@ fun SpeedTestCard(
                     enabled = canRunTest,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(44.dp),
-                    shape = RoundedCornerShape(12.dp)
+                        .height(48.dp),
+                    shape = ArworaDesignTokens.PillShape
                 ) {
                     Icon(
                         imageVector = if (speedTestState.phase == SpeedTestPhase.COMPLETED) Icons.Default.Refresh else Icons.Default.PlayArrow,

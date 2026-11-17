@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import com.arwora.feature.system.apps.model.AppItem
+import com.arwora.ui.components.ExpressiveWavyLinearProgressIndicator
 import com.arwora.utils.SoundEffectManager
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -134,9 +135,10 @@ fun RevertSheet(
             AnimatedVisibility(visible = isReverting) {
                 Column(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
                     val progressFraction = if (revertTotalCount > 0) revertProgressCount.toFloat() / revertTotalCount else 0f
-                    LinearProgressIndicator(
-                        progress = { progressFraction },
-                        modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp))
+                    ExpressiveWavyLinearProgressIndicator(
+                        progress = progressFraction,
+                        modifier = Modifier.fillMaxWidth(),
+                        height = 10.dp
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(

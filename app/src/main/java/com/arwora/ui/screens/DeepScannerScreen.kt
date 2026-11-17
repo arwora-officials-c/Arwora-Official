@@ -9,6 +9,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -30,6 +31,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.arwora.ui.components.ArworaDesignTokens
 import com.arwora.ui.components.GooglePlayCompactLinearProgress
 import com.arwora.ui.components.GoogleStyleLinearLoadingCard
 import com.arwora.viewmodel.DeepScannerViewModel
@@ -112,8 +114,8 @@ fun DeepScannerScreen(onBack: () -> Unit) {
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(56.dp),
-                    shape = RoundedCornerShape(28.dp),
+                        .height(54.dp),
+                    shape = ArworaDesignTokens.PillShape,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = if (currentPhase == ScanPhase.IDLE || currentPhase == ScanPhase.COMPLETED || currentPhase == ScanPhase.STOPPED) {
                             MaterialTheme.colorScheme.primary
@@ -168,7 +170,10 @@ fun DeepScannerScreen(onBack: () -> Unit) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f))
+                shape = ArworaDesignTokens.CardShape,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f)),
+                border = ArworaDesignTokens.cardBorder(),
+                elevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
             ) {
                 Text(
                     text = statusText,
@@ -260,7 +265,8 @@ fun DeepScannerScreen(onBack: () -> Unit) {
                                     .fillMaxWidth()
                                     .padding(bottom = 12.dp),
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-                                shape = RoundedCornerShape(12.dp)
+                                shape = ArworaDesignTokens.CardShape,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.35f))
                             ) {
                                 Row(
                                     modifier = Modifier.padding(16.dp),
@@ -294,8 +300,8 @@ fun DeepScannerScreen(onBack: () -> Unit) {
                             onClick = { viewModel.fixAllIssues() },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(56.dp),
-                            shape = RoundedCornerShape(16.dp),
+                                .height(54.dp),
+                            shape = ArworaDesignTokens.PillShape,
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                         ) {
                             Icon(Icons.Default.Build, contentDescription = null, modifier = Modifier.size(20.dp))
@@ -309,7 +315,8 @@ fun DeepScannerScreen(onBack: () -> Unit) {
                             .fillMaxWidth()
                             .padding(horizontal = 24.dp),
                         colors = CardDefaults.cardColors(containerColor = Color(0xFF10B981).copy(alpha = 0.1f)),
-                        shape = RoundedCornerShape(12.dp)
+                        shape = ArworaDesignTokens.CardShape,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.3f))
                     ) {
                         Row(
                             modifier = Modifier.padding(20.dp),
@@ -349,7 +356,10 @@ fun DeepScannerScreen(onBack: () -> Unit) {
 fun MetricCard(title: String, value: String, icon: androidx.compose.ui.graphics.vector.ImageVector, modifier: Modifier = Modifier, iconTint: Color = MaterialTheme.colorScheme.primary) {
     Card(
         modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+        shape = ArworaDesignTokens.CardShape,
+        colors = CardDefaults.cardColors(containerColor = ArworaDesignTokens.cardContainerColor()),
+        border = ArworaDesignTokens.cardBorder(),
+        elevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
     ) {
         Column(
             modifier = Modifier.padding(12.dp),
@@ -368,8 +378,13 @@ fun ScanCategoryItem(title: String, description: String, isActive: Boolean, isCo
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (isActive) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+            .clip(ArworaDesignTokens.InnerTileShape)
+            .background(if (isActive) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else ArworaDesignTokens.cardContainerColor())
+            .border(
+                if (isActive) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
+                else ArworaDesignTokens.innerTileBorder(),
+                ArworaDesignTokens.InnerTileShape
+            )
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

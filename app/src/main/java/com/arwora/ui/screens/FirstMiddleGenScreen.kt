@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.arwora.ui.MainViewModel
+import com.arwora.ui.components.ArworaDesignTokens
 import com.arwora.utils.CountryData
 import com.arwora.utils.ModernGenerators
 import kotlinx.coroutines.Dispatchers
@@ -118,8 +119,8 @@ fun FirstMiddleGenScreen(navController: NavController, viewModel: MainViewModel)
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp)
-                        .height(56.dp),
-                    shape = RoundedCornerShape(16.dp),
+                        .height(54.dp),
+                    shape = ArworaDesignTokens.PillShape,
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
                     Text("Generate", fontSize = 16.sp, fontWeight = FontWeight.Bold)
@@ -196,7 +197,12 @@ fun FirstMiddleGenScreen(navController: NavController, viewModel: MainViewModel)
                             FilterChip(
                                 selected = style == s,
                                 onClick = { viewModel.setStyle(s); generate() },
-                                label = { Text(s) }
+                                label = { Text(s) },
+                                shape = ArworaDesignTokens.PillShape,
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
                             )
                         }
                     }
@@ -251,9 +257,10 @@ fun FirstMiddleGenScreen(navController: NavController, viewModel: MainViewModel)
 
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-                    elevation = CardDefaults.cardElevation(0.dp)
+                    shape = ArworaDesignTokens.CardShape,
+                    colors = CardDefaults.cardColors(containerColor = ArworaDesignTokens.cardContainerColor()),
+                    border = ArworaDesignTokens.cardBorder(),
+                    elevation = CardDefaults.cardElevation(ArworaDesignTokens.cardElevationDp())
                 ) {
                     Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
                         Row(

@@ -62,6 +62,9 @@ import kotlinx.coroutines.launch
 import com.arwora.service.MockLocationService
 import com.arwora.ui.AppManagerViewModel
 import com.arwora.ui.navigation.Screen
+import com.arwora.ui.components.ArworaDesignTokens
+import com.arwora.ui.components.ArworaTonalIconBadge
+import com.arwora.ui.components.ExpressiveCompactLoadingIndicator
 import com.arwora.ui.components.FakeDeviceDialog
 import com.arwora.ui.components.GooglePlayCompactLinearProgress
 import com.arwora.ui.components.GooglePlayLinearProgressBar
@@ -606,7 +609,7 @@ fun SystemDashboardScreen(
                                     leadingIcon = if (isSelected) {
                                         { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
                                     } else null,
-                                    shape = RoundedCornerShape(10.dp)
+                                    shape = ArworaDesignTokens.PillShape
                                 )
                             }
                         }
@@ -663,13 +666,13 @@ fun SystemDashboardScreen(
                                             showMockHelpDialog = true
                                         }
                                     },
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.weight(1f).height(48.dp),
+                                    shape = ArworaDesignTokens.PillShape,
                                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                                 ) {
                                     Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Start Mock GPS")
+                                    Text("Start Mock GPS", fontWeight = FontWeight.Bold)
                                 }
                             } else {
                                 Button(
@@ -679,13 +682,13 @@ fun SystemDashboardScreen(
                                         FakeGpsManager.stopMockLocation(context)
                                         Toast.makeText(context, "Mock Location stopped.", Toast.LENGTH_SHORT).show()
                                     },
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.weight(1f).height(48.dp),
+                                    shape = ArworaDesignTokens.PillShape,
                                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                                 ) {
                                     Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Stop Mock GPS")
+                                    Text("Stop Mock GPS", fontWeight = FontWeight.Bold)
                                 }
                             }
 
@@ -703,7 +706,8 @@ fun SystemDashboardScreen(
                                         Toast.makeText(context, "Coordinates copied to clipboard: $lat, $lng", Toast.LENGTH_SHORT).show()
                                     }
                                 },
-                                shape = RoundedCornerShape(12.dp)
+                                modifier = Modifier.height(48.dp),
+                                shape = ArworaDesignTokens.PillShape
                             ) {
                                 Icon(Icons.Default.Map, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
@@ -819,7 +823,7 @@ fun SystemDashboardScreen(
                                             currentSpoof = defaultDeviceName
                                             FakeDeviceManager.resetToRealDevice(context)
                                         },
-                                        shape = RoundedCornerShape(12.dp)
+                                        shape = ArworaDesignTokens.PillShape
                                     ) {
                                         Text("Reset")
                                     }
@@ -829,7 +833,7 @@ fun SystemDashboardScreen(
                                         SoundEffectManager.playClick()
                                         showFakeDeviceDialog = true
                                     },
-                                    shape = RoundedCornerShape(12.dp)
+                                    shape = ArworaDesignTokens.PillShape
                                 ) {
                                     Icon(Icons.Default.Shuffle, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
@@ -924,8 +928,8 @@ fun SystemDashboardScreen(
                                 SoundEffectManager.playClick()
                                 navController.navigate(Screen.DnsChanger.route)
                             },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            shape = ArworaDesignTokens.PillShape
                         ) {
                             Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
@@ -1291,22 +1295,21 @@ fun SystemDashboardScreen(
                                                     SoundEffectManager.playClick()
                                                     targetForLookup = ipLookupInput
                                                 },
-                                                modifier = Modifier.fillMaxWidth(),
-                                                shape = RoundedCornerShape(12.dp),
+                                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                                shape = ArworaDesignTokens.PillShape,
                                                 enabled = !isLoadingIp
                                             ) {
                                                 if (isLoadingIp) {
-                                                    GooglePlayCompactLinearProgress(
-                                                        width = 36.dp,
-                                                        height = 4.dp,
+                                                    ExpressiveCompactLoadingIndicator(
+                                                        size = 18.dp,
                                                         color = MaterialTheme.colorScheme.onPrimary
                                                     )
                                                     Spacer(modifier = Modifier.width(8.dp))
-                                                    Text("Looking up...")
+                                                    Text("Looking up...", fontWeight = FontWeight.Bold)
                                                 } else {
                                                     Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
                                                     Spacer(modifier = Modifier.width(8.dp))
-                                                    Text("Lookup Target")
+                                                    Text("Lookup Target", fontWeight = FontWeight.Bold)
                                                 }
                                             }
                                         }
@@ -1428,8 +1431,8 @@ fun SystemDashboardScreen(
                                                                     Toast.makeText(context, "Google Maps app not found", Toast.LENGTH_SHORT).show()
                                                                 }
                                                             },
-                                                            modifier = Modifier.fillMaxWidth(),
-                                                            shape = RoundedCornerShape(12.dp),
+                                                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                                                            shape = ArworaDesignTokens.PillShape,
                                                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
                                                         ) {
                                                             Icon(Icons.Default.Map, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -1605,10 +1608,10 @@ fun SystemDashboardScreen(
                                                     val cidrVal = subnetCidrInput.toIntOrNull() ?: 24
                                                     subnetResult = com.arwora.utils.IpLookupManager.calculateSubnet(subnetIpInput, cidrVal)
                                                 },
-                                                modifier = Modifier.fillMaxWidth(),
-                                                shape = RoundedCornerShape(12.dp)
+                                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                                shape = ArworaDesignTokens.PillShape
                                             ) {
-                                                Text("Calculate Subnet Boundaries")
+                                                Text("Calculate Subnet Boundaries", fontWeight = FontWeight.Bold)
                                             }
                                             
                                             subnetResult?.let { res ->
@@ -1664,10 +1667,10 @@ fun SystemDashboardScreen(
                                                     SoundEffectManager.playClick()
                                                     macLookupResult = com.arwora.utils.IpLookupManager.lookupMacVendor(macInput)
                                                 },
-                                                modifier = Modifier.fillMaxWidth(),
-                                                shape = RoundedCornerShape(12.dp)
+                                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                                shape = ArworaDesignTokens.PillShape
                                             ) {
-                                                Text("Lookup Vendor OUI")
+                                                Text("Lookup Vendor OUI", fontWeight = FontWeight.Bold)
                                             }
                                             
                                             macLookupResult?.let { res ->
@@ -1728,20 +1731,19 @@ fun SystemDashboardScreen(
                                                         isCheckingSsl = false
                                                     }
                                                 },
-                                                modifier = Modifier.fillMaxWidth(),
-                                                shape = RoundedCornerShape(12.dp),
+                                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                                shape = ArworaDesignTokens.PillShape,
                                                 enabled = !isCheckingSsl
                                             ) {
                                                 if (isCheckingSsl) {
-                                                    GooglePlayCompactLinearProgress(
-                                                        width = 36.dp,
-                                                        height = 4.dp,
+                                                    ExpressiveCompactLoadingIndicator(
+                                                        size = 18.dp,
                                                         color = MaterialTheme.colorScheme.onPrimary
                                                     )
                                                     Spacer(modifier = Modifier.width(8.dp))
-                                                    Text("Verifying SSL...")
+                                                    Text("Verifying SSL...", fontWeight = FontWeight.Bold)
                                                 } else {
-                                                    Text("Verify SSL Validity")
+                                                    Text("Verify SSL Validity", fontWeight = FontWeight.Bold)
                                                 }
                                             }
                                             
@@ -1818,20 +1820,19 @@ fun SystemDashboardScreen(
                                                         isFetchingHeaders = false
                                                     }
                                                 },
-                                                modifier = Modifier.fillMaxWidth(),
-                                                shape = RoundedCornerShape(12.dp),
+                                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                                shape = ArworaDesignTokens.PillShape,
                                                 enabled = !isFetchingHeaders
                                             ) {
                                                 if (isFetchingHeaders) {
-                                                    GooglePlayCompactLinearProgress(
-                                                        width = 36.dp,
-                                                        height = 4.dp,
+                                                    ExpressiveCompactLoadingIndicator(
+                                                        size = 18.dp,
                                                         color = MaterialTheme.colorScheme.onPrimary
                                                     )
                                                     Spacer(modifier = Modifier.width(8.dp))
-                                                    Text("Fetching Headers...")
+                                                    Text("Fetching Headers...", fontWeight = FontWeight.Bold)
                                                 } else {
-                                                    Text("Parse HTTP Headers")
+                                                    Text("Parse HTTP Headers", fontWeight = FontWeight.Bold)
                                                 }
                                             }
                                             
@@ -1903,6 +1904,7 @@ fun SystemDashboardScreen(
                                                         selected = isSelected,
                                                         onClick = { dnsRecordType = type },
                                                         label = { Text(type) },
+                                                        shape = ArworaDesignTokens.PillShape,
                                                         modifier = Modifier.weight(1f)
                                                     )
                                                 }
@@ -1917,20 +1919,19 @@ fun SystemDashboardScreen(
                                                         isCheckingDns = false
                                                     }
                                                 },
-                                                modifier = Modifier.fillMaxWidth(),
-                                                shape = RoundedCornerShape(12.dp),
+                                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                                shape = ArworaDesignTokens.PillShape,
                                                 enabled = !isCheckingDns
                                             ) {
                                                 if (isCheckingDns) {
-                                                    GooglePlayCompactLinearProgress(
-                                                        width = 36.dp,
-                                                        height = 4.dp,
+                                                    ExpressiveCompactLoadingIndicator(
+                                                        size = 18.dp,
                                                         color = MaterialTheme.colorScheme.onPrimary
                                                     )
                                                     Spacer(modifier = Modifier.width(8.dp))
-                                                    Text("Checking DNS...")
+                                                    Text("Checking DNS...", fontWeight = FontWeight.Bold)
                                                 } else {
-                                                    Text("Check Global Propagation")
+                                                    Text("Check Global Propagation", fontWeight = FontWeight.Bold)
                                                 }
                                             }
                                             
@@ -2080,7 +2081,7 @@ fun SystemDashboardScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(48.dp),
-                            shape = RoundedCornerShape(12.dp)
+                            shape = ArworaDesignTokens.PillShape
                         ) {
                             Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
@@ -2112,7 +2113,7 @@ fun SystemDashboardScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(48.dp),
-                                shape = RoundedCornerShape(12.dp),
+                                shape = ArworaDesignTokens.PillShape,
                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                             ) {
                                 Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -2132,7 +2133,7 @@ fun SystemDashboardScreen(
                                     modifier = Modifier
                                         .weight(1f)
                                         .height(48.dp),
-                                    shape = RoundedCornerShape(12.dp)
+                                    shape = ArworaDesignTokens.PillShape
                                 ) {
                                     Text("Pairing Help", fontWeight = FontWeight.SemiBold)
                                 }
@@ -2156,7 +2157,7 @@ fun SystemDashboardScreen(
                                     modifier = Modifier
                                         .weight(1f)
                                         .height(48.dp),
-                                    shape = RoundedCornerShape(12.dp),
+                                    shape = ArworaDesignTokens.PillShape,
                                     colors = ButtonDefaults.buttonColors(
                                         containerColor = if (isAdbConnected) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary
                                     )
@@ -2262,7 +2263,7 @@ fun SystemDashboardScreen(
                                         }
                                     },
                                     modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(12.dp),
+                                    shape = ArworaDesignTokens.PillShape,
                                     colors = if (isSelected) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary) else ButtonDefaults.outlinedButtonColors()
                                 ) {
                                     Text(if (scale == 0.0f) "Off" else "${scale}x", style = MaterialTheme.typography.labelSmall)
@@ -2276,8 +2277,8 @@ fun SystemDashboardScreen(
                                 SoundEffectManager.playClick()
                                 navController.navigate(Screen.AnimationSettings.route)
                             },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            shape = ArworaDesignTokens.PillShape
                         ) {
                             Icon(Icons.Default.DisplaySettings, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
@@ -2585,7 +2586,7 @@ fun SystemFeatureCard(
                 Spacer(modifier = Modifier.width(8.dp))
 
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
+                    shape = ArworaDesignTokens.PillShape,
                     color = badgeColor.copy(alpha = 0.12f),
                     border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.3f))
                 ) {
@@ -2593,7 +2594,7 @@ fun SystemFeatureCard(
                         text = badge,
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                         color = badgeColor,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                     )
                 }
             }
@@ -2706,7 +2707,7 @@ fun SystemActionRowCard(
                 Spacer(modifier = Modifier.width(8.dp))
 
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
+                    shape = ArworaDesignTokens.PillShape,
                     color = badgeColor.copy(alpha = 0.12f),
                     border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.3f))
                 ) {
@@ -2714,7 +2715,7 @@ fun SystemActionRowCard(
                         text = badge,
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                         color = badgeColor,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                     )
                 }
             }
@@ -2821,18 +2822,10 @@ fun SystemCard(
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val isLight = MaterialTheme.colorScheme.background.red > 0.8f
-    val outlineAlpha = if (isLight) 0.25f else 0.4f
-    val cardBgColor = if (isLight) {
-        MaterialTheme.colorScheme.surface
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)
-    }
-    val elevationDp = if (isLight) 1.dp else 0.dp
-    val cardShape = RoundedCornerShape(22.dp)
-    val cardBorder = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = outlineAlpha))
-    val cardColors = CardDefaults.cardColors(containerColor = cardBgColor)
-    val cardElevation = CardDefaults.cardElevation(defaultElevation = elevationDp)
+    val cardShape = ArworaDesignTokens.CardShape
+    val cardBorder = ArworaDesignTokens.cardBorder()
+    val cardColors = CardDefaults.cardColors(containerColor = ArworaDesignTokens.cardContainerColor())
+    val cardElevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
 
     if (onClick != null) {
         Card(
@@ -2864,13 +2857,13 @@ internal fun CentralizedControlPanelHeroCard(
         modifier = modifier
             .fillMaxWidth()
             .testTag("centralized_control_panel_card"),
-        shape = RoundedCornerShape(22.dp),
+        shape = ArworaDesignTokens.CardShape,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f)
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.14f)
         ),
         border = BorderStroke(
             width = 1.dp,
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
         )
     ) {
         Column(modifier = Modifier.padding(16.dp)) {

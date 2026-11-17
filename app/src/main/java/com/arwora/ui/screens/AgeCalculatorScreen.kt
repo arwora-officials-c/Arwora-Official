@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.arwora.ui.components.ExpressiveWavyLinearProgressIndicator
 import com.arwora.utils.SoundEffectManager
 import java.time.Duration
 import java.time.LocalDate
@@ -267,17 +268,12 @@ fun AgeCalculatorScreen(onBack: () -> Unit) {
                             
                             Spacer(modifier = Modifier.height(4.dp))
                             
-                            LinearProgressIndicator(
-                                progress = { progress },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(8.dp)
-                                    .background(
-                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
-                                        shape = RoundedCornerShape(4.dp)
-                                    ),
+                            ExpressiveWavyLinearProgressIndicator(
+                                progress = progress,
+                                modifier = Modifier.fillMaxWidth(),
                                 color = MaterialTheme.colorScheme.primary,
-                                strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
+                                trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                                height = 10.dp
                             )
                             
                             Text(

@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.arwora.ui.MainViewModel
+import com.arwora.ui.components.ArworaDesignTokens
 import com.arwora.utils.ProfileGenerator
 import com.arwora.utils.RandomProfile
 import kotlinx.coroutines.Dispatchers
@@ -78,10 +79,10 @@ fun RandomProfileScreen(navController: NavController, viewModel: MainViewModel) 
                         }
                     }
                 },
-                modifier = Modifier.fillMaxWidth().height(64.dp),
-                shape = RoundedCornerShape(20.dp)
+                modifier = Modifier.fillMaxWidth().height(54.dp),
+                shape = ArworaDesignTokens.PillShape
             ) {
-                Text("GENERATE NEW PROFILE", fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                Text("Generate Profile", fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
             
             Spacer(modifier = Modifier.height(32.dp))
@@ -102,8 +103,10 @@ fun RandomProfileScreen(navController: NavController, viewModel: MainViewModel) 
                 
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha=0.3f))
+                    shape = ArworaDesignTokens.CardShape,
+                    colors = CardDefaults.cardColors(containerColor = ArworaDesignTokens.cardContainerColor()),
+                    border = ArworaDesignTokens.cardBorder(),
+                    elevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
                 ) {
                     Column(modifier = Modifier.padding(24.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {

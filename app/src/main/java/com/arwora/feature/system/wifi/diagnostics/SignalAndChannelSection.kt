@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.arwora.feature.system.wifi.ChannelCongestion
 import com.arwora.feature.system.wifi.WifiSignalInfo
+import com.arwora.ui.components.ExpressiveWavyLinearProgressIndicator
 
 @Composable
 fun SignalAndChannelSection(
@@ -173,14 +174,12 @@ fun SignalAndChannelSection(
                     Spacer(modifier = Modifier.height(10.dp))
 
                     // Gauge Bar
-                    LinearProgressIndicator(
-                        progress = { signalInfo.signalPercent / 100f },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(8.dp)
-                            .clip(RoundedCornerShape(4.dp)),
+                    ExpressiveWavyLinearProgressIndicator(
+                        progress = (signalInfo.signalPercent / 100f).coerceIn(0f, 1f),
+                        modifier = Modifier.fillMaxWidth(),
                         color = statusColor,
-                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                        height = 10.dp
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))
@@ -335,14 +334,13 @@ fun SignalAndChannelSection(
 
                             Spacer(modifier = Modifier.height(2.dp))
 
-                            LinearProgressIndicator(
-                                progress = { ch.congestionScore / 100f },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(4.dp)
-                                    .clip(RoundedCornerShape(2.dp)),
+                            ExpressiveWavyLinearProgressIndicator(
+                                progress = (ch.congestionScore / 100f).coerceIn(0f, 1f),
+                                modifier = Modifier.fillMaxWidth(),
                                 color = congestionColor,
-                                trackColor = MaterialTheme.colorScheme.surfaceVariant
+                                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                height = 8.dp,
+                                amplitude = 1.8.dp
                             )
                         }
                     }

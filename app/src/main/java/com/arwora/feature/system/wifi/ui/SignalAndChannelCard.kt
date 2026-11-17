@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.arwora.feature.system.wifi.ChannelCongestion
 import com.arwora.feature.system.wifi.WifiSignalInfo
+import com.arwora.ui.components.ExpressiveWavyLinearProgressIndicator
 
 @Composable
 fun SignalAndChannelCard(
@@ -147,15 +148,13 @@ fun SignalAndChannelCard(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Progress gauge bar
-                LinearProgressIndicator(
-                    progress = { signalInfo.signalPercent / 100f },
+                // Expressive wavy progress gauge bar
+                ExpressiveWavyLinearProgressIndicator(
+                    progress = (signalInfo.signalPercent / 100f).coerceIn(0f, 1f),
                     color = qualityColor,
                     trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(8.dp)
-                        .clip(RoundedCornerShape(4.dp))
+                    modifier = Modifier.fillMaxWidth(),
+                    height = 10.dp
                 )
 
                 Spacer(modifier = Modifier.height(6.dp))
@@ -386,14 +385,13 @@ fun SignalAndChannelCard(
 
                         Spacer(modifier = Modifier.height(6.dp))
 
-                        LinearProgressIndicator(
-                            progress = { ch.congestionScore / 100f },
+                        ExpressiveWavyLinearProgressIndicator(
+                            progress = (ch.congestionScore / 100f).coerceIn(0f, 1f),
                             color = congestionColor,
                             trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(5.dp)
-                                .clip(RoundedCornerShape(2.5.dp))
+                            modifier = Modifier.fillMaxWidth(),
+                            height = 8.dp,
+                            amplitude = 1.8.dp
                         )
 
                         Spacer(modifier = Modifier.height(4.dp))

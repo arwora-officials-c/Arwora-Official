@@ -63,6 +63,7 @@ data class NativeAdbEndpoint(
 object NativeAdbManager {
 
     private const val TAG = "NativeAdbManager"
+    const val CLIENT_IDENTITY = NativeAdbProtocol.DEFAULT_CLIENT_IDENTITY
     private const val PREFS_NAME = "adb_access_prefs"
     private const val KEY_LAST_HOST = "last_connected_host"
     private const val KEY_LAST_PORT = "last_connected_port"
@@ -96,7 +97,13 @@ object NativeAdbManager {
     private val _statusMessage = MutableStateFlow("Tap Connect Now when Wi-Fi & Wireless Debugging are enabled.")
     val statusMessage: StateFlow<String> = _statusMessage.asStateFlow()
 
+    fun ensureClientIdentity(): String {
+        runCatching { System.setProperty("adb.client.name", CLIENT_IDENTITY) }
+        return CLIENT_IDENTITY
+    }
+
     fun init(context: Context) {
+        ensureClientIdentity()
         appContext = context.applicationContext
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         if (_connectedHost.value == null) {
@@ -541,6 +548,7 @@ object NativeAdbManager {
         output: OutputStream,
         keyPair: KeyPair
     ) {
+        val clientIdentity = ensureClientIdentity()
         NativeAdbProtocol.writePacket(
             output,
             NativeAdbProtocol.A_CNXN,
@@ -571,7 +579,10 @@ object NativeAdbManager {
                         } else if (!sentPublicKey) {
                             sentPublicKey = true
                             val rsaPub = keyPair.public as RSAPublicKey
-                            val pubPayload = NativeAdbProtocol.formatAdbPublicKeyPayload(rsaPub)
+                            val pubPayload = NativeAdbProtocol.formatAdbPublicKeyPayload(
+                                publicKey = rsaPub,
+                                comment = clientIdentity
+                            )
                             NativeAdbProtocol.writePacket(
                                 output,
                                 NativeAdbProtocol.A_AUTH,

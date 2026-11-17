@@ -32,6 +32,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.arwora.ui.components.ArworaDesignTokens
+import com.arwora.ui.components.ExpressiveWavyLinearProgressIndicator
 import com.arwora.ui.components.GooglePlayLinearProgressBar
 import com.arwora.ui.components.GoogleStyleLinearLoadingCard
 import com.arwora.utils.SoundEffectManager
@@ -320,17 +322,12 @@ fun StorageAnalyzerScreen(navController: NavController) {
                                     )
                                 }
 
-                                LinearProgressIndicator(
-                                    progress = { usedBytes.toFloat() / totalBytes.toFloat() },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(10.dp)
-                                        .background(
-                                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
-                                            shape = RoundedCornerShape(5.dp)
-                                        ),
+                                ExpressiveWavyLinearProgressIndicator(
+                                    progress = (usedBytes.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f),
+                                    modifier = Modifier.fillMaxWidth(),
                                     color = MaterialTheme.colorScheme.primary,
-                                    strokeCap = StrokeCap.Round
+                                    trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                                    height = 11.dp
                                 )
                             }
                         }

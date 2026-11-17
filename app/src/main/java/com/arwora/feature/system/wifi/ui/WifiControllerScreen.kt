@@ -50,6 +50,10 @@ import com.arwora.feature.system.wifi.DeviceInfo
 import com.arwora.feature.system.wifi.WifiControllerViewModel
 import com.arwora.feature.system.wifi.WifiSectionTab
 import com.arwora.feature.system.wifi.resolve.MulticastHelper
+import com.arwora.ui.components.ArworaDesignTokens
+import com.arwora.ui.components.ArworaPillBadge
+import com.arwora.ui.components.ExpressiveCompactLoadingIndicator
+import com.arwora.ui.components.ExpressiveWavyLinearProgressIndicator
 import com.arwora.utils.SoundEffectManager
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -254,16 +258,16 @@ fun WifiControllerScreen(
                                 SoundEffectManager.playClick()
                                 currentTab = tab
                             },
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+                            shape = ArworaDesignTokens.PillShape,
+                            color = if (selected) MaterialTheme.colorScheme.primary else ArworaDesignTokens.cardContainerColor(),
                             border = BorderStroke(
                                 1.dp,
-                                if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                                if (selected) MaterialTheme.colorScheme.primary else ArworaDesignTokens.cardBorderColor()
                             )
                         ) {
                             Text(
                                 text = tab.label,
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp),
                                 style = MaterialTheme.typography.labelMedium.copy(
                                     fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                                     color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
@@ -281,14 +285,20 @@ fun WifiControllerScreen(
                     
                     if (isScanning) {
                         item {
-                            LinearProgressIndicator(
-                                progress = { scanProgress?.let { it.first.toFloat() / it.second.toFloat() } ?: 0f },
-                                modifier = Modifier.fillMaxWidth().height(4.dp).clip(CircleShape),
+                            ExpressiveWavyLinearProgressIndicator(
+                                progress = scanProgress?.let { it.first.toFloat() / it.second.toFloat() },
+                                modifier = Modifier.fillMaxWidth(),
                                 color = MaterialTheme.colorScheme.primary,
-                                trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                                trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
                             )
                             Spacer(modifier = Modifier.height(8.dp))
-                            Text(statusText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                ExpressiveCompactLoadingIndicator(size = 16.dp)
+                                Text(statusText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                            }
                         }
                     }
 

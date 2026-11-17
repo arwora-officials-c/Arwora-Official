@@ -40,6 +40,10 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import com.arwora.ui.components.ArworaAnimatedSwitch
+import com.arwora.ui.components.ArworaDesignTokens
+import com.arwora.ui.components.ArworaTonalIconBadge
+import com.arwora.ui.components.ExpressiveCompactLoadingIndicator
+import com.arwora.ui.components.ExpressiveWavyLinearProgressIndicator
 import com.arwora.ui.components.GooglePlayCompactLinearProgress
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -841,7 +845,7 @@ fun CompactWellbeingDashboardCard(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
+            .clip(ArworaDesignTokens.CardShape)
             .then(
                 if (onCardClick != null) {
                     Modifier.clickable {
@@ -850,15 +854,15 @@ fun CompactWellbeingDashboardCard(
                     }
                 } else Modifier
             ),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        shape = ArworaDesignTokens.CardShape,
+        colors = CardDefaults.cardColors(containerColor = ArworaDesignTokens.cardContainerColor()),
+        border = ArworaDesignTokens.cardBorder(),
+        elevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // Card Header: Title and Timeframe Segmented Selector
@@ -868,20 +872,12 @@ fun CompactWellbeingDashboardCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(24.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.QueryStats,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(14.dp)
-                        )
-                    }
+                    ArworaTonalIconBadge(
+                        icon = Icons.Default.QueryStats,
+                        size = 32.dp,
+                        iconSize = 16.dp,
+                        cornerRadius = 10.dp
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = cardTitle,
@@ -891,11 +887,11 @@ fun CompactWellbeingDashboardCard(
                     )
                 }
 
-                // Compact Timeframe Chips
+                // Compact Pill Timeframe Chips
                 Surface(
-                    shape = RoundedCornerShape(10.dp),
+                    shape = ArworaDesignTokens.PillShape,
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                    border = ArworaDesignTokens.innerTileBorder()
                 ) {
                     Row(
                         modifier = Modifier.padding(2.dp),
@@ -905,7 +901,7 @@ fun CompactWellbeingDashboardCard(
                             val isSelected = selectedTimeframe == timeframe
                             Box(
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
+                                    .clip(ArworaDesignTokens.PillShape)
                                     .background(
                                         if (isSelected) MaterialTheme.colorScheme.primary
                                         else Color.Transparent
@@ -914,7 +910,7 @@ fun CompactWellbeingDashboardCard(
                                         SoundEffectManager.playClick()
                                         onTimeframeSelected(timeframe)
                                     }
-                                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                                    .padding(horizontal = 9.dp, vertical = 4.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
@@ -981,12 +977,16 @@ fun CompactWellbeingDashboardCard(
                         }
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = if (!hasPermission) "—" else if (isLoading) "..." else formatDurationCompact(summary.totalScreenTimeMs),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                        if (hasPermission && isLoading) {
+                            ExpressiveCompactLoadingIndicator(size = 24.dp)
+                        } else {
+                            Text(
+                                text = if (!hasPermission) "—" else formatDurationCompact(summary.totalScreenTimeMs),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 }
 
@@ -2412,18 +2412,16 @@ fun CompactAppUsageRow(
                 }
             }
 
-            // Compact Progress Indicator
-            LinearProgressIndicator(
-                progress = {
-                    if (hasTimer) item.timerProgress
-                    else item.usagePercentage.coerceIn(0.01f, 1f)
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(3.dp)
-                    .clip(RoundedCornerShape(2.dp)),
+            // Compact Expressive Wavy Progress Indicator
+            ExpressiveWavyLinearProgressIndicator(
+                progress = if (hasTimer) item.timerProgress.coerceIn(0f, 1f)
+                else item.usagePercentage.coerceIn(0.01f, 1f),
+                modifier = Modifier.fillMaxWidth(),
                 color = if (isExceeded) Color(0xFFEF4444) else MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                height = 7.dp,
+                strokeWidth = 2.6.dp,
+                amplitude = 1.6.dp
             )
         }
     }

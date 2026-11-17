@@ -39,6 +39,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arwora.ui.AppManagerViewModel
 import com.arwora.ui.AppItem
 import com.arwora.data.db.AppHistoryEntity
+import com.arwora.ui.components.ArworaDesignTokens
+import com.arwora.ui.components.ExpressiveWavyLinearProgressIndicator
 import com.arwora.utils.ApkExtractorUtils
 import com.arwora.utils.ExtractedApkItem
 import com.arwora.utils.ExtractionResult
@@ -113,11 +115,13 @@ fun AppListScreen(
                 .background(MaterialTheme.colorScheme.background)
         ) {
             if (isLoading || isExtracting) {
-                LinearProgressIndicator(
+                ExpressiveWavyLinearProgressIndicator(
+                    progress = null,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(3.dp),
-                    color = MaterialTheme.colorScheme.primary
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    height = 8.dp
                 )
             }
             
@@ -126,11 +130,12 @@ fun AppListScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                shape = RoundedCornerShape(22.dp),
+                shape = ArworaDesignTokens.CardShape,
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = ArworaDesignTokens.cardContainerColor()
                 ),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                border = ArworaDesignTokens.cardBorder(),
+                elevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
             ) {
                 Row(
                     modifier = Modifier

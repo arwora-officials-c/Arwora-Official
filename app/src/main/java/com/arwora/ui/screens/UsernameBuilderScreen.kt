@@ -26,6 +26,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.arwora.ui.MainViewModel
 import com.arwora.ui.components.ArworaAnimatedSwitch
+import com.arwora.ui.components.ArworaDesignTokens
 import com.arwora.utils.UsernameGenerator
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -69,10 +70,10 @@ fun UsernameBuilderScreen(navController: NavController, viewModel: MainViewModel
             
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                shape = ArworaDesignTokens.CardShape,
+                colors = CardDefaults.cardColors(containerColor = ArworaDesignTokens.cardContainerColor()),
+                border = ArworaDesignTokens.cardBorder(),
+                elevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
             ) {
                 Column(modifier = Modifier.padding(24.dp)) {
                     Text("Live Preview", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)

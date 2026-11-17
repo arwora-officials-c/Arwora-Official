@@ -17,6 +17,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.arwora.ui.components.AppCard
+import com.arwora.ui.components.ArworaTonalIconBadge
 import com.arwora.utils.SoundEffectManager
 
 data class FakeContentItem(val name: String, val icon: ImageVector)
@@ -62,28 +64,26 @@ fun FakeContentDashboardScreen(navController: NavController) {
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             items(items) { item ->
-                Card(
+                AppCard(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(120.dp)
-                        .clickable {
-                            SoundEffectManager.playClick()
-                            if (item.name.contains("Bill")) {
-                                navController.navigate("fake_bill_gen/${item.name}")
-                            } else {
-                                navController.navigate("fake_chat_gen/${item.name}")
-                            }
-                        },
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        .height(128.dp),
+                    onClick = {
+                        SoundEffectManager.playClick()
+                        if (item.name.contains("Bill")) {
+                            navController.navigate("fake_bill_gen/${item.name}")
+                        } else {
+                            navController.navigate("fake_chat_gen/${item.name}")
+                        }
+                    }
                 ) {
                     Column(
                         modifier = Modifier.fillMaxSize().padding(16.dp),
                         verticalArrangement = Arrangement.Center,
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Icon(imageVector = item.icon, contentDescription = item.name, modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
-                        Spacer(modifier = Modifier.height(8.dp))
+                        ArworaTonalIconBadge(icon = item.icon, size = 46.dp)
+                        Spacer(modifier = Modifier.height(10.dp))
                         Text(text = item.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     }
                 }

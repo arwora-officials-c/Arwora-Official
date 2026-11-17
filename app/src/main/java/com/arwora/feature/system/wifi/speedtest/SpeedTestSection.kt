@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.arwora.ui.components.ExpressiveWavyLinearProgressIndicator
 import com.arwora.utils.SoundEffectManager
 
 @Composable
@@ -141,14 +142,12 @@ fun SpeedTestSection(
                         targetValue = speedTestState.progress,
                         label = "SpeedTestProgress"
                     )
-                    LinearProgressIndicator(
-                        progress = { animatedProgress },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(6.dp)
-                            .clip(RoundedCornerShape(3.dp)),
+                    ExpressiveWavyLinearProgressIndicator(
+                        progress = animatedProgress,
+                        modifier = Modifier.fillMaxWidth(),
                         color = MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                        height = 9.dp
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))

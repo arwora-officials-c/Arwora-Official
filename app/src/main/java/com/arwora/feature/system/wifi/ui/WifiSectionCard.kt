@@ -16,6 +16,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.arwora.ui.components.ArworaDesignTokens
 
 @Composable
 fun WifiSectionCard(
@@ -23,23 +24,18 @@ fun WifiSectionCard(
     description: String,
     icon: ImageVector,
     iconTint: Color = MaterialTheme.colorScheme.primary,
-    iconBgColor: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+    iconBgColor: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
     statusBadge: (@Composable () -> Unit)? = null,
     actionButton: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val isLight = MaterialTheme.colorScheme.background.red > 0.8f
-    val outlineAlpha = if (isLight) 0.35f else 0.55f
-
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isLight) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.30f)
-        ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = outlineAlpha)),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isLight) 1.5.dp else 0.dp)
+        shape = ArworaDesignTokens.CardShape,
+        colors = CardDefaults.cardColors(containerColor = ArworaDesignTokens.cardContainerColor()),
+        border = ArworaDesignTokens.cardBorder(),
+        elevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
     ) {
         Column(
             modifier = Modifier
@@ -53,13 +49,13 @@ fun WifiSectionCard(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(42.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .size(ArworaDesignTokens.IconBadgeSize)
+                        .clip(ArworaDesignTokens.IconBadgeShape)
                         .background(iconBgColor)
                         .border(
                             width = 1.dp,
                             color = iconTint.copy(alpha = 0.25f),
-                            shape = RoundedCornerShape(12.dp)
+                            shape = ArworaDesignTokens.IconBadgeShape
                         ),
                     contentAlignment = Alignment.Center
                 ) {

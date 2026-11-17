@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arwora.ui.MainViewModel
 import com.arwora.ui.components.ArworaAnimatedSwitch
+import com.arwora.ui.components.ArworaDesignTokens
 
 @Composable
 fun SwitchRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
@@ -87,12 +88,13 @@ fun ResultRowItem(index: Int, name: String, viewModel: MainViewModel, context: C
     var showCheckerSheet by remember { mutableStateOf(false) }
     
     Box {
+        val rowShape = RoundedCornerShape(16.dp)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
-                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(14.dp))
+                .clip(rowShape)
+                .background(ArworaDesignTokens.cardContainerColor())
+                .border(1.dp, ArworaDesignTokens.cardBorderColor(), rowShape)
                 .pointerInput(Unit) {
                     detectTapGestures(
                         onTap = {
@@ -290,9 +292,9 @@ fun SegmentedControl(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
-            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(16.dp))
+            .clip(ArworaDesignTokens.PillShape)
+            .background(ArworaDesignTokens.cardContainerColor())
+            .border(1.dp, ArworaDesignTokens.cardBorderColor(), ArworaDesignTokens.PillShape)
             .padding(4.dp),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
@@ -301,7 +303,7 @@ fun SegmentedControl(
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(ArworaDesignTokens.PillShape)
                     .background(if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent)
                     .clickable {
                         com.arwora.utils.SoundEffectManager.playClick()
@@ -397,25 +399,19 @@ fun FontStyleBottomSheet(
 }
 
 /**
- * Standard Bordered Card Container ensuring uniform 1.dp border outline, rounded corners (22.dp),
+ * Standard Bordered Card Container ensuring uniform 1.dp border outline, rounded corners (24.dp),
  * and dynamic surface background colors across all tools and dashboards.
  */
 @Composable
 fun StandardContainerCard(
     modifier: Modifier = Modifier,
-    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(22.dp),
+    shape: androidx.compose.ui.graphics.Shape = ArworaDesignTokens.CardShape,
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val isLight = MaterialTheme.colorScheme.background.red > 0.8f
-    val outlineAlpha = if (isLight) 0.25f else 0.45f
-    val cardBgColor = if (isLight) {
-        MaterialTheme.colorScheme.surface
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f)
-    }
-    val elevationDp = if (isLight) 1.5.dp else 0.dp
-    val cardBorder = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = outlineAlpha))
+    val cardBgColor = ArworaDesignTokens.cardContainerColor()
+    val elevationDp = ArworaDesignTokens.cardElevationDp()
+    val cardBorder = ArworaDesignTokens.cardBorder()
     val cardColors = CardDefaults.cardColors(containerColor = cardBgColor)
     val cardElevation = CardDefaults.cardElevation(defaultElevation = elevationDp)
 

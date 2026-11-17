@@ -38,6 +38,8 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.arwora.ui.MainViewModel
 import com.arwora.ui.components.ArworaAnimatedSwitch
+import com.arwora.ui.components.ArworaDesignTokens
+import com.arwora.ui.components.ArworaTonalIconBadge
 import com.arwora.utils.SoundEffectManager
 
 enum class SeparatorType(val displayName: String) {
@@ -103,11 +105,12 @@ fun TextRepeatScreen(navController: NavController, viewModel: MainViewModel) {
             // ==================== 1. COMPACT PREMIUM HEADER ====================
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
+                shape = ArworaDesignTokens.CardShape,
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
+                    containerColor = ArworaDesignTokens.cardContainerColor()
                 ),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+                border = ArworaDesignTokens.cardBorder(),
+                elevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
             ) {
                 Box(
                     modifier = Modifier
@@ -115,31 +118,21 @@ fun TextRepeatScreen(navController: NavController, viewModel: MainViewModel) {
                         .background(
                             Brush.linearGradient(
                                 colors = listOf(
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.05f),
-                                    MaterialTheme.colorScheme.secondary.copy(alpha = 0.02f)
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+                                    MaterialTheme.colorScheme.secondary.copy(alpha = 0.03f)
                                 )
                             )
                         )
                 ) {
                     Row(
-                        modifier = Modifier.padding(12.dp),
+                        modifier = Modifier.padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(MaterialTheme.colorScheme.primary),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Repeat,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
+                        ArworaTonalIconBadge(
+                            icon = Icons.Default.Repeat,
+                            size = 44.dp
+                        )
 
                         Column {
                             Text(
@@ -181,11 +174,12 @@ fun TextRepeatScreen(navController: NavController, viewModel: MainViewModel) {
             // ==================== 2. COMPACT INPUT CARD ====================
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
+                shape = ArworaDesignTokens.CardShape,
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                    containerColor = ArworaDesignTokens.cardContainerColor()
                 ),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                border = ArworaDesignTokens.cardBorder(),
+                elevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
             ) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedTextField(
@@ -308,11 +302,11 @@ fun TextRepeatScreen(navController: NavController, viewModel: MainViewModel) {
                             outputText = generateRepeatedText(inputText, count, selectedSeparator, addIndex, addBlankLine)
                         }
                     },
-                    modifier = Modifier.weight(1.5f).height(52.dp),
-                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.weight(1.5f).height(54.dp),
+                    shape = ArworaDesignTokens.PillShape,
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
-                    Text("GENERATE", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                    Text("Generate", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                 }
 
                 OutlinedButton(
@@ -324,13 +318,13 @@ fun TextRepeatScreen(navController: NavController, viewModel: MainViewModel) {
                         addIndex = false
                         addBlankLine = false
                     },
-                    modifier = Modifier.weight(1f).height(52.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                    modifier = Modifier.weight(1f).height(54.dp),
+                    shape = ArworaDesignTokens.PillShape,
+                    border = ArworaDesignTokens.cardBorder()
                 ) {
                     Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("CLEAR", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                    Text("Clear", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                 }
             }
 
@@ -342,10 +336,10 @@ fun TextRepeatScreen(navController: NavController, viewModel: MainViewModel) {
             ) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    shape = ArworaDesignTokens.CardShape,
+                    colors = CardDefaults.cardColors(containerColor = ArworaDesignTokens.cardContainerColor()),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
                 ) {
                     Column {
                         // Header bar

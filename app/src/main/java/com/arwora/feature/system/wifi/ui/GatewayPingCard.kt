@@ -20,6 +20,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.arwora.feature.system.wifi.GatewayPingResult
+import com.arwora.ui.components.ArworaDesignTokens
+import com.arwora.ui.components.ArworaPillBadge
+import com.arwora.ui.components.ExpressiveCompactLoadingIndicator
+import com.arwora.ui.components.ExpressiveWavyLinearProgressIndicator
 
 @Composable
 fun GatewayPingCard(
@@ -44,43 +48,42 @@ fun GatewayPingCard(
         icon = Icons.Default.NetworkPing,
         iconTint = if (pingResult != null && pingResult.isReachable) Color(0xFF10B981) else MaterialTheme.colorScheme.primary,
         statusBadge = {
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = statusBadgeColor.copy(alpha = 0.12f),
-                border = BorderStroke(1.dp, statusBadgeColor.copy(alpha = 0.3f))
-            ) {
-                Text(
-                    text = pingResult?.stabilityStatus?.substringBefore(" (") ?: "Untested",
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold),
-                    color = statusBadgeColor,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                )
-            }
+            ArworaPillBadge(
+                text = pingResult?.stabilityStatus?.substringBefore(" (") ?: "Untested",
+                tint = statusBadgeColor
+            )
         },
         actionButton = {
             Button(
                 onClick = onRunPing,
                 enabled = !isPinging,
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                modifier = Modifier.height(34.dp)
+                shape = ArworaDesignTokens.PillShape,
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+                modifier = Modifier.height(36.dp)
             ) {
-                Icon(
-                    imageVector = if (pingResult != null) Icons.Default.Refresh else Icons.Default.PlayArrow,
-                    contentDescription = null,
-                    modifier = Modifier.size(14.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
+                if (isPinging) {
+                    ExpressiveCompactLoadingIndicator(
+                        size = 15.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                } else {
+                    Icon(
+                        imageVector = if (pingResult != null) Icons.Default.Refresh else Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(5.dp))
                 Text(if (isPinging) "Testing..." else if (pingResult != null) "Re-ping" else "Run Ping", style = MaterialTheme.typography.labelSmall)
             }
         },
         modifier = modifier
     ) {
         if (isPinging) {
-            LinearProgressIndicator(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp))
+            ExpressiveWavyLinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth(),
+                progress = null,
+                height = 9.dp
             )
             Spacer(modifier = Modifier.height(6.dp))
             Text(

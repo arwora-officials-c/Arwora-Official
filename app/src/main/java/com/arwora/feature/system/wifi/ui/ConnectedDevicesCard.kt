@@ -29,6 +29,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.arwora.feature.system.wifi.DeviceInfo
 import com.arwora.feature.system.wifi.ScanMode
+import com.arwora.ui.components.ArworaDesignTokens
+import com.arwora.ui.components.ExpressiveWavyLinearProgressIndicator
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -88,18 +90,18 @@ fun ConnectedDevicesCard(
                 Button(
                     onClick = onStopScan,
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                    modifier = Modifier.height(34.dp),
-                    shape = RoundedCornerShape(8.dp)
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+                    modifier = Modifier.height(36.dp),
+                    shape = ArworaDesignTokens.PillShape
                 ) {
                     Text("Stop", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
                 }
             } else {
                 Button(
                     onClick = onStartScan,
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
-                    modifier = Modifier.height(34.dp),
-                    shape = RoundedCornerShape(8.dp)
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                    modifier = Modifier.height(36.dp),
+                    shape = ArworaDesignTokens.PillShape
                 ) {
                     Icon(Icons.Default.Sensors, contentDescription = null, modifier = Modifier.size(15.dp))
                     Spacer(modifier = Modifier.width(4.dp))
@@ -130,12 +132,10 @@ fun ConnectedDevicesCard(
         // Scanning Status Indicator
         if (isScanning) {
             Spacer(modifier = Modifier.height(10.dp))
-            LinearProgressIndicator(
-                progress = { scanProgress },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp))
+            ExpressiveWavyLinearProgressIndicator(
+                progress = scanProgress,
+                modifier = Modifier.fillMaxWidth(),
+                height = 9.dp
             )
             Spacer(modifier = Modifier.height(6.dp))
             Row(

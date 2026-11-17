@@ -97,6 +97,14 @@ class NativeAdbManagerTest {
             val lenWord = ByteBuffer.wrap(structBytes, 0, 4).order(ByteOrder.LITTLE_ENDIAN).getInt()
             assertEquals(64, lenWord)
 
+            assertEquals("arwora", NativeAdbProtocol.DEFAULT_CLIENT_IDENTITY)
+            assertEquals("arwora", NativeAdbManager.ensureClientIdentity())
+
+            val defaultPubPayload = NativeAdbProtocol.formatAdbPublicKeyPayload(rsaPub)
+            val defaultPubText = String(defaultPubPayload, Charsets.UTF_8)
+            assertTrue(defaultPubText.endsWith(" arwora\u0000"))
+            org.junit.Assert.assertFalse(defaultPubText.contains("@android"))
+
             val pubPayload = NativeAdbProtocol.formatAdbPublicKeyPayload(rsaPub, "test@arwora")
             val pubText = String(pubPayload, Charsets.UTF_8)
             assertTrue(pubText.endsWith(" test@arwora\u0000"))

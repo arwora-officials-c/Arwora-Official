@@ -19,16 +19,17 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.arwora.ui.components.AppLogo
+import com.arwora.ui.components.ArworaDesignTokens
+import com.arwora.ui.components.ArworaTonalIconBadge
 import com.arwora.ui.navigation.Screen
 import com.arwora.utils.SoundEffectManager
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AboutScreen(navController: NavController) {
-    val isLight = MaterialTheme.colorScheme.background.red > 0.8f
-    val outlineAlpha = if (isLight) 0.25f else 0.45f
-    val cardBorder = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = outlineAlpha))
-    val cardBg = if (isLight) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.20f)
+    val cardBorder = ArworaDesignTokens.cardBorder()
+    val cardBg = ArworaDesignTokens.cardContainerColor()
+    val cardElevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
 
     Scaffold(
         topBar = {
@@ -95,10 +96,10 @@ fun AboutScreen(navController: NavController) {
                         SoundEffectManager.playClick()
                         navController.navigate(Screen.PrivacyPolicy.route)
                     },
-                    shape = RoundedCornerShape(22.dp),
+                    shape = ArworaDesignTokens.CardShape,
                     colors = CardDefaults.cardColors(containerColor = cardBg),
                     border = cardBorder,
-                    elevation = CardDefaults.cardElevation(defaultElevation = if (isLight) 1.5.dp else 0.dp),
+                    elevation = cardElevation,
                     modifier = Modifier
                         .fillMaxWidth()
                         .defaultMinSize(minHeight = 56.dp)
@@ -111,11 +112,10 @@ fun AboutScreen(navController: NavController) {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.VerifiedUser,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(22.dp)
+                        ArworaTonalIconBadge(
+                            icon = Icons.Default.VerifiedUser,
+                            size = 40.dp,
+                            iconSize = 20.dp
                         )
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
@@ -141,10 +141,10 @@ fun AboutScreen(navController: NavController) {
                 Spacer(modifier = Modifier.height(14.dp))
 
                 Card(
-                    shape = RoundedCornerShape(22.dp),
+                    shape = ArworaDesignTokens.CardShape,
                     colors = CardDefaults.cardColors(containerColor = cardBg),
                     border = cardBorder,
-                    elevation = CardDefaults.cardElevation(defaultElevation = if (isLight) 1.5.dp else 0.dp),
+                    elevation = cardElevation,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(

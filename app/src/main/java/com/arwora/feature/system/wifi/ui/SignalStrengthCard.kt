@@ -20,6 +20,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.arwora.feature.system.wifi.WifiSignalInfo
+import com.arwora.ui.components.ArworaPillBadge
+import com.arwora.ui.components.ExpressiveWavyLinearProgressIndicator
 
 @Composable
 fun SignalStrengthCard(
@@ -40,18 +42,10 @@ fun SignalStrengthCard(
         icon = Icons.Default.SignalCellularAlt,
         iconTint = qualityColor,
         statusBadge = {
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = qualityColor.copy(alpha = 0.12f),
-                border = BorderStroke(1.dp, qualityColor.copy(alpha = 0.3f))
-            ) {
-                Text(
-                    text = signalInfo.qualityLabel,
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold),
-                    color = qualityColor,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                )
-            }
+            ArworaPillBadge(
+                text = signalInfo.qualityLabel,
+                tint = qualityColor
+            )
         },
         actionButton = {
             IconButton(
@@ -120,15 +114,13 @@ fun SignalStrengthCard(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Progress gauge bar
-                LinearProgressIndicator(
-                    progress = { signalInfo.signalPercent / 100f },
+                // Expressive wavy progress gauge bar
+                ExpressiveWavyLinearProgressIndicator(
+                    progress = (signalInfo.signalPercent / 100f).coerceIn(0f, 1f),
                     color = qualityColor,
                     trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(8.dp)
-                        .clip(RoundedCornerShape(4.dp))
+                    modifier = Modifier.fillMaxWidth(),
+                    height = 10.dp
                 )
 
                 Spacer(modifier = Modifier.height(6.dp))

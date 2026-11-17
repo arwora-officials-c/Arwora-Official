@@ -276,9 +276,10 @@ private fun PairingStatusBannerCard(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+        shape = ArworaDesignTokens.CardShape,
+        colors = CardDefaults.cardColors(containerColor = ArworaDesignTokens.cardContainerColor()),
+        border = ArworaDesignTokens.cardBorder(),
+        elevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
     ) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(
@@ -420,9 +421,10 @@ private fun PairingModeSelectorCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f)),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+        shape = ArworaDesignTokens.CardShape,
+        colors = CardDefaults.cardColors(containerColor = ArworaDesignTokens.cardContainerColor()),
+        border = ArworaDesignTokens.cardBorder(),
+        elevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
     ) {
         Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
@@ -512,9 +514,10 @@ private fun ManualNotificationPairingCard(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("pairing_card_manual"),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+        shape = ArworaDesignTokens.CardShape,
+        colors = CardDefaults.cardColors(containerColor = ArworaDesignTokens.cardContainerColor()),
+        border = ArworaDesignTokens.cardBorder(),
+        elevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
     ) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(
@@ -549,7 +552,7 @@ private fun ManualNotificationPairingCard(
                     .fillMaxWidth()
                     .heightIn(min = 48.dp)
                     .testTag("manual_open_dev_options_button"),
-                shape = RoundedCornerShape(12.dp)
+                shape = ArworaDesignTokens.PillShape
             ) {
                 Icon(Icons.Default.DeveloperMode, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(8.dp))
@@ -602,15 +605,14 @@ private fun ManualNotificationPairingCard(
                     .fillMaxWidth()
                     .height(48.dp)
                     .testTag("wireless_pair_manually_button"),
-                shape = RoundedCornerShape(12.dp),
+                shape = ArworaDesignTokens.PillShape,
                 enabled = !isPairing &&
                     WirelessPairingManager.isValidManualPairingInput(hostInput, portInput.toIntOrNull(), codeInput),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {
                 if (isPairing) {
-                    GooglePlayCompactLinearProgress(
-                        width = 28.dp,
-                        height = 4.dp,
+                    ExpressiveCompactLoadingIndicator(
+                        size = 18.dp,
                         color = MaterialTheme.colorScheme.onPrimary
                     )
                     Spacer(modifier = Modifier.width(8.dp))
@@ -646,9 +648,10 @@ private fun AutomaticWizardPairingCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("wireless_notification_access_warning_card"),
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)),
-                border = BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.4f))
+                shape = ArworaDesignTokens.CardShape,
+                colors = CardDefaults.cardColors(containerColor = ArworaDesignTokens.cardContainerColor()),
+                border = BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.4f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
             ) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -676,7 +679,7 @@ private fun AutomaticWizardPairingCard(
                             .fillMaxWidth()
                             .height(48.dp)
                             .testTag("wireless_grant_notification_button"),
-                        shape = RoundedCornerShape(12.dp)
+                        shape = ArworaDesignTokens.PillShape
                     ) {
                         Text("Grant Notification Access", fontWeight = FontWeight.Bold)
                     }
@@ -688,9 +691,10 @@ private fun AutomaticWizardPairingCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag("pairing_card_automatic_wizard"),
-            shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+            shape = ArworaDesignTokens.CardShape,
+            colors = CardDefaults.cardColors(containerColor = ArworaDesignTokens.cardContainerColor()),
+            border = ArworaDesignTokens.cardBorder(),
+            elevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
         ) {
             Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(
@@ -746,7 +750,7 @@ private fun AutomaticWizardPairingCard(
                             .fillMaxWidth()
                             .height(48.dp)
                             .testTag("auto_wizard_fallback_manual_button"),
-                        shape = RoundedCornerShape(12.dp)
+                        shape = ArworaDesignTokens.PillShape
                     ) {
                         Icon(Icons.Default.Pin, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
@@ -772,9 +776,10 @@ private fun AutoPairOnWifiCard(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("pairing_card_wifi_auto"),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+        shape = ArworaDesignTokens.CardShape,
+        colors = CardDefaults.cardColors(containerColor = ArworaDesignTokens.cardContainerColor()),
+        border = ArworaDesignTokens.cardBorder(),
+        elevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
     ) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(
@@ -884,9 +889,9 @@ private fun AutoPairOnWifiCard(
 
             if (!lastEventSummary.isNullOrBlank()) {
                 Surface(
-                    shape = RoundedCornerShape(10.dp),
+                    shape = ArworaDesignTokens.InnerTileShape,
                     color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                    border = ArworaDesignTokens.innerTileBorder(),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -915,7 +920,7 @@ private fun AutoPairOnWifiCard(
                     .fillMaxWidth()
                     .height(48.dp)
                     .testTag("wifi_auto_save_trigger_button"),
-                shape = RoundedCornerShape(12.dp),
+                shape = ArworaDesignTokens.PillShape,
                 enabled = !isBusy
             ) {
                 Text(
@@ -978,7 +983,7 @@ private fun WizardStepItem(
                         .fillMaxWidth()
                         .height(48.dp)
                         .testTag("auto_wizard_primary_button"),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = ArworaDesignTokens.PillShape,
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
                     Text(actionLabel, fontWeight = FontWeight.Bold)
@@ -989,7 +994,7 @@ private fun WizardStepItem(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = ArworaDesignTokens.PillShape
                 ) {
                     Text(actionLabel, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }

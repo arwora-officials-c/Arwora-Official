@@ -1,6 +1,7 @@
 package com.arwora.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -16,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.arwora.ui.components.ArworaDesignTokens
 import java.text.DecimalFormat
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -78,8 +80,9 @@ fun CalculatorView(modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            .clip(ArworaDesignTokens.CardShape)
+            .background(ArworaDesignTokens.cardContainerColor())
+            .border(ArworaDesignTokens.cardBorder(), ArworaDesignTokens.CardShape)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -87,8 +90,9 @@ fun CalculatorView(modifier: Modifier = Modifier) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
+                .clip(ArworaDesignTokens.InnerTileShape)
                 .background(MaterialTheme.colorScheme.surface)
+                .border(ArworaDesignTokens.innerTileBorder(), ArworaDesignTokens.InnerTileShape)
                 .padding(16.dp),
             horizontalAlignment = Alignment.End
         ) {

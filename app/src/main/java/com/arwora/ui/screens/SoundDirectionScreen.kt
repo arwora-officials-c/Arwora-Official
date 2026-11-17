@@ -41,6 +41,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
+import com.arwora.ui.components.ArworaDesignTokens
+import com.arwora.ui.components.ExpressiveWavyLinearProgressIndicator
 import com.arwora.utils.SoundEffectManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -794,14 +796,12 @@ fun SoundDirectionScreen(navController: NavController) {
                                     )
                                 }
 
-                                LinearProgressIndicator(
-                                    progress = { (confidenceScorePercent / 100f).coerceIn(0.05f, 1f) },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(6.dp)
-                                        .clip(RoundedCornerShape(3.dp)),
+                                ExpressiveWavyLinearProgressIndicator(
+                                    progress = (confidenceScorePercent / 100f).coerceIn(0.05f, 1f),
+                                    modifier = Modifier.fillMaxWidth(),
                                     color = Color(0xFF10B981),
-                                    trackColor = Color(0xFF1E293B)
+                                    trackColor = Color(0xFF1E293B),
+                                    height = 9.dp
                                 )
                             }
                         }
@@ -811,9 +811,10 @@ fun SoundDirectionScreen(navController: NavController) {
                 // 2. DUAL-CHANNEL BALANCE & FREQUENCY SPECTRUM MONITOR CARD
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                    shape = ArworaDesignTokens.CardShape,
+                    colors = CardDefaults.cardColors(containerColor = ArworaDesignTokens.cardContainerColor()),
+                    border = ArworaDesignTokens.cardBorder(),
+                    elevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
                 ) {
                     Column(
                         modifier = Modifier.padding(18.dp),

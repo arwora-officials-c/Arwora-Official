@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.arwora.ui.MainViewModel
+import com.arwora.ui.components.ArworaDesignTokens
 import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.sin
@@ -180,11 +181,12 @@ fun CoinTossScreen(navController: NavController, viewModel: MainViewModel) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 16.dp),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = ArworaDesignTokens.CardShape,
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
+                        containerColor = ArworaDesignTokens.cardContainerColor()
                     ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    border = ArworaDesignTokens.cardBorder(),
+                    elevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
                 ) {
                     Row(
                         modifier = Modifier
@@ -314,20 +316,19 @@ fun CoinTossScreen(navController: NavController, viewModel: MainViewModel) {
                     },
                     enabled = !isAnimating,
                     modifier = Modifier
-                        .fillMaxWidth(0.7f)
-                        .height(56.dp),
-                    shape = RoundedCornerShape(28.dp),
+                        .fillMaxWidth(0.75f)
+                        .height(54.dp),
+                    shape = ArworaDesignTokens.PillShape,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary
                     ),
-                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 3.dp)
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
                 ) {
                     Text(
-                        text = if (isAnimating) "Flipping..." else "TOSS COIN",
+                        text = if (isAnimating) "Flipping..." else "Toss Coin",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp
+                        fontWeight = FontWeight.Bold
                     )
                 }
 

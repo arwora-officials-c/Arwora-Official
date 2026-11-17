@@ -862,6 +862,7 @@ object WirelessPairingManager {
     }
 
     private fun trySocketPairing(host: String, port: Int, code: String): SocketHandshakeResult {
+        NativeAdbManager.ensureClientIdentity()
         var socket: Socket? = null
         return try {
             val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
@@ -944,9 +945,18 @@ object WirelessPairingManager {
         }
     }
 
+    private fun buildAdbProcess(vararg args: String): Process {
+        val identity = NativeAdbManager.ensureClientIdentity()
+        return ProcessBuilder(*args).apply {
+            environment()["USER"] = identity
+            environment()["LOGNAME"] = identity
+            environment()["ADB_CLIENT_NAME"] = identity
+        }.start()
+    }
+
     private fun tryShellPairing(host: String, port: Int, code: String): Boolean {
         return try {
-            val process = Runtime.getRuntime().exec(arrayOf("adb", "pair", "$host:$port", code))
+            val process = buildAdbProcess("adb", "pair", "$host:$port", code)
             val ok = waitForProcessSafely(process)
             if (ok) {
                 Log.i(TAG, "adb pair shell command succeeded")
@@ -959,7 +969,7 @@ object WirelessPairingManager {
 
     private fun tryShellConnect(host: String, port: Int): Boolean {
         return try {
-            val process = Runtime.getRuntime().exec(arrayOf("adb", "connect", "$host:$port"))
+            val process = buildAdbProcess("adb", "connect", "$host:$port")
             waitForProcessSafely(process)
         } catch (_: Exception) {
             false

@@ -53,6 +53,7 @@ import androidx.navigation.NavController
 import com.arwora.ui.MainViewModel
 import com.arwora.ui.components.AppLogo
 import com.arwora.ui.components.ArworaAnimatedSwitch
+import com.arwora.ui.components.ArworaDesignTokens
 import com.arwora.ui.navigation.Screen
 import com.arwora.utils.AppPermissionsHelper
 import com.arwora.utils.ManagedAppPermission
@@ -411,9 +412,9 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
                         },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 48.dp)
+                            .height(48.dp)
                             .testTag("settings_custom_color_button"),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = ArworaDesignTokens.PillShape,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
                     ) {
                         Icon(imageVector = Icons.Default.Palette, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -555,6 +556,7 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
                                     viewModel.setDefaultFloatingSize(size)
                                 },
                                 modifier = Modifier.testTag("settings_floating_size_${size.lowercase()}"),
+                                shape = ArworaDesignTokens.PillShape,
                                 label = { Text(size, fontWeight = if (defaultSize == size) FontWeight.Bold else FontWeight.Normal) }
                             )
                         }
@@ -882,27 +884,14 @@ fun SettingsGroupCard(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val isLight = MaterialTheme.colorScheme.background.red > 0.8f
-    val outlineAlpha = if (isLight) 0.25f else 0.45f
-    val cardBgColor = if (isLight) {
-        MaterialTheme.colorScheme.surface
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.20f)
-    }
-    val elevationDp = if (isLight) 1.5.dp else 0.dp
-    val cardShape = RoundedCornerShape(22.dp)
-    val cardBorder = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = outlineAlpha))
-    val cardColors = CardDefaults.cardColors(containerColor = cardBgColor)
-    val cardElevation = CardDefaults.cardElevation(defaultElevation = elevationDp)
-
     Card(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
-        shape = cardShape,
-        colors = cardColors,
-        border = cardBorder,
-        elevation = cardElevation,
+        shape = ArworaDesignTokens.CardShape,
+        colors = CardDefaults.cardColors(containerColor = ArworaDesignTokens.cardContainerColor()),
+        border = ArworaDesignTokens.cardBorder(),
+        elevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp()),
         content = content
     )
 }
@@ -925,12 +914,13 @@ fun SettingsRowContent(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Icon Badge
+        // Icon Badge matching ArworaTonalIconBadge
         Box(
             modifier = Modifier
-                .size(42.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(iconBackground),
+                .size(ArworaDesignTokens.IconBadgeSize)
+                .clip(ArworaDesignTokens.IconBadgeShape)
+                .background(iconBackground)
+                .border(1.dp, iconTint.copy(alpha = 0.25f), ArworaDesignTokens.IconBadgeShape),
             contentAlignment = Alignment.Center
         ) {
             Icon(

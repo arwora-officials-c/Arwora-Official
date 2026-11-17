@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.arwora.feature.system.wifi.ChannelCongestion
+import com.arwora.ui.components.ExpressiveWavyLinearProgressIndicator
 
 @Composable
 fun ChannelAnalyzerCard(
@@ -198,14 +199,13 @@ fun ChannelAnalyzerCard(
 
                     Spacer(modifier = Modifier.height(6.dp))
 
-                    LinearProgressIndicator(
-                        progress = { ch.congestionScore / 100f },
+                    ExpressiveWavyLinearProgressIndicator(
+                        progress = (ch.congestionScore / 100f).coerceIn(0f, 1f),
                         color = congestionColor,
                         trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(4.dp)
-                            .clip(RoundedCornerShape(2.dp))
+                        modifier = Modifier.fillMaxWidth(),
+                        height = 8.dp,
+                        amplitude = 1.8.dp
                     )
                 }
             }

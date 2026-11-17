@@ -41,6 +41,8 @@ object NativeAdbProtocol {
     const val AUTH_SIGNATURE = 2
     const val AUTH_RSAPUBLICKEY = 3
 
+    const val DEFAULT_CLIENT_IDENTITY = "arwora"
+
     private const val HEADER_SIZE = 24
     private const val RSA_KEY_BITS = 2048
     private const val RSA_NUM_BYTES = 256
@@ -226,11 +228,12 @@ object NativeAdbProtocol {
 
     fun formatAdbPublicKeyPayload(
         publicKey: RSAPublicKey,
-        comment: String = "arwora@android"
+        comment: String = DEFAULT_CLIENT_IDENTITY
     ): ByteArray {
+        val cleanComment = comment.trim().ifEmpty { DEFAULT_CLIENT_IDENTITY }
         val structBytes = encodeAndroidRsaPublicKeyStruct(publicKey)
         val base64 = Base64.encodeToString(structBytes, Base64.NO_WRAP)
-        val line = "$base64 $comment\u0000"
+        val line = "$base64 $cleanComment\u0000"
         return line.toByteArray(Charsets.UTF_8)
     }
 

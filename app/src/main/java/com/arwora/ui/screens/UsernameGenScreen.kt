@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.arwora.ui.MainViewModel
+import com.arwora.ui.components.ArworaDesignTokens
 import com.arwora.utils.CountryData
 import com.arwora.utils.ModernGenerators
 import com.arwora.utils.SessionCache
@@ -141,8 +142,8 @@ fun UsernameGenScreen(navController: NavController, viewModel: MainViewModel) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp)
-                        .height(56.dp),
-                    shape = RoundedCornerShape(16.dp),
+                        .height(54.dp),
+                    shape = ArworaDesignTokens.PillShape,
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
                     Text("Generate Username", fontSize = 16.sp, fontWeight = FontWeight.Bold)
@@ -166,10 +167,10 @@ fun UsernameGenScreen(navController: NavController, viewModel: MainViewModel) {
                     val heroResult = generatedUsernames.first()
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                        elevation = CardDefaults.cardElevation(0.dp)
+                        shape = ArworaDesignTokens.CardShape,
+                        colors = CardDefaults.cardColors(containerColor = ArworaDesignTokens.cardContainerColor()),
+                        border = ArworaDesignTokens.cardBorder(),
+                        elevation = CardDefaults.cardElevation(ArworaDesignTokens.cardElevationDp())
                     ) {
                         Column(
                             modifier = Modifier
@@ -335,9 +336,11 @@ fun UsernameGenScreen(navController: NavController, viewModel: MainViewModel) {
                     SwitchRow("No Repeat (Unique Session)", noRepeat) { viewModel.setNoRepeat(it) }
                     OutlinedButton(
                         onClick = { SessionCache.resetUsernames(); Toast.makeText(context, "Session history reset!", Toast.LENGTH_SHORT).show() },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                        shape = ArworaDesignTokens.PillShape,
+                        border = ArworaDesignTokens.cardBorder()
                     ) {
-                        Text("Reset Generated Results")
+                        Text("Reset Generated Results", fontWeight = FontWeight.SemiBold)
                     }
                 }
             }

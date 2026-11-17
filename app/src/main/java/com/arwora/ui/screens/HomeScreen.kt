@@ -57,6 +57,9 @@ import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.arwora.ui.components.AppLogo
+import com.arwora.ui.components.ArworaDesignTokens
+import com.arwora.ui.components.ArworaPillBadge
+import com.arwora.ui.components.ArworaTonalIconBadge
 import com.arwora.ui.MainViewModel
 import com.arwora.ui.navigation.LocalMainTabNavigator
 import com.arwora.ui.navigation.Screen
@@ -253,10 +256,10 @@ fun HomeScreen(
     }
 
     val listState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
-    val isLight = MaterialTheme.colorScheme.background.red > 0.8f
-    val cardBgColor = if (isLight) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)
-    val cardShape = RoundedCornerShape(22.dp)
-    val cardBorder = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = if (isLight) 0.25f else 0.4f))
+    val cardBgColor = ArworaDesignTokens.cardContainerColor()
+    val cardShape = ArworaDesignTokens.CardShape
+    val cardBorder = ArworaDesignTokens.cardBorder()
+    val cardElevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
 
     LazyColumn(
         state = listState,
@@ -302,14 +305,19 @@ fun HomeScreen(
                             },
                             modifier = Modifier
                                 .size(46.dp)
-                                .clip(CircleShape)
+                                .clip(ArworaDesignTokens.IconBadgeShape)
                                 .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
+                                .border(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+                                    ArworaDesignTokens.IconBadgeShape
+                                )
                         ) {
                             Icon(
                                 imageVector = Icons.Default.History,
                                 contentDescription = "History",
                                 tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(24.dp)
+                                modifier = Modifier.size(22.dp)
                             )
                         }
                     }
@@ -337,7 +345,7 @@ fun HomeScreen(
                     shape = cardShape,
                     colors = CardDefaults.cardColors(containerColor = cardBgColor),
                     border = cardBorder,
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                    elevation = cardElevation
                 ) {
                     Row(
                         modifier = Modifier
@@ -345,22 +353,13 @@ fun HomeScreen(
                             .padding(20.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Security,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column {
+                        ArworaTonalIconBadge(
+                            icon = Icons.Default.Security,
+                            size = 46.dp,
+                            iconSize = 23.dp
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "System Security Scan",
                                 style = MaterialTheme.typography.titleMedium,
@@ -412,17 +411,17 @@ fun HomeScreen(
                     shape = cardShape,
                     colors = CardDefaults.cardColors(containerColor = cardBgColor),
                     border = cardBorder,
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                    elevation = cardElevation
                 ) {
                     Column(modifier = Modifier.padding(20.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.AdminPanelSettings,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
+                            ArworaTonalIconBadge(
+                                icon = Icons.Default.AdminPanelSettings,
+                                size = 36.dp,
+                                iconSize = 18.dp,
+                                cornerRadius = 11.dp
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(10.dp))
                             Text(
                                 text = "App Ops Manager",
                                 style = MaterialTheme.typography.titleMedium,
@@ -476,11 +475,11 @@ fun HomeScreen(
                             }
                         }
                     },
-                    shape = RoundedCornerShape(20.dp),
+                    shape = ArworaDesignTokens.CardShape,
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                        unfocusedBorderColor = ArworaDesignTokens.cardBorderColor(),
                         unfocusedContainerColor = cardBgColor,
                         focusedContainerColor = cardBgColor
                     )
@@ -518,9 +517,10 @@ fun HomeScreen(
                 item {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                        shape = cardShape,
+                        colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                        border = cardBorder,
+                        elevation = cardElevation
                     ) {
                         Column(
                             modifier = Modifier
@@ -566,7 +566,7 @@ fun HomeScreen(
                         shape = cardShape,
                         colors = CardDefaults.cardColors(containerColor = cardBgColor),
                         border = cardBorder,
-                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                        elevation = cardElevation
                     ) {
                         Row(
                             modifier = Modifier
@@ -574,34 +574,15 @@ fun HomeScreen(
                                 .padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = tool.icon,
-                                    contentDescription = tool.title,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
+                            ArworaTonalIconBadge(
+                                icon = tool.icon,
+                                contentDescription = tool.title,
+                                size = ArworaDesignTokens.IconBadgeSize,
+                                iconSize = 22.dp
+                            )
                             Spacer(modifier = Modifier.width(14.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Surface(
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                                ) {
-                                    Text(
-                                        text = tool.category.uppercase(),
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
+                                ArworaPillBadge(text = tool.category.uppercase())
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = tool.title,
@@ -678,7 +659,7 @@ fun HomeScreen(
                                 shape = cardShape,
                                 colors = CardDefaults.cardColors(containerColor = cardBgColor),
                                 border = cardBorder,
-                                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                                elevation = cardElevation
                             ) {
                                 Column(
                                     modifier = Modifier
@@ -687,26 +668,18 @@ fun HomeScreen(
                                     verticalArrangement = Arrangement.Center,
                                     horizontalAlignment = Alignment.Start
                                 ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = feature.icon,
-                                        contentDescription = feature.title,
-                                        modifier = Modifier.size(22.dp),
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                }
+                                ArworaTonalIconBadge(
+                                    icon = feature.icon,
+                                    contentDescription = feature.title,
+                                    size = 42.dp,
+                                    iconSize = 21.dp
+                                )
                                 Spacer(modifier = Modifier.height(12.dp))
                                 Text(
                                     text = feature.title,
                                     style = MaterialTheme.typography.titleMedium,
                                     fontSize = 15.sp,
-                                    fontWeight = FontWeight.SemiBold,
+                                    fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
