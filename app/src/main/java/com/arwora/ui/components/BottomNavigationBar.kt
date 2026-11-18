@@ -124,17 +124,26 @@ fun CustomBottomNavigationBar(
 
                     val pillBgColor by animateColorAsState(
                         targetValue = if (isSelected) selectedPillColor else Color.Transparent,
-                        animationSpec = tween(durationMillis = 180),
+                        animationSpec = tween(
+                            durationMillis = ArworaMotionTokens.LIST_ENTRY_DURATION_MS,
+                            easing = ArworaMotionTokens.StandardEasing
+                        ),
                         label = "nav_pill_bg"
                     )
                     val pillBorderColor by animateColorAsState(
                         targetValue = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else Color.Transparent,
-                        animationSpec = tween(durationMillis = 180),
+                        animationSpec = tween(
+                            durationMillis = ArworaMotionTokens.LIST_ENTRY_DURATION_MS,
+                            easing = ArworaMotionTokens.StandardEasing
+                        ),
                         label = "nav_pill_border"
                     )
                     val contentTint by animateColorAsState(
                         targetValue = if (isSelected) selectedTintColor else unselectedTintColor,
-                        animationSpec = tween(durationMillis = 180),
+                        animationSpec = tween(
+                            durationMillis = ArworaMotionTokens.LIST_ENTRY_DURATION_MS,
+                            easing = ArworaMotionTokens.StandardEasing
+                        ),
                         label = "nav_content_tint"
                     )
 

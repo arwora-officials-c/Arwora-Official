@@ -109,7 +109,8 @@ object ThemeManager {
         window.statusBarColor = themeConfig.statusBarColorInt
         window.navigationBarColor = themeConfig.navigationBarColorInt
 
-        // 2. Update decorView background to eliminate letterbox/bleed color artifacts
+        // 2. Update window and decorView background to eliminate white-flash/bleed artifacts
+        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(themeConfig.statusBarColorInt))
         window.decorView.setBackgroundColor(themeConfig.statusBarColorInt)
 
         // 3. Update light/dark status bar icon appearances using WindowInsetsControllerCompat

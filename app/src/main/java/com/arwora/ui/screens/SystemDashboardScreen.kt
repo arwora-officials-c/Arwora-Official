@@ -257,15 +257,20 @@ fun SystemDashboardScreen(
     }
 
     fun refreshDashboardStatuses() {
-        checkNotificationPermissionStatus()
-        NativeAdbManager.refreshConnectionStatus(context)
-        animScale = AnimationTweakManager.getCurrentAnimationScale(context)
-        selectedDnsProvider = DnsManager.getSelectedDns(context)
-        shellViewModel.refreshStatus()
+        coroutineScope.launch {
+            checkNotificationPermissionStatus()
+            NativeAdbManager.refreshConnectionStatus(context)
+            val (scale, dns) = withContext(Dispatchers.IO) {
+                AnimationTweakManager.getCurrentAnimationScale(context) to
+                    DnsManager.getSelectedDns(context)
+            }
+            animScale = scale
+            selectedDnsProvider = dns
+            shellViewModel.refreshStatus()
+        }
     }
 
     DisposableEffect(lifecycleOwner, context) {
-        refreshDashboardStatuses()
         val resumeObserver = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 refreshDashboardStatuses()
@@ -2685,8 +2690,8 @@ fun SystemFeatureCard(
 
             AnimatedVisibility(
                 visible = isExpanded,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
+                enter = com.arwora.ui.components.ArworaMotionTokens.standardExpandTransition(),
+                exit = com.arwora.ui.components.ArworaMotionTokens.standardCollapseTransition()
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = outlineAlpha))

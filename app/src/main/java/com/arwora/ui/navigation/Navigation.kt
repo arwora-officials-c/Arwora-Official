@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -52,6 +53,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.arwora.ui.MainViewModel
+import com.arwora.ui.components.ArworaMotionTokens
 import com.arwora.ui.components.CustomBottomNavigationBar
 import com.arwora.ui.components.bottomNavItems
 import com.arwora.ui.components.computeHopPageBeforeAnimate
@@ -172,9 +174,9 @@ fun MainAppScreen(
                 }
                 pagerState.animateScrollToPage(
                     page = clamped,
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioNoBouncy,
-                        stiffness = Spring.StiffnessMediumLow
+                    animationSpec = tween(
+                        durationMillis = ArworaMotionTokens.TAB_TRANSITION_DURATION_MS,
+                        easing = ArworaMotionTokens.StandardEasing
                     )
                 )
             }
@@ -194,7 +196,11 @@ fun MainAppScreen(
     }
 
     CompositionLocalProvider(LocalMainTabNavigator provides navigateToRouteOrTab) {
-        Box(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+        ) {
             NameGenNavHost(
                 navController = navController,
                 viewModel = viewModel,
@@ -218,7 +224,36 @@ fun MainAppScreen(
                 }
             }
 
-            if (showBottomBar) {
+            AnimatedVisibility(
+                visible = showBottomBar,
+                enter = fadeIn(
+                    animationSpec = tween(
+                        durationMillis = ArworaMotionTokens.SCREEN_TRANSITION_DURATION_MS,
+                        easing = ArworaMotionTokens.StandardEasing
+                    )
+                ) + slideInVertically(
+                    initialOffsetY = { it / 2 },
+                    animationSpec = tween(
+                        durationMillis = ArworaMotionTokens.SCREEN_TRANSITION_DURATION_MS,
+                        easing = ArworaMotionTokens.StandardEasing
+                    )
+                ),
+                exit = fadeOut(
+                    animationSpec = tween(
+                        durationMillis = ArworaMotionTokens.LIST_ENTRY_DURATION_MS,
+                        easing = ArworaMotionTokens.StandardEasing
+                    )
+                ) + slideOutVertically(
+                    targetOffsetY = { it / 2 },
+                    animationSpec = tween(
+                        durationMillis = ArworaMotionTokens.LIST_ENTRY_DURATION_MS,
+                        easing = ArworaMotionTokens.StandardEasing
+                    )
+                ),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .zIndex(10f)
+            ) {
                 val activeTabIndex = if (isOnMainTabs) {
                     pagerState.targetPage
                 } else {
@@ -226,8 +261,6 @@ fun MainAppScreen(
                 }
                 Box(
                     modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .zIndex(10f)
                         .onSizeChanged { size ->
                             bottomBarScrollController.updateMaxOffsetPx(size.height.toFloat())
                         }
@@ -331,13 +364,13 @@ fun NameGenNavHost(
     onSelectMainTab: (index: Int, animate: Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val springSpec = spring<androidx.compose.ui.unit.IntOffset>(
-        dampingRatio = Spring.DampingRatioLowBouncy,
-        stiffness = Spring.StiffnessLow
+    val slideSpec = tween<androidx.compose.ui.unit.IntOffset>(
+        durationMillis = ArworaMotionTokens.SCREEN_TRANSITION_DURATION_MS,
+        easing = ArworaMotionTokens.StandardEasing
     )
-    val fadeSpringSpec = spring<Float>(
-        dampingRatio = Spring.DampingRatioNoBouncy,
-        stiffness = Spring.StiffnessLow
+    val fadeSpec = tween<Float>(
+        durationMillis = ArworaMotionTokens.SCREEN_TRANSITION_DURATION_MS,
+        easing = ArworaMotionTokens.StandardEasing
     )
     val pagerScope = rememberCoroutineScope()
 
@@ -363,26 +396,39 @@ fun NameGenNavHost(
         startDestination = if (skipSplash) Screen.MainTabs.route else Screen.Splash.route,
         modifier = modifier,
         enterTransition = {
-            slideInHorizontally(initialOffsetX = { it }, animationSpec = springSpec) +
-                    fadeIn(animationSpec = fadeSpringSpec)
+            slideInHorizontally(initialOffsetX = { it }, animationSpec = slideSpec) +
+                    fadeIn(animationSpec = fadeSpec)
         },
         exitTransition = {
-            slideOutHorizontally(targetOffsetX = { -it / 3 }, animationSpec = springSpec) +
-                    fadeOut(animationSpec = fadeSpringSpec)
+            slideOutHorizontally(targetOffsetX = { -it / 3 }, animationSpec = slideSpec) +
+                    fadeOut(animationSpec = fadeSpec)
         },
         popEnterTransition = {
-            slideInHorizontally(initialOffsetX = { -it / 3 }, animationSpec = springSpec) +
-                    fadeIn(animationSpec = fadeSpringSpec)
+            slideInHorizontally(initialOffsetX = { -it / 3 }, animationSpec = slideSpec) +
+                    fadeIn(animationSpec = fadeSpec)
         },
         popExitTransition = {
-            slideOutHorizontally(targetOffsetX = { it }, animationSpec = springSpec) +
-                    fadeOut(animationSpec = fadeSpringSpec)
+            slideOutHorizontally(targetOffsetX = { it }, animationSpec = slideSpec) +
+                    fadeOut(animationSpec = fadeSpec)
         }
     ) {
         composable(
             route = Screen.Splash.route,
             enterTransition = { EnterTransition.None },
-            exitTransition = { fadeOut(animationSpec = tween(durationMillis = 250)) }
+            exitTransition = {
+                fadeOut(
+                    animationSpec = tween(
+                        durationMillis = 280,
+                        easing = ArworaMotionTokens.StandardEasing
+                    )
+                ) + scaleOut(
+                    targetScale = 1.03f,
+                    animationSpec = tween(
+                        durationMillis = 280,
+                        easing = ArworaMotionTokens.StandardEasing
+                    )
+                )
+            }
         ) {
             SplashScreen(
                 onSplashFinished = {
@@ -398,18 +444,23 @@ fun NameGenNavHost(
             route = Screen.MainTabs.route,
             enterTransition = {
                 if (initialState.destination.route == Screen.Splash.route) {
-                    fadeIn(animationSpec = tween(durationMillis = 260))
+                    fadeIn(
+                        animationSpec = tween(
+                            durationMillis = 300,
+                            easing = ArworaMotionTokens.StandardEasing
+                        )
+                    )
                 } else {
                     EnterTransition.None
                 }
             },
             exitTransition = {
-                slideOutHorizontally(targetOffsetX = { -it / 3 }, animationSpec = springSpec) +
-                        fadeOut(animationSpec = fadeSpringSpec)
+                slideOutHorizontally(targetOffsetX = { -it / 3 }, animationSpec = slideSpec) +
+                        fadeOut(animationSpec = fadeSpec)
             },
             popEnterTransition = {
-                slideInHorizontally(initialOffsetX = { -it / 3 }, animationSpec = springSpec) +
-                        fadeIn(animationSpec = fadeSpringSpec)
+                slideInHorizontally(initialOffsetX = { -it / 3 }, animationSpec = slideSpec) +
+                        fadeIn(animationSpec = fadeSpec)
             }
         ) {
             BackHandler(enabled = pagerState.currentPage != 0) {
@@ -420,9 +471,9 @@ fun NameGenNavHost(
                     }
                     pagerState.animateScrollToPage(
                         page = 0,
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioNoBouncy,
-                            stiffness = Spring.StiffnessMediumLow
+                        animationSpec = tween(
+                            durationMillis = ArworaMotionTokens.TAB_TRANSITION_DURATION_MS,
+                            easing = ArworaMotionTokens.StandardEasing
                         )
                     )
                 }
@@ -430,20 +481,21 @@ fun NameGenNavHost(
 
             HorizontalPager(
                 state = pagerState,
-                beyondViewportPageCount = 1,
+                beyondViewportPageCount = ArworaMotionTokens.MAIN_TAB_OFFSCREEN_PAGE_COUNT,
                 key = { bottomNavItems[it].route },
                 flingBehavior = PagerDefaults.flingBehavior(
                     state = pagerState,
                     pagerSnapDistance = PagerSnapDistance.atMost(1),
-                    snapPositionalThreshold = 0.35f,
-                    snapAnimationSpec = spring(
-                        dampingRatio = Spring.DampingRatioNoBouncy,
-                        stiffness = Spring.StiffnessMediumLow
+                    snapPositionalThreshold = 0.28f,
+                    snapAnimationSpec = tween(
+                        durationMillis = ArworaMotionTokens.TAB_TRANSITION_DURATION_MS,
+                        easing = ArworaMotionTokens.StandardEasing
                     )
                 ),
                 pageNestedScrollConnection = antiConflictPagerNestedScroll,
                 modifier = Modifier
                     .fillMaxSize()
+                    .graphicsLayer { compositingStrategy = CompositingStrategy.Auto }
                     .testTag("main_tab_pager")
             ) { page ->
                 when (page) {

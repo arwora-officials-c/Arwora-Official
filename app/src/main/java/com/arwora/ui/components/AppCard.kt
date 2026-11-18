@@ -1,5 +1,14 @@
 package com.arwora.ui.components
 
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.Easing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -87,6 +96,31 @@ object ArworaDesignTokens {
     @Composable
     fun cardElevationDp(): Dp =
         if (isLightTheme(MaterialTheme.colorScheme)) 1.dp else 0.dp
+}
+
+/**
+ * High-performance Material 3 Expressive motion tokens tuned for 60/120 FPS interactions.
+ * Keeps screen transitions, tab switches, and card toggles within 200ms–250ms using
+ * [FastOutSlowInEasing] so interactions feel snappy with zero spring-tail jank.
+ */
+object ArworaMotionTokens {
+    const val MAIN_TAB_OFFSCREEN_PAGE_COUNT = 3
+    const val TAB_TRANSITION_DURATION_MS = 240
+    const val SCREEN_TRANSITION_DURATION_MS = 250
+    const val CARD_TOGGLE_DURATION_MS = 220
+    const val LIST_ENTRY_DURATION_MS = 200
+    const val LIST_STAGGER_STEP_MS = 20L
+    const val MAX_LIST_STAGGER_ITEMS = 6
+
+    val StandardEasing: Easing = FastOutSlowInEasing
+
+    fun standardExpandTransition(): EnterTransition =
+        fadeIn(tween(durationMillis = CARD_TOGGLE_DURATION_MS, easing = StandardEasing)) +
+            expandVertically(tween(durationMillis = CARD_TOGGLE_DURATION_MS, easing = StandardEasing))
+
+    fun standardCollapseTransition(): ExitTransition =
+        fadeOut(tween(durationMillis = CARD_TOGGLE_DURATION_MS, easing = StandardEasing)) +
+            shrinkVertically(tween(durationMillis = CARD_TOGGLE_DURATION_MS, easing = StandardEasing))
 }
 
 /**

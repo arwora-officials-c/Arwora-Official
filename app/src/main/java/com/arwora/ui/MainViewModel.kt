@@ -279,7 +279,7 @@ class MainViewModel(
         initialValue = ""
     )
 
-    private val initialDarkMode: Boolean? = runBlocking {
+    private val initialDarkMode: Boolean? = runBlocking(kotlinx.coroutines.Dispatchers.IO) {
         try {
             settingsRepository.darkModeFlow.first()
         } catch (_: Exception) {
@@ -287,7 +287,7 @@ class MainViewModel(
         }
     }
 
-    private val initialWhiteTheme: Boolean = runBlocking {
+    private val initialWhiteTheme: Boolean = runBlocking(kotlinx.coroutines.Dispatchers.IO) {
         try {
             settingsRepository.whiteThemeFlow.first()
         } catch (_: Exception) {
@@ -295,7 +295,7 @@ class MainViewModel(
         }
     }
 
-    private val initialAnimationsEnabled: Boolean = runBlocking {
+    private val initialAnimationsEnabled: Boolean = runBlocking(kotlinx.coroutines.Dispatchers.IO) {
         try {
             settingsRepository.animationsFlow.first()
         } catch (_: Exception) {
@@ -388,7 +388,7 @@ class MainViewModel(
         initialValue = 150f
     )
 
-    private val initialUiColor: Long = runBlocking {
+    private val initialUiColor: Long = runBlocking(kotlinx.coroutines.Dispatchers.IO) {
         try {
             settingsRepository.uiColorFlow.first()
         } catch (e: Exception) {
@@ -396,7 +396,7 @@ class MainViewModel(
         }
     }
 
-    private val initialButtonColor: Long = runBlocking {
+    private val initialButtonColor: Long = runBlocking(kotlinx.coroutines.Dispatchers.IO) {
         try {
             settingsRepository.buttonColorFlow.first()
         } catch (e: Exception) {

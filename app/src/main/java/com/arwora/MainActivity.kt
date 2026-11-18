@@ -57,6 +57,15 @@ class MainActivity : ComponentActivity() {
         val viewModel = app.sharedViewModel
         val skipSplash = (intent?.action == Intent.ACTION_SEND)
 
+        val nightMask = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+        val isSystemDarkNow = nightMask == android.content.res.Configuration.UI_MODE_NIGHT_YES
+        val initialThemeConfig = com.arwora.ui.theme.ThemeManager.getThemeConfig(
+            darkModeState = viewModel.darkMode.value,
+            whiteThemeState = viewModel.whiteTheme.value,
+            isSystemDark = isSystemDarkNow
+        )
+        com.arwora.ui.theme.ThemeManager.applySystemBarsTheme(window, initialThemeConfig)
+
         handleIncomingIntent(intent, viewModel)
 
         setContent {

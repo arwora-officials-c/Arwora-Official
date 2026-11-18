@@ -41,10 +41,12 @@ object AdbPairingNotifier {
 
     const val ACTION_SUBMIT_PAIRING_CODE = "com.arwora.service.ACTION_SUBMIT_PAIRING_CODE"
     const val ACTION_RETRY_PAIRING = "com.arwora.service.ACTION_RETRY_PAIRING"
+    const val ACTION_RETRY_CONNECT = "com.arwora.service.ACTION_RETRY_CONNECT"
     const val ACTION_STOP_PAIRING = "com.arwora.service.ACTION_STOP_PAIRING"
 
     const val EXTRA_HOST = "extra_host"
     const val EXTRA_PORT = "extra_port"
+    const val EXTRA_PAIRING_PORT = "extra_pairing_port"
 
     fun hasNotificationPermission(context: Context): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
@@ -161,15 +163,20 @@ object AdbPairingNotifier {
         createChannel(context)
         val title = if (connected) "Wireless ADB Connected" else "Wireless Debugging Paired"
         val content = if (connected) {
-            detail ?: "Connected cleanly as ${NativeAdbManager.CLIENT_IDENTITY}."
+            "ADB Connected Successfully!"
         } else {
-            "Paired Successfully! Connecting ADB..."
+            "Paired! Resolving connection port..."
+        }
+        val expandedText = if (connected && !detail.isNullOrBlank()) {
+            "$content ($detail)"
+        } else {
+            content
         }
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setContentTitle(title)
             .setContentText(content)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(content))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(expandedText))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(buildOpenAppPendingIntent(context))
             .setOnlyAlertOnce(true)
@@ -180,6 +187,45 @@ object AdbPairingNotifier {
             builder.setProgress(0, 0, false).setOngoing(false).setAutoCancel(true)
         }
         return builder.build()
+    }
+
+    fun buildConnectTimeoutNotification(
+        context: Context,
+        reason: String? = null,
+        pairingPort: Int? = null
+    ): Notification {
+        createChannel(context)
+        val retryIntent = Intent(context, AdbPairingReceiver::class.java).apply {
+            action = ACTION_RETRY_CONNECT
+            if (pairingPort != null && pairingPort in 1024..65535) {
+                putExtra(EXTRA_PAIRING_PORT, pairingPort)
+            }
+        }
+        val retryPendingIntent = PendingIntent.getBroadcast(
+            context,
+            104,
+            retryIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val contentText = reason?.takeIf { it.isNotBlank() }
+            ?: "Timed out resolving Wireless Debugging connection port. Ensure Wireless Debugging is ON and tap Retry Connect."
+
+        return NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.stat_notify_error)
+            .setContentTitle("ADB Connection Timed Out")
+            .setContentText(contentText)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setOngoing(false)
+            .setAutoCancel(true)
+            .setContentIntent(buildOpenAppPendingIntent(context))
+            .addAction(
+                android.R.drawable.ic_menu_rotate,
+                "Retry Connect",
+                retryPendingIntent
+            )
+            .build()
     }
 
     fun buildFailureNotification(
@@ -279,6 +325,9 @@ class AdbPairingNotificationService : Service() {
         var isRunning: Boolean = false
             private set
 
+        @Volatile
+        private var activeInstance: AdbPairingNotificationService? = null
+
         fun start(context: Context) {
             val appCtx = context.applicationContext
             AdbPairingNotifier.createChannel(appCtx)
@@ -302,6 +351,10 @@ class AdbPairingNotificationService : Service() {
             }
         }
 
+        fun pausePairingDiscovery() {
+            activeInstance?.stopPairingMdnsDiscovery()
+        }
+
         fun stop(context: Context) {
             val appCtx = context.applicationContext
             try {
@@ -316,6 +369,7 @@ class AdbPairingNotificationService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        activeInstance = this
         isRunning = true
         NativeAdbManager.ensureClientIdentity()
         WirelessPairingManager.init(this)
@@ -363,6 +417,9 @@ class AdbPairingNotificationService : Service() {
     }
 
     override fun onDestroy() {
+        if (activeInstance === this) {
+            activeInstance = null
+        }
         isRunning = false
         stopPairingMdnsDiscovery()
         serviceJob.cancel()
@@ -398,10 +455,10 @@ class AdbPairingNotificationService : Service() {
                                     isResolving.set(false)
                                     val port = resolvedInfo?.port ?: -1
                                     if (port !in 1024..65535) return
-                                    val resolvedHost = resolvedInfo?.host?.hostAddress
-                                        ?.takeIf { it.isNotBlank() }
-                                        ?: NativeAdbManager.getLocalWifiIpAddress(this@AdbPairingNotificationService)
-                                        ?: "127.0.0.1"
+                                    val resolvedHost = NativeAdbManager.extractPreferredHostIp(
+                                        resolvedInfo = resolvedInfo,
+                                        wifiIpFallback = NativeAdbManager.getLocalWifiIpAddress(this@AdbPairingNotificationService)
+                                    )
                                     onPairingEndpointDetected(resolvedHost, port)
                                 }
                             })

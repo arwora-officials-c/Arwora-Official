@@ -1,11 +1,14 @@
 package com.arwora
 
+import com.arwora.ui.components.ArworaMotionTokens
 import com.arwora.ui.components.bottomNavItems
 import com.arwora.ui.components.computeHopPageBeforeAnimate
 import com.arwora.ui.components.indexOfMainTabRoute
 import com.arwora.ui.navigation.Screen
+import androidx.compose.animation.core.FastOutSlowInEasing
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MainTabNavigationTest {
@@ -48,5 +51,15 @@ class MainTabNavigationTest {
         // Backward distant jump pre-positions 1 page after target
         assertEquals(1, computeHopPageBeforeAnimate(currentPage = 4, targetPage = 0))
         assertEquals(2, computeHopPageBeforeAnimate(currentPage = 4, targetPage = 1))
+    }
+
+    @Test
+    fun motionTokensMaintainOffscreenLimitThreeAndSnappyFastOutSlowInTimings() {
+        assertEquals(3, ArworaMotionTokens.MAIN_TAB_OFFSCREEN_PAGE_COUNT)
+        assertEquals(FastOutSlowInEasing, ArworaMotionTokens.StandardEasing)
+        assertTrue(ArworaMotionTokens.TAB_TRANSITION_DURATION_MS in 200..300)
+        assertTrue(ArworaMotionTokens.SCREEN_TRANSITION_DURATION_MS in 200..300)
+        assertTrue(ArworaMotionTokens.CARD_TOGGLE_DURATION_MS in 200..300)
+        assertTrue(ArworaMotionTokens.LIST_ENTRY_DURATION_MS in 200..300)
     }
 }

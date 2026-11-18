@@ -248,12 +248,112 @@ object NativeAdbManager {
     }
 
     /**
+     * Post-pairing transition flow:
+     * Explicitly excludes [pairingPort], queries `_adb-tls-connect._tcp` via NsdManager (with a brief retry
+     * while adbd switches from pairing listener to wireless connect listener), connects with the saved RSA
+     * keypair as `arwora`, and verifies a real ADB shell stream before marking Active / Connected.
+     */
+    suspend fun connectAfterPairing(
+        context: Context,
+        pairingPort: Int? = null
+    ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        init(context)
+        connectMutex.withLock {
+            if (!isWifiConnected(context)) {
+                _isConnected.value = false
+                _requiresDevOptionsGuidance.value = false
+                _connectionState.value = NativeAdbConnectionState.WIFI_REQUIRED
+                val msg = "Connect to Wi-Fi first to bind Wireless ADB."
+                _statusMessage.value = msg
+                return@withLock Pair(false, msg)
+            }
+
+            _isConnected.value = false
+            _requiresDevOptionsGuidance.value = false
+            _discoveredPort.value = null
+            if (_connectedPort.value == pairingPort) {
+                _connectedPort.value = null
+            }
+            _connectionState.value = NativeAdbConnectionState.CONNECTING
+            _statusMessage.value = "Paired! Resolving connection port..."
+
+            // Give adbd a short window to publish _adb-tls-connect._tcp after pairing finishes, retrying once if needed.
+            var candidates = discoverLocalAdbEndpoints(
+                context = context,
+                excludePort = pairingPort,
+                nsdTimeoutMs = 3_000L
+            )
+            if (candidates.isEmpty()) {
+                kotlinx.coroutines.delay(350L)
+                candidates = discoverLocalAdbEndpoints(
+                    context = context,
+                    excludePort = pairingPort,
+                    nsdTimeoutMs = NSD_CONNECT_DISCOVERY_TIMEOUT_MS
+                )
+            }
+
+            if (candidates.isEmpty()) {
+                _isConnected.value = false
+                _discoveredPort.value = null
+                _connectedPort.value = null
+                _requiresDevOptionsGuidance.value = true
+                _connectionState.value = resolveConnectionState(
+                    isWifiConnected = isWifiConnected(context),
+                    isConnecting = false,
+                    isConnected = false
+                )
+                val timeoutMsg = "Timed out resolving Wireless Debugging connection port after pairing."
+                _statusMessage.value = timeoutMsg
+                return@withLock Pair(false, timeoutMsg)
+            }
+
+            val keyPair = getOrInitKeyPair(context)
+            var lastFailureDetail: String? = null
+
+            for (endpoint in candidates) {
+                if (pairingPort != null && endpoint.port == pairingPort) continue
+                _discoveredPort.value = endpoint.port
+                _connectedHost.value = endpoint.host
+                _connectedPort.value = endpoint.port
+                _statusMessage.value = "Connecting to ${endpoint.host}:${endpoint.port} as $CLIENT_IDENTITY..."
+
+                val (ok, detail) = performVerifiedHandshake(endpoint.host, endpoint.port, keyPair)
+                if (ok) {
+                    markConnected(context, endpoint.host, endpoint.port)
+                    val msg = "Active / Connected (${endpoint.host}:${endpoint.port})"
+                    _statusMessage.value = msg
+                    return@withLock Pair(true, msg)
+                }
+                lastFailureDetail = detail
+                Log.d(TAG, "Post-pairing candidate ${endpoint.host}:${endpoint.port} failed: $detail")
+            }
+
+            _isConnected.value = false
+            _discoveredPort.value = null
+            _connectedPort.value = null
+            _requiresDevOptionsGuidance.value = true
+            _connectionState.value = resolveConnectionState(
+                isWifiConnected = isWifiConnected(context),
+                isConnecting = false,
+                isConnected = false
+            )
+            val failMsg = lastFailureDetail ?: "Timed out connecting to Wireless Debugging port."
+            _statusMessage.value = ERROR_WIRELESS_DEBUGGING_OFF
+            Log.w(TAG, "Post-pairing connect failed across ${candidates.size} candidate(s): $failMsg")
+            Pair(false, ERROR_WIRELESS_DEBUGGING_OFF)
+        }
+    }
+
+    /**
      * Unified real Wireless ADB connection flow used by both top "Connect Now" and Mode 3 "Connect Now".
      * 1. Scans `_adb-tls-connect._tcp` via NsdManager for up to 4 seconds to resolve active Wi-Fi IP & dynamic TLS port.
      * 2. Opens a real TLS/ADB socket using the saved RSA keypair with client identity `"arwora"`.
      * 3. Verifies a working ADB shell stream (`echo connected && id`) BEFORE marking state Connected / Active.
      */
-    suspend fun connectWirelessAdb(context: Context): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+    suspend fun connectWirelessAdb(
+        context: Context,
+        excludePairingPort: Int? = null
+    ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
         init(context)
         connectMutex.withLock {
             if (!isWifiConnected(context)) {
@@ -271,7 +371,7 @@ object NativeAdbManager {
             _connectionState.value = NativeAdbConnectionState.CONNECTING
             _statusMessage.value = "Scanning mDNS (_adb-tls-connect._tcp) for Wireless Debugging..."
 
-            val candidates = discoverLocalAdbEndpoints(context)
+            val candidates = discoverLocalAdbEndpoints(context, excludePort = excludePairingPort)
             if (candidates.isEmpty()) {
                 _isConnected.value = false
                 _discoveredPort.value = null
@@ -321,8 +421,8 @@ object NativeAdbManager {
         }
     }
 
-    suspend fun connectAutomatically(context: Context): Pair<Boolean, String> {
-        return connectWirelessAdb(context)
+    suspend fun connectAutomatically(context: Context, excludePairingPort: Int? = null): Pair<Boolean, String> {
+        return connectWirelessAdb(context, excludePairingPort = excludePairingPort)
     }
 
     suspend fun connectToEndpoint(
@@ -420,21 +520,34 @@ object NativeAdbManager {
         result
     }
 
-    suspend fun discoverLocalAdbEndpoints(context: Context): List<NativeAdbEndpoint> = withContext(Dispatchers.IO) {
+    suspend fun discoverLocalAdbEndpoints(
+        context: Context,
+        excludePort: Int? = null,
+        nsdTimeoutMs: Long = NSD_CONNECT_DISCOVERY_TIMEOUT_MS
+    ): List<NativeAdbEndpoint> = withContext(Dispatchers.IO) {
         val endpoints = LinkedHashSet<NativeAdbEndpoint>()
         val wifiIp = getLocalWifiIpAddress(context)
 
+        fun isAllowedPort(port: Int): Boolean {
+            return port in 1024..65535 && (excludePort == null || port != excludePort)
+        }
+
         fun addForLocalHosts(port: Int) {
-            if (port !in 1024..65535) return
+            if (!isAllowedPort(port)) return
             if (!wifiIp.isNullOrBlank() && wifiIp != "127.0.0.1") {
                 endpoints.add(NativeAdbEndpoint(wifiIp, port))
             }
             endpoints.add(NativeAdbEndpoint("127.0.0.1", port))
         }
 
-        // 1. Primary: Active mDNS discovery for `_adb-tls-connect._tcp` (4-second timeout)
-        val mDnsEndpoints = discoverNsdConnectEndpoints(context, timeoutMs = NSD_CONNECT_DISCOVERY_TIMEOUT_MS)
+        // 1. Primary: Active mDNS discovery for `_adb-tls-connect._tcp`
+        val mDnsEndpoints = discoverNsdConnectEndpoints(
+            context = context,
+            timeoutMs = nsdTimeoutMs,
+            excludePort = excludePort
+        )
         mDnsEndpoints.forEach { ep ->
+            if (!isAllowedPort(ep.port)) return@forEach
             endpoints.add(ep)
             _discoveredPort.value = ep.port
             _connectedHost.value = ep.host
@@ -449,21 +562,23 @@ object NativeAdbManager {
 
         // 2. Live Wireless Debugging port from Settings.Global (Android 11+ if readable)
         getSystemWirelessDebugPort(context)?.let { port ->
-            if (_discoveredPort.value == null) _discoveredPort.value = port
-            addForLocalHosts(port)
+            if (isAllowedPort(port)) {
+                if (_discoveredPort.value == null) _discoveredPort.value = port
+                addForLocalHosts(port)
+            }
         }
 
         // 3. Previously successful ADB port cached in preferences
         val accessPrefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val cachedHost = accessPrefs.getString(KEY_LAST_HOST, null)
         val cachedPort = accessPrefs.getInt(KEY_LAST_PORT, -1)
-        if (!cachedHost.isNullOrBlank() && cachedPort in 1024..65535) {
+        if (!cachedHost.isNullOrBlank() && isAllowedPort(cachedPort)) {
             endpoints.add(NativeAdbEndpoint(cachedHost, cachedPort))
         }
 
         // 4. Ephemeral Wireless Debugging listening sockets from /proc/net/tcp (ports >= 30000)
         readProcTcpListeningPorts().forEach { port ->
-            if (port >= 30000) {
+            if (port >= 30000 && isAllowedPort(port)) {
                 addForLocalHosts(port)
             }
         }
@@ -473,10 +588,13 @@ object NativeAdbManager {
 
     private suspend fun discoverNsdConnectEndpoints(
         context: Context,
-        timeoutMs: Long
+        timeoutMs: Long,
+        excludePort: Int? = null
     ): List<NativeAdbEndpoint> {
         nsdConnectResolverOverride?.let { overrideFn ->
-            return overrideFn(context, timeoutMs)
+            return overrideFn(context, timeoutMs).filter { ep ->
+                ep.port in 1024..65535 && (excludePort == null || ep.port != excludePort)
+            }
         }
 
         val nsdManager = context.getSystemService(Context.NSD_SERVICE) as? NsdManager
@@ -505,7 +623,7 @@ object NativeAdbManager {
                         override fun onServiceResolved(resolvedInfo: NsdServiceInfo?) {
                             resolvingInFlight.set(false)
                             val port = resolvedInfo?.port ?: -1
-                            if (port !in 1024..65535) return
+                            if (port !in 1024..65535 || (excludePort != null && port == excludePort)) return
 
                             val host = extractPreferredHostIp(resolvedInfo, wifiIpFallback)
                             _discoveredPort.value = port
@@ -548,7 +666,7 @@ object NativeAdbManager {
     }
 
     @Suppress("DEPRECATION")
-    private fun extractPreferredHostIp(resolvedInfo: NsdServiceInfo?, wifiIpFallback: String?): String {
+    internal fun extractPreferredHostIp(resolvedInfo: NsdServiceInfo?, wifiIpFallback: String?): String {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             val ipv4 = resolvedInfo?.hostAddresses?.firstOrNull { addr ->
                 addr is Inet4Address && !addr.isLoopbackAddress

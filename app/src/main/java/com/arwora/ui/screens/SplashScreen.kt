@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import com.arwora.ui.components.AppLogo
+import com.arwora.ui.theme.BackgroundDark
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -138,7 +139,7 @@ fun SplashScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF000000))
+            .background(BackgroundDark)
             .systemBarsPadding()
             .testTag("splash_screen_root")
             .clickable(

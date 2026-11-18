@@ -3,25 +3,29 @@ package com.arwora.service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.provider.Settings
 import androidx.core.app.RemoteInput
+import com.arwora.MainActivity
 import com.arwora.utils.NativeAdbManager
 import com.arwora.utils.WirelessPairingManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
  * BroadcastReceiver that intercepts Direct Reply ([RemoteInput]) submissions containing
  * the 6-digit Wireless Debugging pairing code from [AdbPairingNotifier], executes the
  * native ADB pairing handshake asynchronously on [Dispatchers.IO] with client identity
- * strictly set to `arwora`, updates notification progress/result states, and triggers the
- * native wireless ADB connection (`_adb-tls-connect._tcp`) upon pairing success.
+ * strictly set to `arwora`, resolves the separate `_adb-tls-connect._tcp` connection port
+ * via `NsdManager`, and opens an active TLS ADB connection without reusing the pairing port.
  */
 class AdbPairingReceiver : BroadcastReceiver() {
 
     companion object {
         private val DIGIT_RUN_REGEX = Regex("\\d{6}")
+        internal var successCancelDelayMs: Long = 1_500L
 
         internal fun extractSixDigitReplyCode(rawInput: CharSequence?): String? {
             if (rawInput.isNullOrBlank()) return null
@@ -62,6 +66,22 @@ class AdbPairingReceiver : BroadcastReceiver() {
                 return
             }
 
+            AdbPairingNotifier.ACTION_RETRY_CONNECT -> {
+                val pairingPort = intent.getIntExtra(AdbPairingNotifier.EXTRA_PAIRING_PORT, -1)
+                    .takeIf { it in 1024..65535 }
+                    ?: WirelessPairingManager.lastPairingPort
+
+                val pendingResult = goAsync()
+                CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+                    try {
+                        resolveAndConnectAfterPairing(appContext, pairingPort)
+                    } finally {
+                        pendingResult.finish()
+                    }
+                }
+                return
+            }
+
             AdbPairingNotifier.ACTION_SUBMIT_PAIRING_CODE -> {
                 val remoteInput = RemoteInput.getResultsFromIntent(intent)
                 val rawCode = remoteInput?.getCharSequence(AdbPairingNotifier.KEY_PAIRING_CODE)
@@ -88,6 +108,7 @@ class AdbPairingReceiver : BroadcastReceiver() {
                         NativeAdbManager.ensureClientIdentity()
                         WirelessPairingManager.init(appContext)
 
+                        // Step 1: Pairing with arwora...
                         AdbPairingNotifier.notifySafely(
                             appContext,
                             AdbPairingNotifier.buildPairingProgressNotification(appContext)
@@ -101,33 +122,9 @@ class AdbPairingReceiver : BroadcastReceiver() {
                         )
 
                         if (paired) {
-                            AdbPairingNotifier.notifySafely(
-                                appContext,
-                                AdbPairingNotifier.buildSuccessConnectingNotification(
-                                    context = appContext,
-                                    connected = false
-                                )
-                            )
-
-                            val (connected, connectDetail) = NativeAdbManager.connectAutomatically(appContext)
-                            AdbPairingNotifier.notifySafely(
-                                appContext,
-                                AdbPairingNotifier.buildSuccessConnectingNotification(
-                                    context = appContext,
-                                    connected = true,
-                                    detail = if (connected) {
-                                        "Paired & connected as ${NativeAdbManager.CLIENT_IDENTITY} ($connectDetail)"
-                                    } else {
-                                        "Paired Successfully! $connectDetail"
-                                    }
-                                )
-                            )
-                            try {
-                                appContext.stopService(
-                                    Intent(appContext, AdbPairingNotificationService::class.java)
-                                )
-                            } catch (_: Exception) {
-                            }
+                            AdbPairingNotificationService.pausePairingDiscovery()
+                            val usedPairingPort = extraPort ?: WirelessPairingManager.lastPairingPort
+                            resolveAndConnectAfterPairing(appContext, usedPairingPort)
                         } else {
                             AdbPairingNotifier.notifySafely(
                                 appContext,
@@ -142,6 +139,85 @@ class AdbPairingReceiver : BroadcastReceiver() {
                     }
                 }
             }
+        }
+    }
+
+    internal suspend fun resolveAndConnectAfterPairing(
+        appContext: Context,
+        pairingPort: Int?
+    ): Boolean {
+        NativeAdbManager.ensureClientIdentity()
+        WirelessPairingManager.init(appContext)
+
+        // Step 2: Paired! Resolving connection port...
+        AdbPairingNotifier.notifySafely(
+            appContext,
+            AdbPairingNotifier.buildSuccessConnectingNotification(
+                context = appContext,
+                connected = false
+            )
+        )
+
+        val (connected, connectDetail) = NativeAdbManager.connectAfterPairing(
+            context = appContext,
+            pairingPort = pairingPort
+        )
+        val connectedHost = NativeAdbManager.connectedHost.value
+        val connectedPort = NativeAdbManager.connectedPort.value
+
+        WirelessPairingManager.markNotificationConnectResult(
+            context = appContext,
+            connected = connected,
+            host = connectedHost,
+            port = connectedPort,
+            detail = connectDetail
+        )
+
+        if (connected && NativeAdbManager.isAdbReady()) {
+            // Step 3: ADB Connected Successfully!
+            AdbPairingNotifier.notifySafely(
+                appContext,
+                AdbPairingNotifier.buildSuccessConnectingNotification(
+                    context = appContext,
+                    connected = true,
+                    detail = "$connectedHost:$connectedPort"
+                )
+            )
+            if (successCancelDelayMs > 0L) {
+                delay(successCancelDelayMs)
+            }
+            AdbPairingNotificationService.stop(appContext)
+            AdbPairingNotifier.cancelNotification(appContext)
+
+            // Safely bring app to foreground if overlay/foreground permission allows;
+            // UI status badge already updates reactively to green "Active / Connected".
+            runCatching {
+                if (Settings.canDrawOverlays(appContext)) {
+                    val launchIntent = Intent(appContext, MainActivity::class.java).apply {
+                        addFlags(
+                            Intent.FLAG_ACTIVITY_NEW_TASK or
+                                Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                                Intent.FLAG_ACTIVITY_CLEAR_TOP
+                        )
+                    }
+                    appContext.startActivity(launchIntent)
+                }
+            }
+            return true
+        } else {
+            // Stop foreground pairing service cleanly without dismissing the Retry Connect notification
+            runCatching {
+                appContext.stopService(Intent(appContext, AdbPairingNotificationService::class.java))
+            }
+            AdbPairingNotifier.notifySafely(
+                appContext,
+                AdbPairingNotifier.buildConnectTimeoutNotification(
+                    context = appContext,
+                    reason = connectDetail,
+                    pairingPort = pairingPort
+                )
+            )
+            return false
         }
     }
 }

@@ -439,29 +439,38 @@ fun StandardContainerCard(
 
 
 /**
- * A wrapper for list items that adds a subtle spring-based slide and fade animation on entry.
+ * A wrapper for list items that adds a snappy, hardware-friendly 200ms FastOutSlowInEasing
+ * entry animation without replaying needlessly when switching cached tabs.
  */
 @Composable
 fun AnimatedListItem(
     index: Int = 0,
     content: @Composable () -> Unit
 ) {
-    var visible by remember { mutableStateOf(false) }
+    var visible by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        // Slight delay based on index to create a staggered effect
-        kotlinx.coroutines.delay(index * 35L)
-        visible = true
+        if (!visible) {
+            val staggerMs = index.coerceIn(0, com.arwora.ui.components.ArworaMotionTokens.MAX_LIST_STAGGER_ITEMS) *
+                com.arwora.ui.components.ArworaMotionTokens.LIST_STAGGER_STEP_MS
+            if (staggerMs > 0L) {
+                kotlinx.coroutines.delay(staggerMs)
+            }
+            visible = true
+        }
     }
     AnimatedVisibility(
         visible = visible,
         enter = slideInVertically(
-            initialOffsetY = { 35 },
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioLowBouncy,
-                stiffness = Spring.StiffnessLow
+            initialOffsetY = { 24 },
+            animationSpec = tween(
+                durationMillis = com.arwora.ui.components.ArworaMotionTokens.LIST_ENTRY_DURATION_MS,
+                easing = com.arwora.ui.components.ArworaMotionTokens.StandardEasing
             )
         ) + fadeIn(
-            animationSpec = spring(stiffness = Spring.StiffnessLow)
+            animationSpec = tween(
+                durationMillis = com.arwora.ui.components.ArworaMotionTokens.LIST_ENTRY_DURATION_MS,
+                easing = com.arwora.ui.components.ArworaMotionTokens.StandardEasing
+            )
         ),
         content = { content() }
     )

@@ -714,8 +714,8 @@ private fun AutomaticWizardPairingCard(
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         AnimatedVisibility(
             visible = !hasNotificationAccess,
-            enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically()
+            enter = ArworaMotionTokens.standardExpandTransition(),
+            exit = ArworaMotionTokens.standardCollapseTransition()
         ) {
             Card(
                 modifier = Modifier

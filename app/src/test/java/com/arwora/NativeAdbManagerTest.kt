@@ -211,49 +211,70 @@ class NativeAdbManagerTest {
         var receivedShellService: String? = null
 
         val serverThread = thread(start = true) {
-            server.accept().use { client ->
-                val input = client.getInputStream()
-                val output = client.getOutputStream()
+            while (!server.isClosed) {
+                val client = try {
+                    server.accept()
+                } catch (_: Exception) {
+                    break
+                }
+                var handled = false
+                try {
+                    client.use { socket ->
+                        val rawInput = socket.getInputStream()
+                        val pushback = java.io.PushbackInputStream(rawInput, 4)
+                        val firstByte = pushback.read()
+                        if (firstByte == -1 || firstByte == 0x16) {
+                            // TLS ClientHello probe; let NativeAdbManager fall back to plain TCP
+                            return@use
+                        }
+                        pushback.unread(firstByte)
+                        val output = socket.getOutputStream()
 
-                val cnxn = NativeAdbProtocol.readPacket(input)
-                assertEquals(NativeAdbProtocol.A_CNXN, cnxn.command)
+                        val cnxn = NativeAdbProtocol.readPacket(pushback)
+                        assertEquals(NativeAdbProtocol.A_CNXN, cnxn.command)
 
-                // Request signature first, then RSA public key, then approve A_CNXN
-                val token = ByteArray(20) { 0x42 }
-                NativeAdbProtocol.writePacket(output, NativeAdbProtocol.A_AUTH, NativeAdbProtocol.AUTH_TOKEN, 0, token)
-                val sigPkt = NativeAdbProtocol.readPacket(input)
-                assertEquals(NativeAdbProtocol.A_AUTH, sigPkt.command)
+                        // Request signature first, then RSA public key, then approve A_CNXN
+                        val token = ByteArray(20) { 0x42 }
+                        NativeAdbProtocol.writePacket(output, NativeAdbProtocol.A_AUTH, NativeAdbProtocol.AUTH_TOKEN, 0, token)
+                        val sigPkt = NativeAdbProtocol.readPacket(pushback)
+                        assertEquals(NativeAdbProtocol.A_AUTH, sigPkt.command)
 
-                NativeAdbProtocol.writePacket(output, NativeAdbProtocol.A_AUTH, NativeAdbProtocol.AUTH_TOKEN, 0, token)
-                val pubPkt = NativeAdbProtocol.readPacket(input)
-                assertEquals(NativeAdbProtocol.A_AUTH, pubPkt.command)
-                receivedPubComment = String(pubPkt.data, Charsets.UTF_8)
+                        NativeAdbProtocol.writePacket(output, NativeAdbProtocol.A_AUTH, NativeAdbProtocol.AUTH_TOKEN, 0, token)
+                        val pubPkt = NativeAdbProtocol.readPacket(pushback)
+                        assertEquals(NativeAdbProtocol.A_AUTH, pubPkt.command)
+                        receivedPubComment = String(pubPkt.data, Charsets.UTF_8)
 
-                NativeAdbProtocol.writePacket(
-                    output,
-                    NativeAdbProtocol.A_CNXN,
-                    NativeAdbProtocol.A_VERSION,
-                    NativeAdbProtocol.MAX_PAYLOAD,
-                    "device::\u0000".toByteArray(Charsets.UTF_8)
-                )
+                        NativeAdbProtocol.writePacket(
+                            output,
+                            NativeAdbProtocol.A_CNXN,
+                            NativeAdbProtocol.A_VERSION,
+                            NativeAdbProtocol.MAX_PAYLOAD,
+                            "device::\u0000".toByteArray(Charsets.UTF_8)
+                        )
 
-                val openPkt = NativeAdbProtocol.readPacket(input)
-                assertEquals(NativeAdbProtocol.A_OPEN, openPkt.command)
-                receivedShellService = String(openPkt.data, Charsets.UTF_8)
-                val remoteId = 77
-                val localId = openPkt.arg0
+                        val openPkt = NativeAdbProtocol.readPacket(pushback)
+                        assertEquals(NativeAdbProtocol.A_OPEN, openPkt.command)
+                        receivedShellService = String(openPkt.data, Charsets.UTF_8)
+                        val remoteId = 77
+                        val localId = openPkt.arg0
 
-                NativeAdbProtocol.writePacket(output, NativeAdbProtocol.A_OKAY, remoteId, localId)
-                NativeAdbProtocol.writePacket(
-                    output,
-                    NativeAdbProtocol.A_WRTE,
-                    remoteId,
-                    localId,
-                    "connected\nuid=2000(shell)\n".toByteArray(Charsets.UTF_8)
-                )
-                val clientOkay = NativeAdbProtocol.readPacket(input)
-                assertEquals(NativeAdbProtocol.A_OKAY, clientOkay.command)
-                NativeAdbProtocol.writePacket(output, NativeAdbProtocol.A_CLSE, remoteId, localId)
+                        NativeAdbProtocol.writePacket(output, NativeAdbProtocol.A_OKAY, remoteId, localId)
+                        NativeAdbProtocol.writePacket(
+                            output,
+                            NativeAdbProtocol.A_WRTE,
+                            remoteId,
+                            localId,
+                            "connected\nuid=2000(shell)\n".toByteArray(Charsets.UTF_8)
+                        )
+                        val clientOkay = NativeAdbProtocol.readPacket(pushback)
+                        assertEquals(NativeAdbProtocol.A_OKAY, clientOkay.command)
+                        NativeAdbProtocol.writePacket(output, NativeAdbProtocol.A_CLSE, remoteId, localId)
+                        handled = true
+                    }
+                } catch (_: Exception) {
+                    if (!handled) continue
+                }
+                if (handled) break
             }
         }
 
@@ -329,30 +350,49 @@ class NativeAdbManagerTest {
 
         val server = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
         val serverThread = thread(start = true) {
-            server.accept().use { client ->
-                val input = client.getInputStream()
-                val output = client.getOutputStream()
-                NativeAdbProtocol.readPacket(input) // A_CNXN
-                NativeAdbProtocol.writePacket(
-                    output,
-                    NativeAdbProtocol.A_CNXN,
-                    NativeAdbProtocol.A_VERSION,
-                    NativeAdbProtocol.MAX_PAYLOAD,
-                    "device::\u0000".toByteArray(Charsets.UTF_8)
-                )
-                val openPkt = NativeAdbProtocol.readPacket(input) // A_OPEN
-                val remoteId = 99
-                val localId = openPkt.arg0
-                NativeAdbProtocol.writePacket(output, NativeAdbProtocol.A_OKAY, remoteId, localId)
-                NativeAdbProtocol.writePacket(
-                    output,
-                    NativeAdbProtocol.A_WRTE,
-                    remoteId,
-                    localId,
-                    "connected\nuid=2000(shell)\n".toByteArray(Charsets.UTF_8)
-                )
-                NativeAdbProtocol.readPacket(input) // A_OKAY
-                NativeAdbProtocol.writePacket(output, NativeAdbProtocol.A_CLSE, remoteId, localId)
+            while (!server.isClosed) {
+                val client = try {
+                    server.accept()
+                } catch (_: Exception) {
+                    break
+                }
+                var handled = false
+                try {
+                    client.use { socket ->
+                        val pushback = java.io.PushbackInputStream(socket.getInputStream(), 4)
+                        val firstByte = pushback.read()
+                        if (firstByte == -1 || firstByte == 0x16) {
+                            return@use
+                        }
+                        pushback.unread(firstByte)
+                        val output = socket.getOutputStream()
+                        NativeAdbProtocol.readPacket(pushback) // A_CNXN
+                        NativeAdbProtocol.writePacket(
+                            output,
+                            NativeAdbProtocol.A_CNXN,
+                            NativeAdbProtocol.A_VERSION,
+                            NativeAdbProtocol.MAX_PAYLOAD,
+                            "device::\u0000".toByteArray(Charsets.UTF_8)
+                        )
+                        val openPkt = NativeAdbProtocol.readPacket(pushback) // A_OPEN
+                        val remoteId = 99
+                        val localId = openPkt.arg0
+                        NativeAdbProtocol.writePacket(output, NativeAdbProtocol.A_OKAY, remoteId, localId)
+                        NativeAdbProtocol.writePacket(
+                            output,
+                            NativeAdbProtocol.A_WRTE,
+                            remoteId,
+                            localId,
+                            "connected\nuid=2000(shell)\n".toByteArray(Charsets.UTF_8)
+                        )
+                        NativeAdbProtocol.readPacket(pushback) // A_OKAY
+                        NativeAdbProtocol.writePacket(output, NativeAdbProtocol.A_CLSE, remoteId, localId)
+                        handled = true
+                    }
+                } catch (_: Exception) {
+                    if (!handled) continue
+                }
+                if (handled) break
             }
         }
 

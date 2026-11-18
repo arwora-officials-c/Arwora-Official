@@ -63,8 +63,30 @@ fun InlineDropdownMenu(
 ) {
     AnimatedVisibility(
         visible = expanded,
-        enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-        exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+        enter = fadeIn(
+            androidx.compose.animation.core.tween(
+                durationMillis = ArworaMotionTokens.CARD_TOGGLE_DURATION_MS,
+                easing = ArworaMotionTokens.StandardEasing
+            )
+        ) + expandVertically(
+            expandFrom = Alignment.Top,
+            animationSpec = androidx.compose.animation.core.tween(
+                durationMillis = ArworaMotionTokens.CARD_TOGGLE_DURATION_MS,
+                easing = ArworaMotionTokens.StandardEasing
+            )
+        ),
+        exit = fadeOut(
+            androidx.compose.animation.core.tween(
+                durationMillis = ArworaMotionTokens.CARD_TOGGLE_DURATION_MS,
+                easing = ArworaMotionTokens.StandardEasing
+            )
+        ) + shrinkVertically(
+            shrinkTowards = Alignment.Top,
+            animationSpec = androidx.compose.animation.core.tween(
+                durationMillis = ArworaMotionTokens.CARD_TOGGLE_DURATION_MS,
+                easing = ArworaMotionTokens.StandardEasing
+            )
+        ),
         modifier = modifier.zeroSize().zIndex(100f)
     ) {
         Card(

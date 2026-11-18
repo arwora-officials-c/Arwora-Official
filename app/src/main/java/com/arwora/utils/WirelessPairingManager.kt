@@ -138,6 +138,10 @@ object WirelessPairingManager {
     private var pairingJob: Job? = null
     private var lastWifiAttemptTimestampMs: Long = 0L
 
+    @Volatile
+    var lastPairingPort: Int? = null
+        private set
+
     private suspend fun updateUiState(block: () -> Unit) {
         try {
             withContext(Dispatchers.Main.immediate) {
@@ -166,8 +170,11 @@ object WirelessPairingManager {
                 _savedConnectPort.value = savedConnect
             }
             val savedPairing = prefs.getInt(KEY_SAVED_PAIRING_PORT, -1)
-            if (savedPairing in 1024..65535 && _discoveredPort.value == null) {
-                _discoveredPort.value = savedPairing
+            if (savedPairing in 1024..65535) {
+                lastPairingPort = savedPairing
+                if (_discoveredPort.value == null) {
+                    _discoveredPort.value = savedPairing
+                }
             }
             val cachedCode = prefs.getString(KEY_LATEST_CODE, null)
             if (!cachedCode.isNullOrBlank() && _lastCapturedCode.value == null) {
@@ -716,6 +723,7 @@ object WirelessPairingManager {
 
         _savedHost.value = cleanHost
         _discoveredPort.value = port
+        lastPairingPort = port
         _lastCapturedCode.value = cleanCode
         try {
             appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
@@ -731,20 +739,20 @@ object WirelessPairingManager {
             try {
                 // 1. Internal IAdbManager reflection (Android 11+)
                 if (tryPairViaIAdbManager(cleanCode)) {
-                    onPairingSuccess(appContext, STAGE_CONNECTED)
+                    onPairingSuccess(appContext, STAGE_CONNECTED, pairingPort = port)
                     return@launch
                 }
 
                 // 2. Direct TLS socket handshake with explicit timeout & exception reporting
                 val socketResult = trySocketPairing(cleanHost, port, cleanCode)
                 if (socketResult.success) {
-                    onPairingSuccess(appContext, STAGE_CONNECTED)
+                    onPairingSuccess(appContext, STAGE_CONNECTED, pairingPort = port)
                     return@launch
                 }
 
                 // 3. Shell CLI fallback (adb pair host:port code)
                 if (tryShellPairing(cleanHost, port, cleanCode)) {
-                    onPairingSuccess(appContext, STAGE_CONNECTED)
+                    onPairingSuccess(appContext, STAGE_CONNECTED, pairingPort = port)
                     return@launch
                 }
 
@@ -770,13 +778,24 @@ object WirelessPairingManager {
         }
     }
 
-    private suspend fun onPairingSuccess(context: Context, customMessage: String = STAGE_CONNECTED) {
+    private suspend fun onPairingSuccess(
+        context: Context,
+        customMessage: String = STAGE_CONNECTED,
+        pairingPort: Int? = lastPairingPort
+    ) {
         stopListening()
+        updateUiState {
+            _status.value = PairingStatus.PairingInProgress(
+                port = pairingPort ?: 0,
+                host = _savedHost.value.ifBlank { "127.0.0.1" },
+                stageMessage = "Paired! Resolving connection port..."
+            )
+        }
         val (connected, connectMsg) = withContext(Dispatchers.IO) {
             if (NativeAdbManager.isAdbReady()) {
                 Pair(true, customMessage)
             } else {
-                NativeAdbManager.connectWirelessAdb(context)
+                NativeAdbManager.connectAfterPairing(context, pairingPort = pairingPort)
             }
         }
         updateUiState {
@@ -849,6 +868,8 @@ object WirelessPairingManager {
 
         _savedHost.value = resolvedHost
         _discoveredPort.value = resolvedPort
+        lastPairingPort = resolvedPort
+        persistPort(appContext, KEY_SAVED_PAIRING_PORT, resolvedPort)
         _lastCapturedCode.value = cleanCode
         updateUiState {
             _status.value = PairingStatus.PairingInProgress(
@@ -860,18 +881,36 @@ object WirelessPairingManager {
 
         try {
             if (tryPairViaIAdbManager(cleanCode)) {
-                updateUiState { _status.value = PairingStatus.Success("Paired Successfully! Connecting ADB...") }
+                updateUiState {
+                    _status.value = PairingStatus.PairingInProgress(
+                        port = resolvedPort,
+                        host = resolvedHost,
+                        stageMessage = "Paired! Resolving connection port..."
+                    )
+                }
                 return@withContext Pair(true, "Paired via system ADB manager")
             }
 
             val socketResult = trySocketPairing(resolvedHost, resolvedPort, cleanCode)
             if (socketResult.success) {
-                updateUiState { _status.value = PairingStatus.Success("Paired Successfully! Connecting ADB...") }
+                updateUiState {
+                    _status.value = PairingStatus.PairingInProgress(
+                        port = resolvedPort,
+                        host = resolvedHost,
+                        stageMessage = "Paired! Resolving connection port..."
+                    )
+                }
                 return@withContext Pair(true, "Paired via TLS socket ($resolvedHost:$resolvedPort)")
             }
 
             if (tryShellPairing(resolvedHost, resolvedPort, cleanCode)) {
-                updateUiState { _status.value = PairingStatus.Success("Paired Successfully! Connecting ADB...") }
+                updateUiState {
+                    _status.value = PairingStatus.PairingInProgress(
+                        port = resolvedPort,
+                        host = resolvedHost,
+                        stageMessage = "Paired! Resolving connection port..."
+                    )
+                }
                 return@withContext Pair(true, "Paired via adb pair ($resolvedHost:$resolvedPort)")
             }
 
@@ -888,6 +927,27 @@ object WirelessPairingManager {
                 _status.value = PairingStatus.Failed(msg, canFallbackToManual = true)
             }
             Pair(false, msg)
+        }
+    }
+
+    suspend fun markNotificationConnectResult(
+        context: Context,
+        connected: Boolean,
+        host: String?,
+        port: Int?,
+        detail: String
+    ) {
+        if (connected && !host.isNullOrBlank() && port != null && port in 1024..65535) {
+            saveTargetInfo(context.applicationContext, host, port)
+        }
+        updateUiState {
+            if (connected && NativeAdbManager.isAdbReady()) {
+                _status.value = PairingStatus.Success("ADB Connected Successfully!")
+                _lastWifiEventSummary.value = "ADB Connected Successfully! ($detail)"
+            } else {
+                _status.value = PairingStatus.Failed(detail, canFallbackToManual = true)
+                _lastWifiEventSummary.value = detail
+            }
         }
     }
 

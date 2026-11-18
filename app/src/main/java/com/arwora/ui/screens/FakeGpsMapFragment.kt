@@ -22,6 +22,8 @@ class FakeGpsMapFragment : Fragment() {
         savedInstanceState: Bundle?
     ): View {
         return ComposeView(requireContext()).apply {
+            setLayerType(View.LAYER_TYPE_HARDWARE, null)
+            overScrollMode = View.OVER_SCROLL_NEVER
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
                 NameGenProTheme {
