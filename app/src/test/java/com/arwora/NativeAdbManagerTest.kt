@@ -1,6 +1,8 @@
 package com.arwora
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -15,25 +17,34 @@ import androidx.test.core.app.ApplicationProvider
 import com.arwora.ui.components.WirelessPairingWizard
 import com.arwora.ui.theme.NameGenProTheme
 import com.arwora.utils.NativeAdbConnectionState
+import com.arwora.utils.NativeAdbEndpoint
 import com.arwora.utils.NativeAdbManager
 import com.arwora.utils.NativeAdbProtocol
+import com.arwora.utils.PairingStatus
 import com.arwora.utils.WirelessPairingManager
 import com.arwora.utils.WirelessPairingMode
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowNetworkCapabilities
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.net.InetAddress
+import java.net.ServerSocket
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.security.Signature
 import java.security.interfaces.RSAPublicKey
+import kotlin.concurrent.thread
 import kotlin.io.path.createTempDirectory
 
 @RunWith(RobolectricTestRunner::class)
@@ -46,6 +57,7 @@ class NativeAdbManagerTest {
     @After
     fun tearDown() {
         val context = ApplicationProvider.getApplicationContext<Context>()
+        NativeAdbManager.nsdConnectResolverOverride = null
         WirelessPairingManager.selectPairingMode(context, WirelessPairingMode.NOTIFICATION_MANUAL)
         NativeAdbManager.disconnect(userInitiated = false)
     }
@@ -189,5 +201,211 @@ class NativeAdbManagerTest {
         composeTestRule.onNodeWithText("ADB Port (Opt.)").assertDoesNotExist()
         composeTestRule.onNodeWithText("Save & Trigger Check").assertDoesNotExist()
         composeTestRule.onNodeWithTag("hero_shizuku_status_chip").assertDoesNotExist()
+    }
+
+    @Test
+    fun `verified handshake requires shell echo stream and uses arwora client identity`() {
+        val tempDir = createTempDirectory("adb_handshake_test").toFile()
+        val server = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
+        var receivedPubComment: String? = null
+        var receivedShellService: String? = null
+
+        val serverThread = thread(start = true) {
+            server.accept().use { client ->
+                val input = client.getInputStream()
+                val output = client.getOutputStream()
+
+                val cnxn = NativeAdbProtocol.readPacket(input)
+                assertEquals(NativeAdbProtocol.A_CNXN, cnxn.command)
+
+                // Request signature first, then RSA public key, then approve A_CNXN
+                val token = ByteArray(20) { 0x42 }
+                NativeAdbProtocol.writePacket(output, NativeAdbProtocol.A_AUTH, NativeAdbProtocol.AUTH_TOKEN, 0, token)
+                val sigPkt = NativeAdbProtocol.readPacket(input)
+                assertEquals(NativeAdbProtocol.A_AUTH, sigPkt.command)
+
+                NativeAdbProtocol.writePacket(output, NativeAdbProtocol.A_AUTH, NativeAdbProtocol.AUTH_TOKEN, 0, token)
+                val pubPkt = NativeAdbProtocol.readPacket(input)
+                assertEquals(NativeAdbProtocol.A_AUTH, pubPkt.command)
+                receivedPubComment = String(pubPkt.data, Charsets.UTF_8)
+
+                NativeAdbProtocol.writePacket(
+                    output,
+                    NativeAdbProtocol.A_CNXN,
+                    NativeAdbProtocol.A_VERSION,
+                    NativeAdbProtocol.MAX_PAYLOAD,
+                    "device::\u0000".toByteArray(Charsets.UTF_8)
+                )
+
+                val openPkt = NativeAdbProtocol.readPacket(input)
+                assertEquals(NativeAdbProtocol.A_OPEN, openPkt.command)
+                receivedShellService = String(openPkt.data, Charsets.UTF_8)
+                val remoteId = 77
+                val localId = openPkt.arg0
+
+                NativeAdbProtocol.writePacket(output, NativeAdbProtocol.A_OKAY, remoteId, localId)
+                NativeAdbProtocol.writePacket(
+                    output,
+                    NativeAdbProtocol.A_WRTE,
+                    remoteId,
+                    localId,
+                    "connected\nuid=2000(shell)\n".toByteArray(Charsets.UTF_8)
+                )
+                val clientOkay = NativeAdbProtocol.readPacket(input)
+                assertEquals(NativeAdbProtocol.A_OKAY, clientOkay.command)
+                NativeAdbProtocol.writePacket(output, NativeAdbProtocol.A_CLSE, remoteId, localId)
+            }
+        }
+
+        try {
+            val keyPair = NativeAdbProtocol.loadOrCreateKeyPair(tempDir)
+            val (ok, detail) = NativeAdbManager.performVerifiedHandshake("127.0.0.1", server.localPort, keyPair)
+            serverThread.join(3_000)
+
+            assertTrue("Expected handshake to succeed but got: $detail", ok)
+            assertTrue(receivedPubComment?.endsWith(" arwora\u0000") == true)
+            assertFalse(receivedPubComment?.contains("@android") == true)
+            assertEquals("shell:echo connected && id\u0000", receivedShellService)
+        } finally {
+            server.close()
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `verified handshake fails when adb closes shell stream without A_OKAY`() {
+        val tempDir = createTempDirectory("adb_reject_test").toFile()
+        val server = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
+        val serverThread = thread(start = true) {
+            server.accept().use { client ->
+                val input = client.getInputStream()
+                val output = client.getOutputStream()
+                NativeAdbProtocol.readPacket(input) // A_CNXN
+                NativeAdbProtocol.writePacket(
+                    output,
+                    NativeAdbProtocol.A_CNXN,
+                    NativeAdbProtocol.A_VERSION,
+                    NativeAdbProtocol.MAX_PAYLOAD,
+                    "device::\u0000".toByteArray(Charsets.UTF_8)
+                )
+                val openPkt = NativeAdbProtocol.readPacket(input) // A_OPEN
+                NativeAdbProtocol.writePacket(output, NativeAdbProtocol.A_CLSE, 0, openPkt.arg0)
+            }
+        }
+
+        try {
+            val keyPair = NativeAdbProtocol.loadOrCreateKeyPair(tempDir)
+            val (ok, _) = NativeAdbManager.performVerifiedHandshake("127.0.0.1", server.localPort, keyPair)
+            serverThread.join(3_000)
+            assertFalse(ok)
+            assertFalse(NativeAdbManager.isAdbReady())
+        } finally {
+            server.close()
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `unified wireless adb connect fails loudly without fake success when mdns returns empty`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        simulateWifiTransport(context)
+        NativeAdbManager.nsdConnectResolverOverride = { _, _ -> emptyList() }
+
+        val (ok, msg) = runBlocking {
+            WirelessPairingManager.connectUnifiedWirelessAdb(context)
+        }
+
+        assertFalse(ok)
+        assertEquals(NativeAdbManager.ERROR_WIRELESS_DEBUGGING_OFF, msg)
+        assertFalse(NativeAdbManager.isConnected.value)
+        assertTrue(NativeAdbManager.requiresDevOptionsGuidance.value)
+        assertTrue(WirelessPairingManager.status.value is PairingStatus.Failed)
+    }
+
+    @Test
+    fun `unified wireless adb connect discovers port verifies shell and flips connected state`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        simulateWifiTransport(context)
+
+        val server = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
+        val serverThread = thread(start = true) {
+            server.accept().use { client ->
+                val input = client.getInputStream()
+                val output = client.getOutputStream()
+                NativeAdbProtocol.readPacket(input) // A_CNXN
+                NativeAdbProtocol.writePacket(
+                    output,
+                    NativeAdbProtocol.A_CNXN,
+                    NativeAdbProtocol.A_VERSION,
+                    NativeAdbProtocol.MAX_PAYLOAD,
+                    "device::\u0000".toByteArray(Charsets.UTF_8)
+                )
+                val openPkt = NativeAdbProtocol.readPacket(input) // A_OPEN
+                val remoteId = 99
+                val localId = openPkt.arg0
+                NativeAdbProtocol.writePacket(output, NativeAdbProtocol.A_OKAY, remoteId, localId)
+                NativeAdbProtocol.writePacket(
+                    output,
+                    NativeAdbProtocol.A_WRTE,
+                    remoteId,
+                    localId,
+                    "connected\nuid=2000(shell)\n".toByteArray(Charsets.UTF_8)
+                )
+                NativeAdbProtocol.readPacket(input) // A_OKAY
+                NativeAdbProtocol.writePacket(output, NativeAdbProtocol.A_CLSE, remoteId, localId)
+            }
+        }
+
+        try {
+            NativeAdbManager.nsdConnectResolverOverride = { _, _ ->
+                listOf(NativeAdbEndpoint("127.0.0.1", server.localPort))
+            }
+
+            val (ok, msg) = runBlocking {
+                WirelessPairingManager.connectUnifiedWirelessAdb(context)
+            }
+            serverThread.join(3_000)
+
+            assertTrue("Expected unified connect success but got: $msg", ok)
+            assertTrue(NativeAdbManager.isConnected.value)
+            assertEquals(NativeAdbConnectionState.CONNECTED, NativeAdbManager.connectionState.value)
+            assertEquals(server.localPort, NativeAdbManager.discoveredPort.value)
+            assertEquals("127.0.0.1", NativeAdbManager.connectedHost.value)
+            assertFalse(NativeAdbManager.requiresDevOptionsGuidance.value)
+            assertTrue(WirelessPairingManager.status.value is PairingStatus.Success)
+        } finally {
+            server.close()
+        }
+    }
+
+    @Test
+    fun `mode 3 shows open developer options guidance when wireless debugging connection fails`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        simulateWifiTransport(context)
+        NativeAdbManager.nsdConnectResolverOverride = { _, _ -> emptyList() }
+        runBlocking {
+            WirelessPairingManager.connectUnifiedWirelessAdb(context)
+        }
+
+        composeTestRule.setContent {
+            NameGenProTheme {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    WirelessPairingWizard()
+                }
+            }
+        }
+
+        composeTestRule.onNodeWithTag("pairing_mode_tab_auto_pair_on_wifi").performScrollTo().performClick()
+        composeTestRule.onNodeWithTag("wifi_auto_dev_options_guidance").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("wifi_auto_open_dev_options_button").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("wifi_auto_adb_status_badge").assertDoesNotExist()
+    }
+
+    private fun simulateWifiTransport(context: Context) {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val shadowCm = Shadows.shadowOf(cm)
+        val caps = ShadowNetworkCapabilities.newInstance()
+        Shadows.shadowOf(caps).addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+        shadowCm.setNetworkCapabilities(cm.activeNetwork, caps)
     }
 }

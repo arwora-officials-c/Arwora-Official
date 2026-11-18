@@ -6,7 +6,7 @@ import java.util.UUID
  * Represents the current built-in Wireless ADB status for Shell execution.
  */
 enum class ShellStatus(val label: String) {
-    READY("Ready"),
+    READY("ADB Ready"),
     ADB_REQUIRED("ADB Required"),
     WIFI_REQUIRED("Wi-Fi Required"),
     DISCONNECTED("Disconnected")

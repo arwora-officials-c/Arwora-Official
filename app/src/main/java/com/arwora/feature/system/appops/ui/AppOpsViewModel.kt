@@ -8,11 +8,14 @@ import com.arwora.feature.system.appops.model.AppOpsFilter
 import com.arwora.feature.system.appops.model.AppOpsItem
 import com.arwora.feature.system.appops.model.AppOpsSort
 import com.arwora.feature.system.appops.model.StandbyBucketMode
+import com.arwora.utils.NativeAdbManager
+import com.arwora.utils.WirelessPairingManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -99,18 +102,26 @@ class AppOpsViewModel(application: Application) : AndroidViewModel(application) 
     init {
         checkAdbStatus()
         loadApps()
+        viewModelScope.launch {
+            NativeAdbManager.isConnected.collectLatest { connected ->
+                _isAdbConnected.value = connected
+                if (connected) {
+                    loadApps()
+                }
+            }
+        }
     }
 
     fun checkAdbStatus() {
         viewModelScope.launch(Dispatchers.IO) {
-            com.arwora.utils.NativeAdbManager.refreshConnectionStatus(getApplication())
+            NativeAdbManager.refreshConnectionStatus(getApplication())
             _isAdbConnected.value = AppOpsManager.isAdbAvailable()
         }
     }
 
     fun connectAdb() {
         viewModelScope.launch {
-            val (ok, _) = com.arwora.utils.NativeAdbManager.connectAutomatically(getApplication())
+            val (ok, _) = WirelessPairingManager.connectUnifiedWirelessAdb(getApplication())
             checkAdbStatus()
             if (ok) {
                 loadApps()

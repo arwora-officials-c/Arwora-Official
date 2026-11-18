@@ -1,5 +1,8 @@
 package com.arwora.feature.system.wifi.password
 
+import android.content.Intent
+import android.provider.Settings
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -31,6 +34,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.DeveloperMode
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
@@ -94,8 +98,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.arwora.ui.components.GooglePlayCompactLinearProgress
-import com.arwora.ui.components.GooglePlayLinearProgressBar
+import com.arwora.ui.components.ExpressiveWavyLinearProgressIndicator
 import com.arwora.utils.NativeAdbConnectionState
 import com.arwora.utils.NativeAdbManager
 import kotlinx.coroutines.launch
@@ -160,6 +163,8 @@ fun WifiPasswordScreen(
     val isElevatedMode by viewModel.isElevatedModeAvailable.collectAsStateWithLifecycle()
     val adbState by viewModel.adbState.collectAsStateWithLifecycle()
     val nativeAdbConnected by NativeAdbManager.isConnected.collectAsStateWithLifecycle()
+    val requiresDevOptionsGuidance by NativeAdbManager.requiresDevOptionsGuidance.collectAsStateWithLifecycle()
+    val adbStatusMessage by NativeAdbManager.statusMessage.collectAsStateWithLifecycle()
     val qrSelectedNetwork by viewModel.selectedNetworkForQr.collectAsStateWithLifecycle()
     val isAddDialogOpen by viewModel.isAddDialogOpen.collectAsStateWithLifecycle()
 
@@ -312,11 +317,11 @@ fun WifiPasswordScreen(
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
-                            GooglePlayLinearProgressBar(
+                            ExpressiveWavyLinearProgressIndicator(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .testTag("wifi_linear_progress_bar"),
-                                height = 6.dp
+                                height = 10.dp
                             )
                         }
                     }
@@ -328,7 +333,16 @@ fun WifiPasswordScreen(
                 item {
                     WirelessAdbWarningBanner(
                         adbState = adbState,
-                        onConnectAdb = { viewModel.connectAdb(context) }
+                        requiresDevOptionsGuidance = requiresDevOptionsGuidance,
+                        statusMessage = adbStatusMessage,
+                        onConnectAdb = { viewModel.connectAdb(context) },
+                        onOpenDeveloperOptions = {
+                            try {
+                                context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
+                            } catch (_: Exception) {
+                                Toast.makeText(context, "Unable to open Developer Options.", Toast.LENGTH_LONG).show()
+                            }
+                        }
                     )
                 }
             }
@@ -481,9 +495,9 @@ private fun WifiOverviewCard(
                 }
 
                 if (isLoading) {
-                    GooglePlayCompactLinearProgress(
-                        width = 40.dp,
-                        height = 4.dp,
+                    ExpressiveWavyLinearProgressIndicator(
+                        modifier = Modifier.width(48.dp),
+                        height = 8.dp,
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
@@ -572,21 +586,25 @@ private fun WifiOverviewCard(
 @Composable
 private fun WirelessAdbWarningBanner(
     adbState: NativeAdbConnectionState,
-    onConnectAdb: () -> Unit
+    requiresDevOptionsGuidance: Boolean,
+    statusMessage: String,
+    onConnectAdb: () -> Unit,
+    onOpenDeveloperOptions: () -> Unit
 ) {
     val headline = when (adbState) {
         NativeAdbConnectionState.WIFI_REQUIRED -> "Wi-Fi Connection Required"
-        NativeAdbConnectionState.CONNECTING -> "Binding Wireless ADB..."
-        NativeAdbConnectionState.DISCONNECTED -> "Wireless ADB Required for System Sync"
-        NativeAdbConnectionState.CONNECTED -> "ADB Connected"
+        NativeAdbConnectionState.CONNECTING -> "Connecting Wireless ADB..."
+        NativeAdbConnectionState.DISCONNECTED ->
+            if (requiresDevOptionsGuidance) "Wireless Debugging Not Detected" else "Wireless ADB Required for System Sync"
+        NativeAdbConnectionState.CONNECTED -> "Active / Connected"
     }
     val description = when (adbState) {
         NativeAdbConnectionState.WIFI_REQUIRED ->
             "Connect to a Wi-Fi network with Wireless Debugging enabled to read saved Wi-Fi networks, or tap + to add manually."
-        NativeAdbConnectionState.CONNECTING ->
-            "Detecting local ADB daemon over active Wi-Fi..."
+        NativeAdbConnectionState.CONNECTING -> statusMessage
         NativeAdbConnectionState.DISCONNECTED ->
-            "Enable Wireless Debugging in Developer Options and tap Connect Now to bind directly to the local ADB daemon."
+            if (requiresDevOptionsGuidance) statusMessage
+            else "Enable Wireless Debugging in Developer Options and tap Connect Now to bind directly to the local ADB daemon."
         NativeAdbConnectionState.CONNECTED -> ""
     }
 
@@ -631,9 +649,21 @@ private fun WirelessAdbWarningBanner(
                     Text(
                         text = description,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = if (requiresDevOptionsGuidance && adbState == NativeAdbConnectionState.DISCONNECTED) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
                     )
                 }
+            }
+
+            if (adbState == NativeAdbConnectionState.CONNECTING) {
+                ExpressiveWavyLinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth(),
+                    height = 10.dp,
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
 
             Button(
@@ -649,6 +679,21 @@ private fun WirelessAdbWarningBanner(
                     text = if (adbState == NativeAdbConnectionState.CONNECTING) "Connecting..." else "Connect Now",
                     fontWeight = FontWeight.Bold
                 )
+            }
+
+            if (requiresDevOptionsGuidance && adbState == NativeAdbConnectionState.DISCONNECTED) {
+                OutlinedButton(
+                    onClick = onOpenDeveloperOptions,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("wifi_password_open_dev_options_button")
+                ) {
+                    Icon(Icons.Default.DeveloperMode, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Open Developer Options", fontWeight = FontWeight.SemiBold)
+                }
             }
         }
     }

@@ -258,6 +258,19 @@
             </intent-filter>
         </receiver>
 
+        <service
+            android:name=".service.AdbPairingNotificationService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Discovering local wireless ADB pairing port via mDNS and displaying interactive Direct Reply pairing notification" />
+        </service>
+
+        <receiver
+            android:name=".service.AdbPairingReceiver"
+            android:exported="false" />
+
         <receiver
             android:name=".service.WifiAutoPairReceiver"
             android:exported="false">

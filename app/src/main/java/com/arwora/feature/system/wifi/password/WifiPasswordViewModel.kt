@@ -9,10 +9,12 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.arwora.utils.NativeAdbConnectionState
 import com.arwora.utils.NativeAdbManager
+import com.arwora.utils.WirelessPairingManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -61,6 +63,16 @@ class WifiPasswordViewModel(application: Application) : AndroidViewModel(applica
 
     init {
         refresh()
+        viewModelScope.launch {
+            NativeAdbManager.isConnected.collectLatest {
+                refreshAdbStatus()
+            }
+        }
+        viewModelScope.launch {
+            NativeAdbManager.connectionState.collectLatest {
+                refreshAdbStatus()
+            }
+        }
     }
 
     fun refreshAdbStatus() {
@@ -233,7 +245,7 @@ class WifiPasswordViewModel(application: Application) : AndroidViewModel(applica
 
     fun connectAdb(context: Context) {
         viewModelScope.launch {
-            val (ok, msg) = NativeAdbManager.connectAutomatically(context)
+            val (ok, msg) = WirelessPairingManager.connectUnifiedWirelessAdb(context)
             repository.refreshAdbState()
             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
             if (ok) {

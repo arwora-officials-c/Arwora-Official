@@ -6,9 +6,12 @@ import android.content.ClipboardManager
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.arwora.utils.NativeAdbManager
+import com.arwora.utils.WirelessPairingManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 class ShellCommandViewModel(application: Application) : AndroidViewModel(application) {
@@ -43,6 +46,16 @@ class ShellCommandViewModel(application: Application) : AndroidViewModel(applica
 
     init {
         refreshStatus()
+        viewModelScope.launch {
+            NativeAdbManager.isConnected.collectLatest {
+                refreshStatus()
+            }
+        }
+        viewModelScope.launch {
+            NativeAdbManager.connectionState.collectLatest {
+                refreshStatus()
+            }
+        }
     }
 
     fun refreshStatus() {
@@ -67,7 +80,7 @@ class ShellCommandViewModel(application: Application) : AndroidViewModel(applica
         _isConnecting.value = true
         viewModelScope.launch {
             try {
-                ShellExecutor.connectAdb(getApplication())
+                WirelessPairingManager.connectUnifiedWirelessAdb(getApplication())
                 refreshStatus()
             } finally {
                 _isConnecting.value = false

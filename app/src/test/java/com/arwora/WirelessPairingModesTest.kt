@@ -1,5 +1,7 @@
 package com.arwora
 
+import com.arwora.feature.system.shell.ShellStatus
+import com.arwora.ui.screens.allGlobalTools
 import com.arwora.utils.PairingStatus
 import com.arwora.utils.WirelessPairingManager
 import com.arwora.utils.WirelessPairingMode
@@ -81,5 +83,15 @@ class WirelessPairingModesTest {
         assertEquals("Scanning local ADB port...", PairingStatus.Listening().stageMessage)
         assertEquals("Establishing secure pairing...", PairingStatus.PairingInProgress(40541).stageMessage)
         assertEquals("Connected successfully!", PairingStatus.Success().message)
+    }
+
+    @Test
+    fun shellStatusReadyAndGlobalSearchIndexMatchSpecification() {
+        assertEquals("ADB Ready", ShellStatus.READY.label)
+        assertEquals("ADB Required", ShellStatus.ADB_REQUIRED.label)
+        assertFalse(
+            "App Booster & RAM Cleaner should be removed from global tools index",
+            allGlobalTools.any { it.title.contains("App Booster", ignoreCase = true) }
+        )
     }
 }

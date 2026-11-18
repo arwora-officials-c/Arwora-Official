@@ -1,5 +1,7 @@
 package com.arwora.feature.system.shell
 
+import android.content.Intent
+import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -37,7 +39,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.arwora.ui.components.GooglePlayCompactLinearProgress
+import com.arwora.ui.components.ExpressiveWavyLinearProgressIndicator
 import com.arwora.utils.NativeAdbManager
 import com.arwora.utils.SoundEffectManager
 import java.text.SimpleDateFormat
@@ -54,6 +56,8 @@ fun ShellCommandSheet(
     val status by viewModel.status.collectAsStateWithLifecycle()
     val isConnecting by viewModel.isConnecting.collectAsStateWithLifecycle()
     val adbConnected by NativeAdbManager.isConnected.collectAsStateWithLifecycle()
+    val requiresDevOptionsGuidance by NativeAdbManager.requiresDevOptionsGuidance.collectAsStateWithLifecycle()
+    val adbStatusMessage by NativeAdbManager.statusMessage.collectAsStateWithLifecycle()
     val commandText by viewModel.commandText.collectAsStateWithLifecycle()
     val isRunning by viewModel.isRunning.collectAsStateWithLifecycle()
     val lastResult by viewModel.lastResult.collectAsStateWithLifecycle()
@@ -237,13 +241,28 @@ fun ShellCommandSheet(
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = if (status == ShellStatus.WIFI_REQUIRED)
-                                "Connect to a Wi-Fi network and turn on Wireless Debugging in Developer Options to bind local ADB."
-                            else
-                                "Built-in Wireless ADB is ready to bind. Ensure Wireless Debugging is enabled in Developer Options and tap Connect Now.",
+                            text = when {
+                                status == ShellStatus.WIFI_REQUIRED ->
+                                    "Connect to a Wi-Fi network and turn on Wireless Debugging in Developer Options to bind local ADB."
+                                requiresDevOptionsGuidance -> adbStatusMessage
+                                else ->
+                                    "Built-in Wireless ADB is ready to bind. Ensure Wireless Debugging is enabled in Developer Options and tap Connect Now."
+                            },
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = if (requiresDevOptionsGuidance && status != ShellStatus.WIFI_REQUIRED) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
                         )
+                        if (isConnecting) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            ExpressiveWavyLinearProgressIndicator(
+                                modifier = Modifier.fillMaxWidth(),
+                                height = 10.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                         Spacer(modifier = Modifier.height(14.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Button(
@@ -263,12 +282,20 @@ fun ShellCommandSheet(
                             OutlinedButton(
                                 onClick = {
                                     SoundEffectManager.playClick()
-                                    viewModel.showHelp()
+                                    if (requiresDevOptionsGuidance) {
+                                        try {
+                                            context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
+                                        } catch (_: Exception) {
+                                            Toast.makeText(context, "Unable to open Developer Options.", Toast.LENGTH_LONG).show()
+                                        }
+                                    } else {
+                                        viewModel.showHelp()
+                                    }
                                 },
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Text("Setup Guide")
+                                Text(if (requiresDevOptionsGuidance) "Open Developer Options" else "Setup Guide")
                             }
                         }
                     }
@@ -430,9 +457,9 @@ fun ShellCommandSheet(
                     elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
                 ) {
                     if (isRunning) {
-                        GooglePlayCompactLinearProgress(
-                            width = 28.dp,
-                            height = 4.dp,
+                        ExpressiveWavyLinearProgressIndicator(
+                            modifier = Modifier.width(36.dp),
+                            height = 8.dp,
                             color = MaterialTheme.colorScheme.onPrimary
                         )
                         Spacer(modifier = Modifier.width(10.dp))

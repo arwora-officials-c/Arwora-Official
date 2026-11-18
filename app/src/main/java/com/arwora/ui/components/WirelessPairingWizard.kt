@@ -1,9 +1,13 @@
 package com.arwora.ui.components
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.provider.Settings
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -40,7 +44,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.arwora.service.AdbPairingNotificationService
+import com.arwora.service.AdbPairingNotifier
 import com.arwora.service.WifiAutoPairMonitor
+import com.arwora.utils.NativeAdbConnectionState
 import com.arwora.utils.NativeAdbManager
 import com.arwora.utils.PairingStatus
 import com.arwora.utils.SoundEffectManager
@@ -67,10 +74,37 @@ fun WirelessPairingWizard(
     val isWifiConnected by WirelessPairingManager.isWifiConnected.collectAsStateWithLifecycle()
     val lastWifiEventSummary by WirelessPairingManager.lastWifiEventSummary.collectAsStateWithLifecycle()
     val isNativeAdbConnected by NativeAdbManager.isConnected.collectAsStateWithLifecycle()
+    val adbConnectionState by NativeAdbManager.connectionState.collectAsStateWithLifecycle()
+    val requiresDevOptionsGuidance by NativeAdbManager.requiresDevOptionsGuidance.collectAsStateWithLifecycle()
+    val adbStatusMessage by NativeAdbManager.statusMessage.collectAsStateWithLifecycle()
 
     var manualHostInput by remember { mutableStateOf(savedHost) }
     var manualCodeInput by remember { mutableStateOf("") }
     var manualPortInput by remember { mutableStateOf("") }
+
+    val launchNotificationPairingFlow = {
+        AdbPairingNotificationService.start(context)
+        Toast.makeText(
+            context,
+            "Notification Pairing active. Tap 'Pair device with pairing code' and reply in the notification shade.",
+            Toast.LENGTH_LONG
+        ).show()
+        openDeveloperOptions(context)
+    }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            launchNotificationPairingFlow()
+        } else {
+            Toast.makeText(
+                context,
+                "Notification permission denied. Grant notifications to use Direct Reply or enter details manually below.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
 
     // Synchronize persisted preferences and connectivity state on mount
     LaunchedEffect(Unit) {
@@ -159,6 +193,16 @@ fun WirelessPairingWizard(
                         portInput = manualPortInput,
                         onPortChange = { if (it.length <= 5 && it.all { c -> c.isDigit() }) manualPortInput = it },
                         isPairing = pairingStatus is PairingStatus.PairingInProgress,
+                        onStartNotificationPairing = {
+                            SoundEffectManager.playClick()
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                !AdbPairingNotifier.hasNotificationPermission(context)
+                            ) {
+                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            } else {
+                                launchNotificationPairingFlow()
+                            }
+                        },
                         onOpenDevOptions = { openDeveloperOptions(context) },
                         onPairClick = {
                             SoundEffectManager.playClick()
@@ -212,23 +256,24 @@ fun WirelessPairingWizard(
                         enabled = autoPairOnWifiEnabled,
                         isWifiConnected = isWifiConnected,
                         isAdbConnected = isNativeAdbConnected,
-                        lastEventSummary = lastWifiEventSummary,
-                        isBusy = pairingStatus is PairingStatus.PairingInProgress,
+                        lastEventSummary = lastWifiEventSummary ?: adbStatusMessage,
+                        isBusy = pairingStatus is PairingStatus.PairingInProgress ||
+                            adbConnectionState == NativeAdbConnectionState.CONNECTING,
+                        showDevOptionsGuidance = !isNativeAdbConnected &&
+                            (requiresDevOptionsGuidance || pairingStatus is PairingStatus.Failed),
                         onToggleEnabled = { checked ->
                             SoundEffectManager.playClick()
                             WirelessPairingManager.setAutoPairOnWifiEnabled(context, checked)
                         },
                         onConnectNow = {
                             SoundEffectManager.playClick()
-                            if (WifiAutoPairMonitor.isWifiCurrentlyConnected(context)) {
-                                WirelessPairingManager.onWifiNetworkConnected(context, forceManualTrigger = true)
-                            } else {
-                                Toast.makeText(
-                                    context,
-                                    "Connect to Wi-Fi first to bind the local ADB daemon.",
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                            coroutineScope.launch {
+                                WirelessPairingManager.connectUnifiedWirelessAdb(context)
                             }
+                        },
+                        onOpenDevOptions = {
+                            SoundEffectManager.playClick()
+                            openDeveloperOptions(context)
                         }
                     )
                 }
@@ -366,13 +411,13 @@ private fun PairingStatusBannerCard(
                 exit = fadeOut(tween(150)) + shrinkVertically(tween(150))
             ) {
                 val activeProgress = (pairingStatus as? PairingStatus.Listening)?.progress
-                GooglePlayLinearProgressBar(
+                ExpressiveWavyLinearProgressIndicator(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 2.dp)
                         .testTag("wireless_pairing_linear_progress"),
                     progress = activeProgress,
-                    height = 5.dp,
+                    height = 10.dp,
                     color = MaterialTheme.colorScheme.primary
                 )
             }
@@ -507,6 +552,7 @@ private fun ManualNotificationPairingCard(
     portInput: String,
     onPortChange: (String) -> Unit,
     isPairing: Boolean,
+    onStartNotificationPairing: () -> Unit,
     onOpenDevOptions: () -> Unit,
     onPairClick: () -> Unit
 ) {
@@ -538,10 +584,28 @@ private fun ManualNotificationPairingCard(
             }
 
             Text(
-                text = "1. Enable Wireless Debugging in Developer Options and tap 'Pair device with pairing code'.\n2. Enter the 6-digit code & port from the system notification below and tap Pair.",
+                text = "1. Tap 'Start Notification Pairing' below to start mDNS port discovery and open Developer Options.\n2. Enable Wireless Debugging, tap 'Pair device with pairing code', and enter the 6-digit code directly inside the notification shade (or use manual fallback below).",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            Button(
+                onClick = onStartNotificationPairing,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .testTag("manual_start_notification_pairing_button"),
+                shape = ArworaDesignTokens.PillShape,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.NotificationsActive,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Start Notification Pairing", fontWeight = FontWeight.Bold)
+            }
 
             OutlinedButton(
                 onClick = {
@@ -558,6 +622,15 @@ private fun ManualNotificationPairingCard(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("Open Developer Options", fontWeight = FontWeight.SemiBold)
             }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.16f))
+
+            Text(
+                text = "Manual Input Fallback",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
             OutlinedTextField(
                 value = hostInput,
@@ -769,8 +842,10 @@ private fun AutoPairOnWifiCard(
     isAdbConnected: Boolean,
     lastEventSummary: String?,
     isBusy: Boolean,
+    showDevOptionsGuidance: Boolean,
     onToggleEnabled: (Boolean) -> Unit,
-    onConnectNow: () -> Unit
+    onConnectNow: () -> Unit,
+    onOpenDevOptions: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -805,7 +880,7 @@ private fun AutoPairOnWifiCard(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Automatically detect active Wi-Fi and bind directly to the local Wireless ADB daemon.",
+                            text = "Automatically discover _adb-tls-connect._tcp on Wi-Fi and verify a real Wireless ADB TLS stream.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -873,7 +948,7 @@ private fun AutoPairOnWifiCard(
                                     .background(Color(0xFF10B981))
                             )
                             Text(
-                                text = "ADB Connected",
+                                text = "Active / Connected",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF10B981)
@@ -884,10 +959,60 @@ private fun AutoPairOnWifiCard(
             }
 
             if (isBusy) {
-                GooglePlayLinearProgressBar(modifier = Modifier.fillMaxWidth())
+                ExpressiveWavyLinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("wifi_auto_wavy_progress"),
+                    height = 10.dp,
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
 
-            if (!lastEventSummary.isNullOrBlank()) {
+            if (showDevOptionsGuidance) {
+                Surface(
+                    shape = ArworaDesignTokens.InnerTileShape,
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.45f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("wifi_auto_dev_options_guidance")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.Top,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.WarningAmber,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = NativeAdbManager.ERROR_WIRELESS_DEBUGGING_OFF,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = onOpenDevOptions,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("wifi_auto_open_dev_options_button"),
+                            shape = ArworaDesignTokens.PillShape
+                        ) {
+                            Icon(Icons.Default.DeveloperMode, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Open Developer Options", fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+            } else if (!lastEventSummary.isNullOrBlank()) {
                 Surface(
                     shape = ArworaDesignTokens.InnerTileShape,
                     color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
@@ -902,7 +1027,7 @@ private fun AutoPairOnWifiCard(
                         Icon(
                             imageVector = if (isWifiConnected) Icons.Default.Wifi else Icons.Default.WifiFind,
                             contentDescription = null,
-                            tint = if (isWifiConnected) Color(0xFF10B981) else MaterialTheme.colorScheme.primary,
+                            tint = if (isAdbConnected) Color(0xFF10B981) else MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(16.dp)
                         )
                         Text(

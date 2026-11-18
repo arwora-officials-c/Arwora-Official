@@ -5,6 +5,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.arwora.feature.system.shell.ShellExecutor
 import com.arwora.feature.system.shell.ShellStatus
+import com.arwora.utils.NativeAdbManager
+import com.arwora.utils.WirelessPairingManager
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -34,6 +36,11 @@ class HideDnsViewModel(application: Application) : AndroidViewModel(application)
     init {
         checkAdbStatus()
         loadApps()
+        viewModelScope.launch {
+            NativeAdbManager.isConnected.collectLatest {
+                checkAdbStatus()
+            }
+        }
     }
 
     fun checkAdbStatus() {
@@ -44,7 +51,7 @@ class HideDnsViewModel(application: Application) : AndroidViewModel(application)
 
     fun connectAdb() {
         viewModelScope.launch {
-            ShellExecutor.connectAdb(getApplication())
+            WirelessPairingManager.connectUnifiedWirelessAdb(getApplication())
             checkAdbStatus()
         }
     }

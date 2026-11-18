@@ -65,6 +65,7 @@ import com.arwora.ui.navigation.Screen
 import com.arwora.ui.components.ArworaDesignTokens
 import com.arwora.ui.components.ArworaTonalIconBadge
 import com.arwora.ui.components.ExpressiveCompactLoadingIndicator
+import com.arwora.ui.components.ExpressiveWavyLinearProgressIndicator
 import com.arwora.ui.components.FakeDeviceDialog
 import com.arwora.ui.components.GooglePlayCompactLinearProgress
 import com.arwora.ui.components.GooglePlayLinearProgressBar
@@ -1005,8 +1006,8 @@ fun SystemDashboardScreen(
                     subtitle = "Saved Wi-Fi networks, reveal passwords & quick connect",
                     icon = Icons.Default.Password,
                     iconColor = MaterialTheme.colorScheme.primary,
-                    badge = "Keys",
-                    badgeColor = MaterialTheme.colorScheme.primary,
+                    badge = if (isAdbConnected) "ADB Ready" else "ADB Required",
+                    badgeColor = if (isAdbConnected) Color(0xFF10B981) else MaterialTheme.colorScheme.error,
                     onClick = {
                         SoundEffectManager.playClick()
                         navigateGuarded(Screen.WifiPassword.route) {
@@ -1033,26 +1034,6 @@ fun SystemDashboardScreen(
                         }
                     },
                     modifier = Modifier.testTag("system_hide_private_dns_card")
-                )
-            }
-
-
-            // APP BOOSTER & RAM CLEANER CARD
-            item {
-                SystemActionRowCard(
-                    title = "App Booster & RAM Cleaner",
-                    subtitle = "One-tap RAM optimization, background process killer & floating widget",
-                    icon = Icons.Default.Speed,
-                    iconColor = MaterialTheme.colorScheme.primary,
-                    badge = "Performance",
-                    badgeColor = MaterialTheme.colorScheme.primary,
-                    onClick = {
-                        SoundEffectManager.playClick()
-                        navigateGuarded(Screen.AppBooster.route) {
-                            navController.navigate(Screen.AppBooster.route)
-                        }
-                    },
-                    modifier = Modifier.testTag("system_app_booster_card")
                 )
             }
 
@@ -1990,6 +1971,13 @@ fun SystemDashboardScreen(
                     NativeAdbManager.getLocalWifiIpAddress(context) ?: "127.0.0.1"
                 }
 
+                val adbConnectionState by NativeAdbManager.connectionState.collectAsStateWithLifecycle()
+                val connectedHostState by NativeAdbManager.connectedHost.collectAsStateWithLifecycle()
+                val connectedPortState by NativeAdbManager.connectedPort.collectAsStateWithLifecycle()
+                val discoveredPortState by NativeAdbManager.discoveredPort.collectAsStateWithLifecycle()
+                val requiresDevOptionsGuidance by NativeAdbManager.requiresDevOptionsGuidance.collectAsStateWithLifecycle()
+                val adbStatusMessage by NativeAdbManager.statusMessage.collectAsStateWithLifecycle()
+
                 var adbPort by remember { mutableIntStateOf(-1) }
                 var isWirelessAdbEnabled by remember { mutableStateOf(false) }
 
@@ -1997,12 +1985,17 @@ fun SystemDashboardScreen(
                 val updateAdbStatus = {
                     adbPort = NativeAdbManager.getSystemWirelessDebugPort(context)
                         ?: NativeAdbManager.connectedPort.value
+                        ?: NativeAdbManager.discoveredPort.value
                         ?: -1
                     isWirelessAdbEnabled = NativeAdbManager.isWirelessDebuggingSettingEnabled(context)
                     isUserStopped = adbPrefs.getBoolean("is_user_stopped", false)
                     NativeAdbManager.refreshConnectionStatus(context)
                     checkNotificationPermissionStatus()
                 }
+
+                val effectiveHost = connectedHostState?.takeIf { it.isNotBlank() } ?: wifiIp
+                val effectivePort = connectedPortState ?: discoveredPortState ?: adbPort
+                val isAdbConnecting = adbConnectionState == NativeAdbConnectionState.CONNECTING
 
                 DisposableEffect(cardLifecycleOwner) {
                     updateAdbStatus()
@@ -2018,18 +2011,23 @@ fun SystemDashboardScreen(
                 }
 
                 val badgeColor = when {
-                    isUserStopped && !isAdbConnected -> MaterialTheme.colorScheme.error
                     isAdbConnected -> Color(0xFF10B981)
+                    isAdbConnecting -> MaterialTheme.colorScheme.primary
+                    isUserStopped && !isAdbConnected -> MaterialTheme.colorScheme.error
                     else -> Color(0xFFFF9800)
                 }
 
-                val connectionStatusText = if (isAdbConnected) "ADB Connected" else "Inactive / Disconnected"
+                val connectionStatusText = when {
+                    isAdbConnected -> "Active / Connected"
+                    isAdbConnecting -> "Connecting..."
+                    else -> "Inactive / Disconnected"
+                }
 
                 SystemFeatureCard(
                     title = "Wireless Debugging",
-                    subtitle = "IP: $wifiIp${if (adbPort > 0) ":$adbPort" else ""} • Status: $connectionStatusText",
+                    subtitle = "IP: $effectiveHost${if (effectivePort > 0) ":$effectivePort" else ""} • Status: $connectionStatusText",
                     icon = Icons.Default.Wifi,
-                    badge = if (isAdbConnected) "ADB Connected" else "Inactive",
+                    badge = if (isAdbConnected) "Active / Connected" else if (isAdbConnecting) "Connecting" else "Inactive",
                     badgeColor = badgeColor,
                     statusDotColor = badgeColor,
                     isExpanded = isWirelessDebuggingExpanded,
@@ -2056,15 +2054,94 @@ fun SystemDashboardScreen(
                             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                     Text("Local IP Address:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text(wifiIp, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                    Text(effectiveHost, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                                 }
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                     Text("Wireless Debug Port:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text(if (adbPort > 0) "$adbPort" else "Auto Detection", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        text = if (effectivePort > 0) "$effectivePort" else "Auto Detection",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.testTag("wireless_debug_port_value")
+                                    )
                                 }
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                     Text("Developer ADB:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text(if (isWirelessAdbEnabled) "Enabled" else "Disabled / Check Settings", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = if (isWirelessAdbEnabled) Color(0xFF10B981) else MaterialTheme.colorScheme.error)
+                                    Text(
+                                        text = if (isAdbConnected || isWirelessAdbEnabled) "Enabled" else "Disabled / Check Settings",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isAdbConnected || isWirelessAdbEnabled) Color(0xFF10B981) else MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                        }
+
+                        if (isAdbConnecting) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            ExpressiveWavyLinearProgressIndicator(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("wireless_adb_connect_wavy_progress"),
+                                height = 10.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = adbStatusMessage,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else if (!isAdbConnected && requiresDevOptionsGuidance) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Surface(
+                                shape = ArworaDesignTokens.InnerTileShape,
+                                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.45f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("wireless_adb_error_guidance_banner")
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.Top,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.WarningAmber,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Text(
+                                            text = adbStatusMessage,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onErrorContainer,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+                                    OutlinedButton(
+                                        onClick = {
+                                            SoundEffectManager.playClick()
+                                            try {
+                                                context.startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
+                                            } catch (_: Exception) {
+                                                Toast.makeText(context, "Unable to open Developer Options.", Toast.LENGTH_LONG).show()
+                                            }
+                                        },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(48.dp)
+                                            .testTag("wireless_adb_error_open_dev_options_button"),
+                                        shape = ArworaDesignTokens.PillShape
+                                    ) {
+                                        Icon(Icons.Default.DeveloperMode, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Open Developer Options", fontWeight = FontWeight.SemiBold)
+                                    }
                                 }
                             }
                         }
@@ -2074,7 +2151,7 @@ fun SystemDashboardScreen(
                         OutlinedButton(
                             onClick = {
                                 SoundEffectManager.playClick()
-                                val endpoint = "$wifiIp${if (adbPort > 0) ":$adbPort" else ""}"
+                                val endpoint = "$effectiveHost${if (effectivePort > 0) ":$effectivePort" else ""}"
                                 clipboardManager.setText(AnnotatedString(endpoint))
                                 Toast.makeText(context, "ADB address copied to clipboard", Toast.LENGTH_SHORT).show()
                             },
@@ -2144,26 +2221,33 @@ fun SystemDashboardScreen(
                                         if (isAdbConnected) {
                                             NativeAdbManager.disconnect(userInitiated = true)
                                             updateAdbStatus()
+                                            refreshDashboardStatuses()
                                             Toast.makeText(context, "Wireless ADB disconnected", Toast.LENGTH_SHORT).show()
                                         } else {
                                             coroutineScope.launch {
-                                                val (_, msg) = NativeAdbManager.connectAutomatically(context)
+                                                val (_, msg) = WirelessPairingManager.connectUnifiedWirelessAdb(context)
                                                 updateAdbStatus()
                                                 refreshDashboardStatuses()
                                                 Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                                             }
                                         }
                                     },
+                                    enabled = !isAdbConnecting,
                                     modifier = Modifier
                                         .weight(1f)
-                                        .height(48.dp),
+                                        .height(48.dp)
+                                        .testTag("wireless_adb_top_connect_button"),
                                     shape = ArworaDesignTokens.PillShape,
                                     colors = ButtonDefaults.buttonColors(
                                         containerColor = if (isAdbConnected) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary
                                     )
                                 ) {
                                     Text(
-                                        text = if (isAdbConnected) "Disconnect" else "Connect Now",
+                                        text = when {
+                                            isAdbConnected -> "Disconnect"
+                                            isAdbConnecting -> "Connecting..."
+                                            else -> "Connect Now"
+                                        },
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
@@ -2177,7 +2261,7 @@ fun SystemDashboardScreen(
                         // Native Automated Wireless Debugging Pairing System
                         com.arwora.ui.components.WirelessPairingWizard(
                             onPairingSuccess = {
-                                Toast.makeText(context, "Wireless ADB Connected!", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Active / Connected!", Toast.LENGTH_SHORT).show()
                                 updateAdbStatus()
                                 refreshDashboardStatuses()
                             }
@@ -2300,8 +2384,8 @@ fun SystemDashboardScreen(
                     subtitle = "Filter packages, permission controls & standby ops",
                     icon = Icons.Default.AdminPanelSettings,
                     iconColor = Color(0xFF10B981),
-                    badge = "Ops",
-                    badgeColor = Color(0xFF10B981),
+                    badge = if (isAdbConnected) "ADB Ready" else "ADB Required",
+                    badgeColor = if (isAdbConnected) Color(0xFF10B981) else MaterialTheme.colorScheme.error,
                     onClick = {
                         SoundEffectManager.playClick()
                         navController.navigate(Screen.AppOps.route)

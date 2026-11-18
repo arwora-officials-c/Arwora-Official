@@ -319,7 +319,45 @@ object WirelessPairingManager {
     }
 
     /**
-     * Mode 3 callback triggered when ConnectivityManager / BroadcastReceiver detects TRANSPORT_WIFI.
+     * Unified real Wireless ADB connection entrypoint invoked by both the top "Connect Now" CTA
+     * and Mode 3 "Connect Now" CTA. Strictly requires a verified mDNS + TLS/ADB shell handshake
+     * before transitioning status to Connected / Success.
+     */
+    suspend fun connectUnifiedWirelessAdb(context: Context): Pair<Boolean, String> {
+        val appContext = context.applicationContext
+        val targetHost = NativeAdbManager.connectedHost.value
+            ?: _savedHost.value.ifBlank { "127.0.0.1" }
+        val targetPort = NativeAdbManager.discoveredPort.value
+            ?: _savedConnectPort.value
+            ?: 0
+
+        updateUiState {
+            _lastWifiEventSummary.value = "Scanning mDNS (_adb-tls-connect._tcp) for Wireless Debugging..."
+            _status.value = PairingStatus.PairingInProgress(
+                port = targetPort,
+                host = targetHost,
+                stageMessage = "Scanning mDNS (_adb-tls-connect._tcp) & handshaking..."
+            )
+        }
+
+        val (ok, msg) = NativeAdbManager.connectWirelessAdb(appContext)
+        updateUiState {
+            _lastWifiEventSummary.value = msg
+            if (ok && NativeAdbManager.isAdbReady()) {
+                _status.value = PairingStatus.Success(msg)
+            } else {
+                _status.value = PairingStatus.Failed(
+                    error = msg,
+                    canFallbackToManual = true
+                )
+            }
+        }
+        return Pair(ok, msg)
+    }
+
+    /**
+     * Mode 3 callback triggered when ConnectivityManager / BroadcastReceiver detects TRANSPORT_WIFI
+     * or when the user taps Connect Now.
      */
     fun onWifiNetworkConnected(context: Context, forceManualTrigger: Boolean = false) {
         _isWifiConnected.value = true
@@ -330,93 +368,22 @@ object WirelessPairingManager {
         lastWifiAttemptTimestampMs = now
 
         val appContext = context.applicationContext
-        val targetHost = _savedHost.value.ifBlank { "127.0.0.1" }
-        val cachedConnectPort = _savedConnectPort.value
-        val cachedPairingPort = _discoveredPort.value
-        val cachedCode = _lastCapturedCode.value
-
-        _lastWifiEventSummary.value = "Wi-Fi connected • Scanning local ADB port..."
-
         pairingJob?.cancel()
         pairingJob = CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
             try {
-                updateUiState {
-                    _status.value = PairingStatus.PairingInProgress(
-                        port = cachedConnectPort ?: 5555,
-                        host = targetHost,
-                        stageMessage = "Detecting local ADB daemon..."
-                    )
-                }
-
-                val (nativeOk, nativeMsg) = NativeAdbManager.connectAutomatically(appContext)
-                if (nativeOk) {
-                    updateUiState {
-                        _lastWifiEventSummary.value = nativeMsg
-                        _status.value = PairingStatus.Success(STAGE_CONNECTED)
-                    }
-                    return@launch
-                }
-
-                startMdnsDiscovery(appContext)
-                delay(1500L)
-
-                val connectPort = NativeAdbManager.getSystemWirelessDebugPort(appContext)
-                    ?: _savedConnectPort.value
-                    ?: cachedConnectPort
-                val pairingPort = _discoveredPort.value ?: cachedPairingPort
-
-                if (connectPort != null) {
-                    val (retryOk, retryMsg) = NativeAdbManager.connectToEndpoint(appContext, targetHost, connectPort)
-                    if (retryOk) {
-                        updateUiState {
-                            _lastWifiEventSummary.value = retryMsg
-                            _status.value = PairingStatus.Success(STAGE_CONNECTED)
-                        }
-                        return@launch
-                    }
-                    val shellOk = tryShellConnect(targetHost, connectPort) || tryTcpReachable(targetHost, connectPort, 1500)
-                    if (shellOk) {
-                        onPairingSuccess(appContext, STAGE_CONNECTED)
-                        return@launch
-                    }
-                }
-
-                if (!cachedCode.isNullOrBlank() && pairingPort != null && cachedCode.length == 6) {
-                    updateUiState {
-                        _status.value = PairingStatus.PairingInProgress(pairingPort, targetHost, STAGE_ESTABLISHING_PAIRING)
-                    }
-                    val paired = tryPairViaIAdbManager(cachedCode) ||
-                        trySocketPairing(targetHost, pairingPort, cachedCode).success ||
-                        tryShellPairing(targetHost, pairingPort, cachedCode)
-                    if (paired) {
-                        onPairingSuccess(appContext, STAGE_CONNECTED)
-                        return@launch
-                    }
-                }
-
-                val summary = if (connectPort == null && pairingPort == null) {
-                    "Wi-Fi connected • Listening for Wireless Debugging mDNS service. Save a port or toggle Wireless Debugging ON."
-                } else {
-                    "Wi-Fi connected • Probed $targetHost:${connectPort ?: pairingPort}; waiting for Wireless Debugging daemon."
-                }
-                updateUiState {
-                    _lastWifiEventSummary.value = summary
-                    if (_status.value is PairingStatus.PairingInProgress) {
-                        _status.value = PairingStatus.Idle
-                    }
-                }
+                connectUnifiedWirelessAdb(appContext)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.w(TAG, "Wi-Fi auto-pair probe error: ${e.message}")
+                Log.w(TAG, "Wi-Fi Wireless ADB connect error: ${e.message}")
+                val failMsg = NativeAdbManager.ERROR_WIRELESS_DEBUGGING_OFF
                 updateUiState {
-                    _lastWifiEventSummary.value = "Wi-Fi connected • Auto-pair probe finished (${e.message ?: "no daemon"})."
-                    if (_status.value is PairingStatus.PairingInProgress) {
-                        _status.value = PairingStatus.Idle
-                    }
+                    _lastWifiEventSummary.value = failMsg
+                    _status.value = PairingStatus.Failed(
+                        error = failMsg,
+                        canFallbackToManual = true
+                    )
                 }
-            } finally {
-                stopMdnsDiscovery()
             }
         }
     }
@@ -609,9 +576,7 @@ object WirelessPairingManager {
                                         progress = 0.85f
                                     )
                                 }
-                                if (NativeAdbManager.connectToEndpoint(appContext, "127.0.0.1", activePort).first ||
-                                    tryShellConnect("127.0.0.1", activePort)
-                                ) {
+                                if (NativeAdbManager.connectToEndpoint(appContext, "127.0.0.1", activePort).first) {
                                     onPairingSuccess(appContext, STAGE_CONNECTED)
                                     return@launch
                                 }
@@ -622,11 +587,9 @@ object WirelessPairingManager {
                         }
                     }
 
-                    // 3. If an active connect port was discovered via _adb-tls-connect._tcp, test binding
+                    // 3. If an active connect port was discovered via _adb-tls-connect._tcp, verify real handshake
                     if (liveConnectPort != null && tryTcpReachable("127.0.0.1", liveConnectPort, SOCKET_PROBE_TIMEOUT_MS)) {
-                        if (NativeAdbManager.connectToEndpoint(appContext, "127.0.0.1", liveConnectPort).first ||
-                            tryShellConnect("127.0.0.1", liveConnectPort)
-                        ) {
+                        if (NativeAdbManager.connectToEndpoint(appContext, "127.0.0.1", liveConnectPort).first) {
                             onPairingSuccess(appContext, STAGE_CONNECTED)
                             return@launch
                         }
@@ -808,15 +771,123 @@ object WirelessPairingManager {
     }
 
     private suspend fun onPairingSuccess(context: Context, customMessage: String = STAGE_CONNECTED) {
-        updateUiState {
-            _status.value = PairingStatus.Success(customMessage)
-            _lastWifiEventSummary.value = customMessage
-        }
         stopListening()
-        withContext(Dispatchers.IO) {
-            if (!NativeAdbManager.isAdbReady()) {
-                NativeAdbManager.connectAutomatically(context)
+        val (connected, connectMsg) = withContext(Dispatchers.IO) {
+            if (NativeAdbManager.isAdbReady()) {
+                Pair(true, customMessage)
+            } else {
+                NativeAdbManager.connectWirelessAdb(context)
             }
+        }
+        updateUiState {
+            if (connected && NativeAdbManager.isAdbReady()) {
+                _status.value = PairingStatus.Success(customMessage)
+                _lastWifiEventSummary.value = customMessage
+            } else {
+                _status.value = PairingStatus.Failed(
+                    error = connectMsg,
+                    canFallbackToManual = true
+                )
+                _lastWifiEventSummary.value = connectMsg
+            }
+        }
+    }
+
+    /**
+     * Updates discovered pairing host and port when resolved via AdbPairingNotificationService mDNS discovery.
+     */
+    fun onMdnsPairingEndpointResolved(context: Context, host: String, port: Int) {
+        if (port !in 1024..65535) return
+        val cleanHost = host.trim().ifBlank { "127.0.0.1" }
+        _savedHost.value = cleanHost
+        _discoveredPort.value = port
+        try {
+            context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putString(KEY_SAVED_HOST, cleanHost)
+                .putInt(KEY_SAVED_PAIRING_PORT, port)
+                .apply()
+        } catch (_: Throwable) {}
+    }
+
+    /**
+     * Executes the native ADB pairing handshake from Direct Reply notification input on Dispatchers.IO
+     * with client identity strictly set to 'arwora'. Does not auto-connect yet so the receiver can
+     * update the notification to "Paired Successfully! Connecting ADB..." before connecting.
+     */
+    suspend fun executeNotificationReplyPairing(
+        context: Context,
+        host: String?,
+        port: Int?,
+        code: String
+    ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        NativeAdbManager.ensureClientIdentity()
+        val appContext = context.applicationContext
+        val cleanCode = code.trim()
+        val resolvedHost = host?.trim()?.takeIf { it.isNotEmpty() }
+            ?: _savedHost.value.ifBlank { "127.0.0.1" }
+
+        var resolvedPort = port?.takeIf { it in 1024..65535 }
+            ?: _discoveredPort.value?.takeIf { it in 1024..65535 }
+
+        if (resolvedPort == null) {
+            val kernelPorts = readKernelTcpListeningPorts()
+            val openPorts = probeLocalOpenAdbPorts(kernelPorts)
+            resolvedPort = openPorts.firstOrNull { it != 5555 } ?: kernelPorts.firstOrNull { it != 5555 }
+        }
+
+        if (resolvedPort == null || !isValidManualPairingInput(resolvedHost, resolvedPort, cleanCode)) {
+            val errorMsg = if (resolvedPort == null) {
+                "No active pairing port found. Keep the Wireless Debugging pairing dialog open and tap Retry."
+            } else {
+                "Enter a valid 6-digit pairing code."
+            }
+            updateUiState {
+                _status.value = PairingStatus.Failed(errorMsg, canFallbackToManual = true)
+            }
+            return@withContext Pair(false, errorMsg)
+        }
+
+        _savedHost.value = resolvedHost
+        _discoveredPort.value = resolvedPort
+        _lastCapturedCode.value = cleanCode
+        updateUiState {
+            _status.value = PairingStatus.PairingInProgress(
+                port = resolvedPort,
+                host = resolvedHost,
+                stageMessage = "Pairing with arwora..."
+            )
+        }
+
+        try {
+            if (tryPairViaIAdbManager(cleanCode)) {
+                updateUiState { _status.value = PairingStatus.Success("Paired Successfully! Connecting ADB...") }
+                return@withContext Pair(true, "Paired via system ADB manager")
+            }
+
+            val socketResult = trySocketPairing(resolvedHost, resolvedPort, cleanCode)
+            if (socketResult.success) {
+                updateUiState { _status.value = PairingStatus.Success("Paired Successfully! Connecting ADB...") }
+                return@withContext Pair(true, "Paired via TLS socket ($resolvedHost:$resolvedPort)")
+            }
+
+            if (tryShellPairing(resolvedHost, resolvedPort, cleanCode)) {
+                updateUiState { _status.value = PairingStatus.Success("Paired Successfully! Connecting ADB...") }
+                return@withContext Pair(true, "Paired via adb pair ($resolvedHost:$resolvedPort)")
+            }
+
+            val reason = socketResult.failureReason ?: "Pairing handshake failed on $resolvedHost:$resolvedPort."
+            updateUiState {
+                _status.value = PairingStatus.Failed(reason, canFallbackToManual = true)
+            }
+            Pair(false, reason)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            val msg = e.message ?: "Unexpected pairing error"
+            updateUiState {
+                _status.value = PairingStatus.Failed(msg, canFallbackToManual = true)
+            }
+            Pair(false, msg)
         }
     }
 
