@@ -1,11 +1,13 @@
 package com.arwora.ui.components
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
@@ -22,7 +24,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -86,6 +90,7 @@ fun CustomBottomNavigationBar(
     selectedTabIndex: Int? = null,
     onTabSelected: ((Int, BottomNavItem) -> Unit)? = null
 ) {
+    val pillShape = RoundedCornerShape(percent = 50)
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -146,6 +151,15 @@ fun CustomBottomNavigationBar(
                         ),
                         label = "nav_content_tint"
                     )
+                    val pillScale by animateFloatAsState(
+                        targetValue = if (isSelected) 1f else 0.94f,
+                        animationSpec = tween(
+                            durationMillis = ArworaMotionTokens.LIST_ENTRY_DURATION_MS,
+                            easing = ArworaMotionTokens.StandardEasing
+                        ),
+                        label = "nav_pill_scale"
+                    )
+                    val itemInteractionSource = remember { MutableInteractionSource() }
 
                     Column(
                         modifier = Modifier
@@ -153,8 +167,8 @@ fun CustomBottomNavigationBar(
                             .fillMaxHeight()
                             .testTag("nav_item_${item.title.lowercase()}")
                             .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = ripple(bounded = true, color = selectedTintColor)
+                                interactionSource = itemInteractionSource,
+                                indication = null
                             ) {
                                 com.arwora.utils.SoundEffectManager.playClick()
                                 if (onTabSelected != null) {
@@ -168,16 +182,23 @@ fun CustomBottomNavigationBar(
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(width = 52.dp, height = 28.dp)
-                                .background(
-                                    pillBgColor,
-                                    RoundedCornerShape(percent = 50)
-                                )
+                                .size(width = 56.dp, height = 30.dp)
+                                .graphicsLayer {
+                                    scaleX = pillScale
+                                    scaleY = pillScale
+                                }
+                                .clip(pillShape)
+                                .background(pillBgColor, pillShape)
                                 .border(
                                     width = 1.dp,
                                     color = pillBorderColor,
-                                    shape = RoundedCornerShape(percent = 50)
-                                ),
+                                    shape = pillShape
+                                )
+                                .indication(
+                                    interactionSource = itemInteractionSource,
+                                    indication = ripple(bounded = true, color = selectedTintColor)
+                                )
+                                .testTag("nav_pill_${item.title.lowercase()}"),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(

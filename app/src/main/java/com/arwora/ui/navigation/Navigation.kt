@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.util.lerp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
@@ -137,12 +138,18 @@ sealed class Screen(val route: String) {
     object BatteryMonitor : Screen("battery_monitor")
     object WakelockDetector : Screen("wakelock_detector")
     object AppOps : Screen("app_ops")
+    object CompressorTool : Screen("compressor/{typeId}") {
+        fun createRoute(typeId: String = "image") = "compressor/$typeId"
+    }
+    object CompressionSettings : Screen("compression_settings")
+    object QrScanner : Screen("qr_scanner")
 }
 
 @Composable
 fun MainAppScreen(
     viewModel: MainViewModel,
-    skipSplash: Boolean = false
+    skipSplash: Boolean = false,
+    onSplashDismissed: () -> Unit = {}
 ) {
     val navController = rememberNavController()
     val darkModeState by viewModel.darkMode.collectAsStateWithLifecycle()
@@ -207,6 +214,7 @@ fun MainAppScreen(
                 pagerState = pagerState,
                 skipSplash = skipSplash,
                 onSelectMainTab = { index, animate -> selectMainTab(index, animate) },
+                onSplashDismissed = onSplashDismissed,
                 modifier = Modifier
                     .fillMaxSize()
                     .nestedScroll(bottomBarScrollController.nestedScrollConnection)
@@ -362,6 +370,7 @@ fun NameGenNavHost(
     pagerState: PagerState,
     skipSplash: Boolean = false,
     onSelectMainTab: (index: Int, animate: Boolean) -> Unit,
+    onSplashDismissed: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val slideSpec = tween<androidx.compose.ui.unit.IntOffset>(
@@ -432,6 +441,7 @@ fun NameGenNavHost(
         ) {
             SplashScreen(
                 onSplashFinished = {
+                    onSplashDismissed()
                     navController.navigate(Screen.MainTabs.route) {
                         popUpTo(Screen.Splash.route) { inclusive = true }
                         launchSingleTop = true
@@ -498,15 +508,31 @@ fun NameGenNavHost(
                     .graphicsLayer { compositingStrategy = CompositingStrategy.Auto }
                     .testTag("main_tab_pager")
             ) { page ->
-                when (page) {
-                    0 -> HomeScreen(navController = navController, viewModel = viewModel)
-                    1 -> GenerateDashboardScreen(navController = navController, viewModel = viewModel)
-                    2 -> SocialScreen(navController = navController, viewModel = viewModel)
-                    3 -> {
-                        val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as com.arwora.NameGenApplication
-                        SystemDashboardScreen(navController = navController, appManagerViewModel = app.appManagerViewModel)
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            val pageOffset = (
+                                (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
+                            ).coerceIn(-1f, 1f)
+                            val absOffset = kotlin.math.abs(pageOffset)
+                            alpha = lerp(1f, 0.55f, absOffset)
+                            val pageScale = lerp(1f, 0.965f, absOffset)
+                            scaleX = pageScale
+                            scaleY = pageScale
+                            translationX = size.width * 0.035f * pageOffset
+                        }
+                ) {
+                    when (page) {
+                        0 -> HomeScreen(navController = navController, viewModel = viewModel)
+                        1 -> GenerateDashboardScreen(navController = navController, viewModel = viewModel)
+                        2 -> SocialScreen(navController = navController, viewModel = viewModel)
+                        3 -> {
+                            val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as com.arwora.NameGenApplication
+                            SystemDashboardScreen(navController = navController, appManagerViewModel = app.appManagerViewModel)
+                        }
+                        4 -> SettingsScreen(navController = navController, viewModel = viewModel)
                     }
-                    4 -> SettingsScreen(navController = navController, viewModel = viewModel)
                 }
             }
         }
@@ -726,6 +752,41 @@ fun NameGenNavHost(
         }
         composable(Screen.AppOps.route) {
             com.arwora.feature.system.appops.ui.AppOpsScreen(onBack = { navController.popBackStack() })
+        }
+        composable(
+            route = Screen.CompressorTool.route,
+            arguments = listOf(navArgument("typeId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val typeId = backStackEntry.arguments?.getString("typeId") ?: "image"
+            com.arwora.feature.compressor.CompressorScreen(
+                initialTypeId = typeId,
+                onBack = { navController.popBackStack() },
+                onOpenCompressionSettings = {
+                    navController.navigate(Screen.CompressionSettings.route)
+                }
+            )
+        }
+        composable(Screen.CompressionSettings.route) {
+            com.arwora.feature.compressor.CompressionSettingsScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(Screen.QrScanner.route) {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            LaunchedEffect(Unit) {
+                try {
+                    val intent = android.content.Intent(context, com.arwora.QrScannerActivity::class.java)
+                    if (context !is android.app.Activity) {
+                        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(intent)
+                    navController.popBackStack()
+                } catch (e: Exception) {
+                    android.util.Log.e("Navigation", "Failed to launch QrScannerActivity", e)
+                    android.widget.Toast.makeText(context, "Error: Could not launch QR & Barcode Scanner", android.widget.Toast.LENGTH_SHORT).show()
+                    navController.popBackStack()
+                }
+            }
         }
     }
 }

@@ -120,11 +120,14 @@ val allGlobalTools = listOf(
     GlobalToolItem("Sound Direction Compass", "Sensors", "Acoustic compass detecting incoming sound direction using mics", Icons.Default.Explore, Screen.SoundDirection.route, listOf("sound", "compass", "audio", "sensor", "direction")),
 
     // Storage & Media
+    GlobalToolItem("All-in-One Compressor Hub", "Media", "Compress video, audio, image, PDF, archive, GIF, code & batch files", Icons.Default.Compress, Screen.CompressorTool.createRoute("image"), listOf("compress", "compressor", "zip", "pdf", "video", "audio", "gif", "minify")),
+    GlobalToolItem("Compression Settings", "Media", "Configure default output formats, quality sliders & video bitrate targets", Icons.Default.Tune, Screen.CompressionSettings.route, listOf("compression", "settings", "defaults", "quality", "bitrate", "jpeg", "webp")),
     GlobalToolItem("Storage Space Analyzer", "Storage", "Visual breakdown of internal disk usage and large files", Icons.Default.PieChart, Screen.StorageAnalyzer.route, listOf("storage", "disk", "space", "analyzer", "files")),
     GlobalToolItem("Social Media Downloader", "Social", "Save videos, audio and reels from supported social links", Icons.Default.Download, Screen.Social.route, listOf("social", "download", "video", "reels", "audio", "status")),
     GlobalToolItem("Audio Extractor & Converter", "Media", "Extract high quality MP3 / M4A audio tracks from video files", Icons.Default.Audiotrack, Screen.Social.route, listOf("audio", "extractor", "mp3", "video", "convert")),
 
     // Utilities & Generators
+    GlobalToolItem("All QR & Barcode Scanner", "Utility", "Scan Wi-Fi, URLs, contacts & barcodes 100% offline", Icons.Default.QrCodeScanner, Screen.QrScanner.route, listOf("qr", "barcode", "scanner", "wifi", "scan", "camera", "upc", "ean", "offline")),
     GlobalToolItem("Auto Clicker", "Utility", "Automated screen tap gestures, multi-point macro and swipe scripts", Icons.Default.TouchApp, Screen.AutoClicker.route, listOf("auto", "clicker", "tap", "macro", "game")),
     GlobalToolItem("Nickname Generator", "Generator", "Cool gamer tags, stylish nick styles and clan names", Icons.Default.Badge, Screen.NicknameGen.route, listOf("nickname", "gaming", "tag", "names", "generator")),
     GlobalToolItem("Random Name Generator", "Generator", "Generate realistic male, female, and fantasy names", Icons.Default.Person, Screen.NameGen.route, listOf("name", "random", "person", "generator")),
@@ -176,6 +179,7 @@ fun HomeScreen(
         val allFeatures = listOf(
             CompactFeature("App Locker", Icons.Default.Lock, Screen.AppLocker.route),
             CompactFeature("Security Scan", Icons.Default.Security, Screen.DeepScanner.route),
+            CompactFeature("QR Scanner", Icons.Default.QrCodeScanner, Screen.QrScanner.route),
             CompactFeature("App Usage Stats", Icons.Default.QueryStats, Screen.AppUsageStats.route),
             CompactFeature("Fake GPS", Icons.Default.LocationOn, Screen.FakeGps.route),
             CompactFeature("App Manager", Icons.Default.Apps, Screen.AppList.route),
@@ -376,9 +380,29 @@ fun HomeScreen(
             }
         }
 
-        // ==================== SCREEN ACTIVITY ====================
+        // ==================== ALL QR & BARCODE SCANNER ====================
         item {
             AnimatedListItem(index = 2) {
+                HomeQrScannerCard(
+                    onOpenScanner = {
+                        try {
+                            val intent = Intent(context, com.arwora.QrScannerActivity::class.java)
+                            if (context !is android.app.Activity) {
+                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            Log.e("HomeScreen", "Failed to open QrScannerActivity", e)
+                            Toast.makeText(context, "Unable to open QR & Barcode Scanner", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
+            }
+        }
+
+        // ==================== SCREEN ACTIVITY ====================
+        item {
+            AnimatedListItem(index = 3) {
                 CompactWellbeingDashboardCard(
                     summary = wellbeingSummary ?: WellbeingSummary(),
                     selectedTimeframe = homeTimeframe,
@@ -625,12 +649,15 @@ fun HomeScreen(
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.Bold,
-                            modifier = Modifier.clickable {
-                                SoundEffectManager.playClick()
-                                if (tabNavigator?.invoke(Screen.GenerateDashboard.route) != true) {
-                                    navController.navigate(Screen.GenerateDashboard.route)
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(percent = 50))
+                                .clickable {
+                                    SoundEffectManager.playClick()
+                                    if (tabNavigator?.invoke(Screen.GenerateDashboard.route) != true) {
+                                        navController.navigate(Screen.GenerateDashboard.route)
+                                    }
                                 }
-                            }
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
                         )
                     }
                 }

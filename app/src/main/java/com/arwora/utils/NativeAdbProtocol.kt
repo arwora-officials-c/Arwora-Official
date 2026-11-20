@@ -15,6 +15,8 @@ import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.PrivateKey
 import java.security.Signature
+import java.security.cert.CertificateFactory
+import java.security.cert.X509Certificate
 import java.security.interfaces.RSAPublicKey
 import java.security.spec.PKCS8EncodedKeySpec
 import java.security.spec.X509EncodedKeySpec
@@ -33,8 +35,10 @@ object NativeAdbProtocol {
     const val A_CLSE = 0x45534c43
     const val A_WRTE = 0x45545257
     const val A_AUTH = 0x48545541
+    const val A_STLS = 0x534c5453
 
     const val A_VERSION = 0x01000000
+    const val A_STLS_VERSION = 0x01000000
     const val MAX_PAYLOAD = 256 * 1024
 
     const val AUTH_TOKEN = 1
@@ -257,5 +261,83 @@ object NativeAdbProtocol {
             buffer.putInt(word)
             remaining = remaining.shiftRight(32)
         }
+    }
+
+    /**
+     * Generates a self-signed DER X.509 v3 client certificate wrapping [keyPair] with CN=[commonName]
+     * for Android 11+ Wireless Debugging mutual TLS (`A_STLS`) handshakes.
+     */
+    fun createClientX509Certificate(
+        keyPair: KeyPair,
+        commonName: String = DEFAULT_CLIENT_IDENTITY
+    ): X509Certificate {
+        val cn = commonName.trim().ifEmpty { DEFAULT_CLIENT_IDENTITY }
+        val sha256WithRsaAlgId = derSequence(
+            byteArrayOf(
+                0x06, 0x09, 0x2A, 0x86.toByte(), 0x48, 0x86.toByte(),
+                0xF7.toByte(), 0x0D, 0x01, 0x01, 0x0B,
+                0x05, 0x00
+            )
+        )
+        val cnBytes = cn.toByteArray(Charsets.UTF_8)
+        val nameDn = derSequence(
+            derSet(
+                derSequence(
+                    byteArrayOf(0x06, 0x03, 0x55, 0x04, 0x03) +
+                        derTlv(0x0C, cnBytes)
+                )
+            )
+        )
+        val validity = derSequence(
+            derTlv(0x17, "200101000000Z".toByteArray(Charsets.US_ASCII)) +
+                derTlv(0x17, "491231235959Z".toByteArray(Charsets.US_ASCII))
+        )
+        val versionExt = byteArrayOf(0xA0.toByte(), 0x03, 0x02, 0x01, 0x02) // [0] v3 (2)
+        val serial = derTlv(0x02, byteArrayOf(0x01, 0x41, 0x52, 0x57, 0x4F, 0x52, 0x41))
+        val spki = keyPair.public.encoded
+
+        val tbsCert = derSequence(
+            versionExt +
+                serial +
+                sha256WithRsaAlgId +
+                nameDn +
+                validity +
+                nameDn +
+                spki
+        )
+
+        val signer = Signature.getInstance("SHA256withRSA")
+        signer.initSign(keyPair.private)
+        signer.update(tbsCert)
+        val signatureBytes = signer.sign()
+        val bitStringSig = derTlv(0x03, byteArrayOf(0x00) + signatureBytes)
+
+        val certDer = derSequence(tbsCert + sha256WithRsaAlgId + bitStringSig)
+        val factory = CertificateFactory.getInstance("X.509")
+        return factory.generateCertificate(ByteArrayInputStream(certDer)) as X509Certificate
+    }
+
+    private fun derSequence(content: ByteArray): ByteArray = derTlv(0x30, content)
+
+    private fun derSet(content: ByteArray): ByteArray = derTlv(0x31, content)
+
+    private fun derTlv(tag: Int, content: ByteArray): ByteArray {
+        val len = content.size
+        val lenBytes = when {
+            len < 0x80 -> byteArrayOf(len.toByte())
+            len <= 0xFF -> byteArrayOf(0x81.toByte(), len.toByte())
+            len <= 0xFFFF -> byteArrayOf(0x82.toByte(), (len shr 8).toByte(), len.toByte())
+            else -> byteArrayOf(
+                0x83.toByte(),
+                (len shr 16).toByte(),
+                (len shr 8).toByte(),
+                len.toByte()
+            )
+        }
+        return ByteArrayOutputStream(1 + lenBytes.size + len).apply {
+            write(tag)
+            write(lenBytes)
+            write(content)
+        }.toByteArray()
     }
 }

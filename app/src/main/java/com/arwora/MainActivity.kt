@@ -55,7 +55,8 @@ class MainActivity : ComponentActivity() {
 
         val app = application as NameGenApplication
         val viewModel = app.sharedViewModel
-        val skipSplash = (intent?.action == Intent.ACTION_SEND)
+        val skipSplash = (intent?.action == Intent.ACTION_SEND) ||
+            (intent?.getBooleanExtra("skip_splash", false) == true)
 
         val nightMask = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
         val isSystemDarkNow = nightMask == android.content.res.Configuration.UI_MODE_NIGHT_YES
@@ -64,7 +65,23 @@ class MainActivity : ComponentActivity() {
             whiteThemeState = viewModel.whiteTheme.value,
             isSystemDark = isSystemDarkNow
         )
-        com.arwora.ui.theme.ThemeManager.applySystemBarsTheme(window, initialThemeConfig)
+        if (!skipSplash) {
+            val splashBgInt = if (isSystemDarkNow) {
+                android.graphics.Color.BLACK
+            } else {
+                android.graphics.Color.WHITE
+            }
+            window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(splashBgInt))
+            @Suppress("DEPRECATION")
+            window.statusBarColor = splashBgInt
+            @Suppress("DEPRECATION")
+            window.navigationBarColor = splashBgInt
+            val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+            insetsController.isAppearanceLightStatusBars = !isSystemDarkNow
+            insetsController.isAppearanceLightNavigationBars = !isSystemDarkNow
+        } else {
+            com.arwora.ui.theme.ThemeManager.applySystemBarsTheme(window, initialThemeConfig)
+        }
 
         handleIncomingIntent(intent, viewModel)
 
@@ -88,6 +105,9 @@ class MainActivity : ComponentActivity() {
                     isSystemDark = systemInDark
                 )
             }
+            val isSplashDismissedState = remember(skipSplash) {
+                androidx.compose.runtime.mutableStateOf(skipSplash)
+            }
             val uiColorLong by viewModel.uiColor.collectAsStateWithLifecycle()
             val buttonColorLong by viewModel.buttonColor.collectAsStateWithLifecycle()
             val uiColor = Color(uiColorLong.toInt())
@@ -95,9 +115,11 @@ class MainActivity : ComponentActivity() {
 
             val context = androidx.compose.ui.platform.LocalContext.current
             val activity = context as? android.app.Activity
-            LaunchedEffect(themeConfig) {
-                activity?.window?.let { win ->
-                    com.arwora.ui.theme.ThemeManager.applySystemBarsTheme(win, themeConfig)
+            LaunchedEffect(themeConfig, isSplashDismissedState.value) {
+                if (isSplashDismissedState.value) {
+                    activity?.window?.let { win ->
+                        com.arwora.ui.theme.ThemeManager.applySystemBarsTheme(win, themeConfig)
+                    }
                 }
             }
 
@@ -113,7 +135,8 @@ class MainActivity : ComponentActivity() {
                 ) {
                     com.arwora.ui.navigation.MainAppScreen(
                         viewModel = viewModel,
-                        skipSplash = skipSplash
+                        skipSplash = skipSplash,
+                        onSplashDismissed = { isSplashDismissedState.value = true }
                     )
                 }
             }

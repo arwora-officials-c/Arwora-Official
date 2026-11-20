@@ -22,14 +22,9 @@ import java.net.ConnectException
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.SocketTimeoutException
-import java.security.SecureRandom
-import java.security.cert.X509Certificate
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.regex.Pattern
-import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
-import javax.net.ssl.TrustManager
-import javax.net.ssl.X509TrustManager
 
 enum class WirelessPairingMode(
     val title: String,
@@ -87,8 +82,8 @@ object WirelessPairingManager {
 
     internal const val AUTO_PAIR_DISCOVERY_TIMEOUT_MS = 10_000L
     internal const val SOCKET_PROBE_TIMEOUT_MS = 200
-    internal const val SOCKET_PAIRING_CONNECT_TIMEOUT_MS = 3_000
-    internal const val SOCKET_PAIRING_READ_TIMEOUT_MS = 4_000
+    internal const val SOCKET_PAIRING_CONNECT_TIMEOUT_MS = 2_000
+    internal const val SOCKET_PAIRING_READ_TIMEOUT_MS = 2_500
     internal const val STAGE_SCANNING_PORT = "Scanning local ADB port..."
     internal const val STAGE_ESTABLISHING_PAIRING = "Establishing secure pairing..."
     internal const val STAGE_CONNECTED = "Connected successfully!"
@@ -131,7 +126,8 @@ object WirelessPairingManager {
     private var connectDiscoveryListener: NsdManager.DiscoveryListener? = null
     private val isPairingDiscoveryActive = AtomicBoolean(false)
     private val isConnectDiscoveryActive = AtomicBoolean(false)
-    private val isResolvingMdns = AtomicBoolean(false)
+    private val isResolvingPairingMdns = AtomicBoolean(false)
+    private val isResolvingConnectMdns = AtomicBoolean(false)
 
     private var listeningScope: CoroutineScope? = null
     private var timeoutJob: Job? = null
@@ -743,15 +739,15 @@ object WirelessPairingManager {
                     return@launch
                 }
 
-                // 2. Direct TLS socket handshake with explicit timeout & exception reporting
-                val socketResult = trySocketPairing(cleanHost, port, cleanCode)
-                if (socketResult.success) {
+                // 2. Shell CLI (`adb pair host:port code` with client identity `arwora`)
+                if (tryShellPairing(cleanHost, port, cleanCode)) {
                     onPairingSuccess(appContext, STAGE_CONNECTED, pairingPort = port)
                     return@launch
                 }
 
-                // 3. Shell CLI fallback (adb pair host:port code)
-                if (tryShellPairing(cleanHost, port, cleanCode)) {
+                // 3. Direct TLS socket handshake with client keypair & explicit timeout reporting
+                val socketResult = trySocketPairing(cleanHost, port, cleanCode, appContext)
+                if (socketResult.success) {
                     onPairingSuccess(appContext, STAGE_CONNECTED, pairingPort = port)
                     return@launch
                 }
@@ -788,7 +784,7 @@ object WirelessPairingManager {
             _status.value = PairingStatus.PairingInProgress(
                 port = pairingPort ?: 0,
                 host = _savedHost.value.ifBlank { "127.0.0.1" },
-                stageMessage = "Paired! Resolving connection port..."
+                stageMessage = "Paired successfully! Connecting ADB..."
             )
         }
         val (connected, connectMsg) = withContext(Dispatchers.IO) {
@@ -879,28 +875,17 @@ object WirelessPairingManager {
             )
         }
 
+        stopMdnsDiscovery()
         try {
             if (tryPairViaIAdbManager(cleanCode)) {
                 updateUiState {
                     _status.value = PairingStatus.PairingInProgress(
                         port = resolvedPort,
                         host = resolvedHost,
-                        stageMessage = "Paired! Resolving connection port..."
+                        stageMessage = "Paired successfully! Connecting ADB..."
                     )
                 }
                 return@withContext Pair(true, "Paired via system ADB manager")
-            }
-
-            val socketResult = trySocketPairing(resolvedHost, resolvedPort, cleanCode)
-            if (socketResult.success) {
-                updateUiState {
-                    _status.value = PairingStatus.PairingInProgress(
-                        port = resolvedPort,
-                        host = resolvedHost,
-                        stageMessage = "Paired! Resolving connection port..."
-                    )
-                }
-                return@withContext Pair(true, "Paired via TLS socket ($resolvedHost:$resolvedPort)")
             }
 
             if (tryShellPairing(resolvedHost, resolvedPort, cleanCode)) {
@@ -908,10 +893,22 @@ object WirelessPairingManager {
                     _status.value = PairingStatus.PairingInProgress(
                         port = resolvedPort,
                         host = resolvedHost,
-                        stageMessage = "Paired! Resolving connection port..."
+                        stageMessage = "Paired successfully! Connecting ADB..."
                     )
                 }
                 return@withContext Pair(true, "Paired via adb pair ($resolvedHost:$resolvedPort)")
+            }
+
+            val socketResult = trySocketPairing(resolvedHost, resolvedPort, cleanCode, appContext)
+            if (socketResult.success) {
+                updateUiState {
+                    _status.value = PairingStatus.PairingInProgress(
+                        port = resolvedPort,
+                        host = resolvedHost,
+                        stageMessage = "Paired successfully! Connecting ADB..."
+                    )
+                }
+                return@withContext Pair(true, "Paired via TLS socket ($resolvedHost:$resolvedPort)")
             }
 
             val reason = socketResult.failureReason ?: "Pairing handshake failed on $resolvedHost:$resolvedPort."
@@ -992,17 +989,19 @@ object WirelessPairingManager {
         }
     }
 
-    private fun trySocketPairing(host: String, port: Int, code: String): SocketHandshakeResult {
+    private fun trySocketPairing(
+        host: String,
+        port: Int,
+        code: String,
+        context: Context? = null
+    ): SocketHandshakeResult {
         NativeAdbManager.ensureClientIdentity()
         var socket: Socket? = null
         return try {
-            val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
-                override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
-                override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
-                override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
-            })
-            val sslContext = SSLContext.getInstance("TLS")
-            sslContext.init(null, trustAllCerts, SecureRandom())
+            val keyPair = context?.let {
+                NativeAdbProtocol.loadOrCreateKeyPair(File(it.filesDir, "adb_keys"))
+            }
+            val sslContext = NativeAdbManager.createClientSslContext(keyPair)
 
             val rawSocket = Socket()
             rawSocket.connect(InetSocketAddress(host, port), SOCKET_PAIRING_CONNECT_TIMEOUT_MS)
@@ -1020,7 +1019,7 @@ object WirelessPairingManager {
             outputStream.write(payload)
             outputStream.flush()
 
-            Thread.sleep(250)
+            Thread.sleep(150)
             val available = inputStream.available()
             if (available > 0) {
                 val buffer = ByteArray(available)
@@ -1063,7 +1062,7 @@ object WirelessPairingManager {
     private fun waitForProcessSafely(process: Process): Boolean {
         return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                if (!process.waitFor(4, java.util.concurrent.TimeUnit.SECONDS)) {
+                if (!process.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)) {
                     process.destroyForcibly()
                     return false
                 }
@@ -1140,11 +1139,11 @@ object WirelessPairingManager {
 
                 override fun onServiceFound(serviceInfo: NsdServiceInfo) {
                     Log.d(TAG, "mDNS pairing service found: ${serviceInfo.serviceName}")
-                    if (!isResolvingMdns.compareAndSet(false, true)) return
+                    if (!isResolvingPairingMdns.compareAndSet(false, true)) return
                     try {
                         nsd.resolveService(serviceInfo, object : NsdManager.ResolveListener {
                             override fun onServiceResolved(resolvedInfo: NsdServiceInfo) {
-                                isResolvingMdns.set(false)
+                                isResolvingPairingMdns.set(false)
                                 val port = resolvedInfo.port
                                 Log.i(TAG, "Resolved ADB pairing port: $port")
                                 if (port in 1024..65535) {
@@ -1159,12 +1158,12 @@ object WirelessPairingManager {
                             }
 
                             override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-                                isResolvingMdns.set(false)
+                                isResolvingPairingMdns.set(false)
                                 Log.w(TAG, "mDNS pairing resolve failed: $errorCode")
                             }
                         })
                     } catch (e: Exception) {
-                        isResolvingMdns.set(false)
+                        isResolvingPairingMdns.set(false)
                         Log.e(TAG, "Error resolving pairing service", e)
                     }
                 }
@@ -1187,11 +1186,11 @@ object WirelessPairingManager {
                 }
 
                 override fun onServiceFound(serviceInfo: NsdServiceInfo) {
-                    if (!isResolvingMdns.compareAndSet(false, true)) return
+                    if (!isResolvingConnectMdns.compareAndSet(false, true)) return
                     try {
                         nsd.resolveService(serviceInfo, object : NsdManager.ResolveListener {
                             override fun onServiceResolved(resolvedInfo: NsdServiceInfo) {
-                                isResolvingMdns.set(false)
+                                isResolvingConnectMdns.set(false)
                                 val port = resolvedInfo.port
                                 if (port in 1024..65535) {
                                     Log.i(TAG, "Resolved ADB connect port: $port")
@@ -1201,11 +1200,11 @@ object WirelessPairingManager {
                             }
 
                             override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-                                isResolvingMdns.set(false)
+                                isResolvingConnectMdns.set(false)
                             }
                         })
                     } catch (_: Exception) {
-                        isResolvingMdns.set(false)
+                        isResolvingConnectMdns.set(false)
                     }
                 }
 
@@ -1250,7 +1249,8 @@ object WirelessPairingManager {
             isConnectDiscoveryActive.set(false)
         }
 
-        isResolvingMdns.set(false)
+        isResolvingPairingMdns.set(false)
+        isResolvingConnectMdns.set(false)
         pairingDiscoveryListener = null
         connectDiscoveryListener = null
         nsdManager = null

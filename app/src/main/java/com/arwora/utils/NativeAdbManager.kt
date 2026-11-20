@@ -27,14 +27,18 @@ import java.net.InetSocketAddress
 import java.net.NetworkInterface
 import java.net.Socket
 import java.security.KeyPair
+import java.security.Principal
+import java.security.PrivateKey
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import java.security.interfaces.RSAPublicKey
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import javax.net.ssl.KeyManager
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.TrustManager
+import javax.net.ssl.X509KeyManager
 import javax.net.ssl.X509TrustManager
 
 enum class NativeAdbConnectionState(val label: String) {
@@ -70,12 +74,13 @@ object NativeAdbManager {
     private const val KEY_USER_STOPPED = "is_user_stopped"
 
     private const val NSD_CONNECT_SERVICE = "_adb-tls-connect._tcp"
-    internal const val NSD_CONNECT_DISCOVERY_TIMEOUT_MS = 4_000L
+    internal const val NSD_CONNECT_DISCOVERY_TIMEOUT_MS = 3_000L
     const val ERROR_WIRELESS_DEBUGGING_OFF =
         "Wireless Debugging is OFF or not paired yet. Turn on Wireless Debugging in Developer Options first."
 
-    private const val CONNECT_TIMEOUT_MS = 2_500
-    private const val HANDSHAKE_TIMEOUT_MS = 4_000
+    private const val CONNECT_TIMEOUT_MS = 1_500
+    private const val PROBE_TIMEOUT_MS = 350
+    private const val HANDSHAKE_TIMEOUT_MS = 3_000
 
     private val streamIdGen = AtomicInteger(1)
     private val connectMutex = Mutex()
@@ -275,16 +280,16 @@ object NativeAdbManager {
                 _connectedPort.value = null
             }
             _connectionState.value = NativeAdbConnectionState.CONNECTING
-            _statusMessage.value = "Paired! Resolving connection port..."
+            _statusMessage.value = "Paired successfully! Connecting ADB..."
 
             // Give adbd a short window to publish _adb-tls-connect._tcp after pairing finishes, retrying once if needed.
             var candidates = discoverLocalAdbEndpoints(
                 context = context,
                 excludePort = pairingPort,
-                nsdTimeoutMs = 3_000L
+                nsdTimeoutMs = 2_500L
             )
             if (candidates.isEmpty()) {
-                kotlinx.coroutines.delay(350L)
+                kotlinx.coroutines.delay(250L)
                 candidates = discoverLocalAdbEndpoints(
                     context = context,
                     excludePort = pairingPort,
@@ -493,13 +498,13 @@ object NativeAdbManager {
 
         val keyPair = if (ctx != null) getOrInitKeyPair(ctx) else NativeAdbProtocol.loadOrCreateKeyPair(File("/tmp/arwora_adb"))
 
-        // Try TLS first (Android 11+ wireless debugging), then plain TCP if daemon uses plain transport
+        // Try plaintext A_CNXN (which handles inline A_STLS mTLS upgrade on Android 11+), then immediate TLS fallback
         val result = try {
-            executeOverSocket(host, port, command, keyPair, useTls = true, timeoutMs = timeoutMs)
-        } catch (tlsError: Exception) {
+            executeOverSocket(host, port, command, keyPair, useTls = false, timeoutMs = timeoutMs)
+        } catch (primaryError: Exception) {
             try {
-                executeOverSocket(host, port, command, keyPair, useTls = false, timeoutMs = timeoutMs)
-            } catch (tcpError: Exception) {
+                executeOverSocket(host, port, command, keyPair, useTls = true, timeoutMs = timeoutMs)
+            } catch (tlsError: Exception) {
                 _isConnected.value = false
                 if (ctx != null) {
                     _connectionState.value = resolveConnectionState(
@@ -512,7 +517,7 @@ object NativeAdbManager {
                 }
                 NativeShellResult(
                     success = false,
-                    output = tcpError.message ?: tlsError.message ?: "ADB command failed",
+                    output = tlsError.message ?: primaryError.message ?: "ADB command failed",
                     exitCode = -1
                 )
             }
@@ -568,7 +573,11 @@ object NativeAdbManager {
             }
         }
 
-        // 3. Previously successful ADB port cached in preferences
+        // 3. Previously resolved connect port cached in preferences (strictly excluding pairing port)
+        val savedConnectPort = WirelessPairingManager.savedConnectPort.value
+        if (savedConnectPort != null && isAllowedPort(savedConnectPort)) {
+            addForLocalHosts(savedConnectPort)
+        }
         val accessPrefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val cachedHost = accessPrefs.getString(KEY_LAST_HOST, null)
         val cachedPort = accessPrefs.getInt(KEY_LAST_PORT, -1)
@@ -576,14 +585,35 @@ object NativeAdbManager {
             endpoints.add(NativeAdbEndpoint(cachedHost, cachedPort))
         }
 
-        // 4. Ephemeral Wireless Debugging listening sockets from /proc/net/tcp (ports >= 30000)
-        readProcTcpListeningPorts().forEach { port ->
-            if (port >= 30000 && isAllowedPort(port)) {
-                addForLocalHosts(port)
+        // 4. Only scan /proc/net/tcp listening sockets if mDNS / Settings returned nothing,
+        //    and verify TCP reachability quickly so unrelated app sockets don't cause connect timeouts.
+        if (endpoints.isEmpty()) {
+            readProcTcpListeningPorts().forEach { port ->
+                if (port >= 30000 && isAllowedPort(port)) {
+                    val reachableHost = when {
+                        !wifiIp.isNullOrBlank() && wifiIp != "127.0.0.1" && isTcpPortReachable(wifiIp, port) -> wifiIp
+                        isTcpPortReachable("127.0.0.1", port) -> "127.0.0.1"
+                        else -> null
+                    }
+                    if (reachableHost != null) {
+                        endpoints.add(NativeAdbEndpoint(reachableHost, port))
+                    }
+                }
             }
         }
 
         endpoints.toList()
+    }
+
+    private fun isTcpPortReachable(host: String, port: Int, timeoutMs: Int = PROBE_TIMEOUT_MS): Boolean {
+        return try {
+            Socket().use { socket ->
+                socket.connect(InetSocketAddress(host, port), timeoutMs)
+                true
+            }
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private suspend fun discoverNsdConnectEndpoints(
@@ -602,7 +632,56 @@ object NativeAdbManager {
         val deferred = CompletableDeferred<NativeAdbEndpoint?>()
         val resolved = AtomicBoolean(false)
         val resolvingInFlight = AtomicBoolean(false)
+        val pendingQueue = ArrayDeque<NsdServiceInfo>()
+        val queueLock = Any()
         val wifiIpFallback = getLocalWifiIpAddress(context)
+
+        fun resolveNext() {
+            if (resolved.get()) return
+            val nextInfo = synchronized(queueLock) {
+                if (pendingQueue.isEmpty()) {
+                    resolvingInFlight.set(false)
+                    null
+                } else {
+                    pendingQueue.removeFirst()
+                }
+            } ?: return
+
+            try {
+                @Suppress("DEPRECATION")
+                nsdManager.resolveService(nextInfo, object : NsdManager.ResolveListener {
+                    override fun onResolveFailed(serviceInfo: NsdServiceInfo?, errorCode: Int) {
+                        Log.w(TAG, "NSD resolveService failed: $errorCode")
+                        resolveNext()
+                    }
+
+                    override fun onServiceResolved(resolvedInfo: NsdServiceInfo?) {
+                        val port = resolvedInfo?.port ?: -1
+                        if (port !in 1024..65535 || (excludePort != null && port == excludePort)) {
+                            Log.d(TAG, "Ignoring resolved NSD port=$port (excluded=$excludePort)")
+                            resolveNext()
+                            return
+                        }
+
+                        val host = extractPreferredHostIp(resolvedInfo, wifiIpFallback)
+                        _discoveredPort.value = port
+                        _connectedHost.value = host
+                        _connectedPort.value = port
+                        Log.i(TAG, "Resolved _adb-tls-connect._tcp endpoint: $host:$port")
+                        synchronized(queueLock) {
+                            pendingQueue.clear()
+                            resolvingInFlight.set(false)
+                        }
+                        if (resolved.compareAndSet(false, true)) {
+                            deferred.complete(NativeAdbEndpoint(host, port))
+                        }
+                    }
+                })
+            } catch (e: Exception) {
+                Log.w(TAG, "Error resolving _adb-tls-connect._tcp service", e)
+                resolveNext()
+            }
+        }
 
         val discoveryListener = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(regType: String?) {
@@ -611,33 +690,13 @@ object NativeAdbManager {
 
             override fun onServiceFound(serviceInfo: NsdServiceInfo?) {
                 val info = serviceInfo ?: return
-                if (!resolvingInFlight.compareAndSet(false, true)) return
-                try {
-                    @Suppress("DEPRECATION")
-                    nsdManager.resolveService(info, object : NsdManager.ResolveListener {
-                        override fun onResolveFailed(serviceInfo: NsdServiceInfo?, errorCode: Int) {
-                            resolvingInFlight.set(false)
-                            Log.w(TAG, "NSD resolveService failed: $errorCode")
-                        }
-
-                        override fun onServiceResolved(resolvedInfo: NsdServiceInfo?) {
-                            resolvingInFlight.set(false)
-                            val port = resolvedInfo?.port ?: -1
-                            if (port !in 1024..65535 || (excludePort != null && port == excludePort)) return
-
-                            val host = extractPreferredHostIp(resolvedInfo, wifiIpFallback)
-                            _discoveredPort.value = port
-                            _connectedHost.value = host
-                            _connectedPort.value = port
-                            Log.i(TAG, "Resolved _adb-tls-connect._tcp endpoint: $host:$port")
-                            if (resolved.compareAndSet(false, true)) {
-                                deferred.complete(NativeAdbEndpoint(host, port))
-                            }
-                        }
-                    })
-                } catch (e: Exception) {
-                    resolvingInFlight.set(false)
-                    Log.w(TAG, "Error resolving _adb-tls-connect._tcp service", e)
+                if (resolved.get()) return
+                val startImmediately = synchronized(queueLock) {
+                    pendingQueue.addLast(info)
+                    resolvingInFlight.compareAndSet(false, true)
+                }
+                if (startImmediately) {
+                    resolveNext()
                 }
             }
 
@@ -720,9 +779,9 @@ object NativeAdbManager {
     }
 
     /**
-     * Opens a TLS (or plain TCP fallback) ADB socket, completes `A_CNXN`/`A_AUTH` using `arwora`'s RSA keypair,
-     * and sends a real test shell command (`echo connected && id`) over an ADB stream to verify the session
-     * is genuinely alive and authorized before reporting success.
+     * Opens a socket, completes `A_CNXN` -> `A_STLS` (mTLS upgrade with `arwora`'s RSA X.509 cert) /
+     * `A_AUTH` handshake, and sends a real test shell command (`echo connected && id`) over an ADB stream
+     * to verify the session is genuinely alive and authorized before reporting success.
      */
     internal fun performVerifiedHandshake(
         host: String,
@@ -730,14 +789,14 @@ object NativeAdbManager {
         keyPair: KeyPair
     ): Pair<Boolean, String> {
         return try {
-            openAuthenticateAndVerifyShell(host, port, keyPair, useTls = true, HANDSHAKE_TIMEOUT_MS)
-            Pair(true, "Active / Connected via TLS ($host:$port)")
-        } catch (tlsEx: Exception) {
+            openAuthenticateAndVerifyShell(host, port, keyPair, startWithTls = false, HANDSHAKE_TIMEOUT_MS)
+            Pair(true, "Active / Connected ($host:$port)")
+        } catch (primaryEx: Exception) {
             try {
-                openAuthenticateAndVerifyShell(host, port, keyPair, useTls = false, HANDSHAKE_TIMEOUT_MS)
-                Pair(true, "Active / Connected via ADB ($host:$port)")
-            } catch (tcpEx: Exception) {
-                Pair(false, tlsEx.message ?: tcpEx.message ?: "Connection refused on $host:$port")
+                openAuthenticateAndVerifyShell(host, port, keyPair, startWithTls = true, HANDSHAKE_TIMEOUT_MS)
+                Pair(true, "Active / Connected via TLS ($host:$port)")
+            } catch (tlsEx: Exception) {
+                Pair(false, primaryEx.message ?: tlsEx.message ?: "Connection refused on $host:$port")
             }
         }
     }
@@ -746,10 +805,10 @@ object NativeAdbManager {
         host: String,
         port: Int,
         keyPair: KeyPair,
-        useTls: Boolean,
+        startWithTls: Boolean,
         timeoutMs: Int
     ) {
-        openAndAuthenticateSocket(host, port, keyPair, useTls, timeoutMs).use { socket ->
+        openAndAuthenticateSocket(host, port, keyPair, startWithTls, timeoutMs).use { socket ->
             val verifyResult = runShellCommandOnSocket(socket, "echo connected && id")
             if (!verifyResult.success) {
                 throw IllegalStateException("ADB shell stream verification failed: ${verifyResult.output}")
@@ -761,15 +820,15 @@ object NativeAdbManager {
         host: String,
         port: Int,
         keyPair: KeyPair,
-        useTls: Boolean,
+        startWithTls: Boolean,
         timeoutMs: Int
     ): Socket {
         val rawSocket = Socket()
         rawSocket.connect(InetSocketAddress(host, port), CONNECT_TIMEOUT_MS)
         rawSocket.soTimeout = timeoutMs
 
-        val socket: Socket = if (useTls) {
-            val sslFactory = createTrustAllSslContext().socketFactory
+        val initialSocket: Socket = if (startWithTls) {
+            val sslFactory = createClientSslContext(keyPair).socketFactory
             val sslSocket = sslFactory.createSocket(rawSocket, host, port, true) as SSLSocket
             sslSocket.soTimeout = timeoutMs
             sslSocket.startHandshake()
@@ -778,24 +837,37 @@ object NativeAdbManager {
             rawSocket
         }
 
-        try {
-            performAdbAuthHandshake(socket.getInputStream(), socket.getOutputStream(), keyPair)
-            return socket
+        var activeSocket: Socket = initialSocket
+        return try {
+            activeSocket = performAdbAuthHandshake(initialSocket, host, port, keyPair, timeoutMs)
+            activeSocket
         } catch (e: Exception) {
             try {
-                socket.close()
+                activeSocket.close()
             } catch (_: Exception) {
+            }
+            if (activeSocket !== initialSocket) {
+                try {
+                    initialSocket.close()
+                } catch (_: Exception) {
+                }
             }
             throw e
         }
     }
 
     private fun performAdbAuthHandshake(
-        input: InputStream,
-        output: OutputStream,
-        keyPair: KeyPair
-    ) {
+        initialSocket: Socket,
+        host: String,
+        port: Int,
+        keyPair: KeyPair,
+        timeoutMs: Int
+    ): Socket {
         val clientIdentity = ensureClientIdentity()
+        var currentSocket = initialSocket
+        var input = currentSocket.getInputStream()
+        var output = currentSocket.getOutputStream()
+
         NativeAdbProtocol.writePacket(
             output,
             NativeAdbProtocol.A_CNXN,
@@ -806,11 +878,31 @@ object NativeAdbManager {
 
         var sentSignature = false
         var sentPublicKey = false
+        var upgradedStls = false
 
         while (true) {
             val response = NativeAdbProtocol.readPacket(input)
             when (response.command) {
-                NativeAdbProtocol.A_CNXN -> return
+                NativeAdbProtocol.A_CNXN -> return currentSocket
+                NativeAdbProtocol.A_STLS -> {
+                    if (upgradedStls) {
+                        throw IllegalStateException("Duplicate A_STLS challenge from ADB daemon")
+                    }
+                    upgradedStls = true
+                    NativeAdbProtocol.writePacket(
+                        output,
+                        NativeAdbProtocol.A_STLS,
+                        NativeAdbProtocol.A_STLS_VERSION,
+                        0
+                    )
+                    val sslFactory = createClientSslContext(keyPair).socketFactory
+                    val sslSocket = sslFactory.createSocket(currentSocket, host, port, true) as SSLSocket
+                    sslSocket.soTimeout = timeoutMs
+                    sslSocket.startHandshake()
+                    currentSocket = sslSocket
+                    input = sslSocket.getInputStream()
+                    output = sslSocket.getOutputStream()
+                }
                 NativeAdbProtocol.A_AUTH -> {
                     if (response.arg0 == NativeAdbProtocol.AUTH_TOKEN) {
                         if (!sentSignature) {
@@ -911,7 +1003,7 @@ object NativeAdbManager {
         return NativeShellResult(success = true, output = text, exitCode = 0)
     }
 
-    private fun createTrustAllSslContext(): SSLContext {
+    internal fun createClientSslContext(keyPair: KeyPair? = null): SSLContext {
         val trustManagers = arrayOf<TrustManager>(
             object : X509TrustManager {
                 override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
@@ -919,8 +1011,33 @@ object NativeAdbManager {
                 override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
             }
         )
+        val keyManagers: Array<KeyManager>? = keyPair?.let { kp ->
+            runCatching {
+                val cert = NativeAdbProtocol.createClientX509Certificate(kp, CLIENT_IDENTITY)
+                val alias = CLIENT_IDENTITY
+                arrayOf<KeyManager>(
+                    object : X509KeyManager {
+                        override fun getClientAliases(keyType: String?, issuers: Array<out Principal>?): Array<String> =
+                            arrayOf(alias)
+                        override fun chooseClientAlias(
+                            keyType: Array<out String>?,
+                            issuers: Array<out Principal>?,
+                            socket: Socket?
+                        ): String = alias
+                        override fun getServerAliases(keyType: String?, issuers: Array<out Principal>?): Array<String>? = null
+                        override fun chooseServerAlias(
+                            keyType: String?,
+                            issuers: Array<out Principal>?,
+                            socket: Socket?
+                        ): String? = null
+                        override fun getCertificateChain(aliasParam: String?): Array<X509Certificate> = arrayOf(cert)
+                        override fun getPrivateKey(aliasParam: String?): PrivateKey = kp.private
+                    }
+                )
+            }.getOrNull()
+        }
         return SSLContext.getInstance("TLS").apply {
-            init(null, trustManagers, SecureRandom())
+            init(keyManagers, trustManagers, SecureRandom())
         }
     }
 }

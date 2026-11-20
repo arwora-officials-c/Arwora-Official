@@ -1,0 +1,36 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="358dp"
+    android:height="64dp"
+    android:viewportWidth="358"
+    android:viewportHeight="64">
+    <!-- Custom geometric bold ARWORA wordmark (monochrome tintable) -->
+    <!-- A -->
+    <path
+        android:fillColor="#FF000000"
+        android:fillType="evenOdd"
+        android:pathData="M12,54 L31,10 L39,10 L58,54 L49,54 L44.5,43 L25.5,43 L21,54 Z M28,36 L42,36 L35,19 Z" />
+    <!-- R -->
+    <path
+        android:fillColor="#FF000000"
+        android:fillType="evenOdd"
+        android:pathData="M68,10 L96,10 C105.5,10 111,15.5 111,22.5 C111,28.5 106.5,33.2 99,34.5 L112,54 L102,54 L90,35 L77,35 L77,54 L68,54 Z M77,17.5 L77,27.5 L95,27.5 C99.5,27.5 102,25.5 102,22.5 C102,19.5 99.5,17.5 95,17.5 Z" />
+    <!-- W -->
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M120,10 L129,10 L136,41 L147,16 L155,16 L166,41 L173,10 L182,10 L170,54 L162,54 L151,29 L140,54 L132,54 Z" />
+    <!-- O -->
+    <path
+        android:fillColor="#FF000000"
+        android:fillType="evenOdd"
+        android:pathData="M214,10 C228,10 238,19.5 238,32 C238,44.5 228,54 214,54 C200,54 190,44.5 190,32 C190,19.5 200,10 214,10 Z M214,17.5 C205.2,17.5 199,23.8 199,32 C199,40.2 205.2,46.5 214,46.5 C222.8,46.5 229,40.2 229,32 C229,23.8 222.8,17.5 214,17.5 Z" />
+    <!-- R -->
+    <path
+        android:fillColor="#FF000000"
+        android:fillType="evenOdd"
+        android:pathData="M248,10 L276,10 C285.5,10 291,15.5 291,22.5 C291,28.5 286.5,33.2 279,34.5 L292,54 L282,54 L270,35 L257,35 L257,54 L248,54 Z M257,17.5 L257,27.5 L275,27.5 C279.5,27.5 282,25.5 282,22.5 C282,19.5 279.5,17.5 275,17.5 Z" />
+    <!-- A -->
+    <path
+        android:fillColor="#FF000000"
+        android:fillType="evenOdd"
+        android:pathData="M300,54 L319,10 L327,10 L346,54 L337,54 L332.5,43 L313.5,43 L309,54 Z M316,36 L330,36 L323,19 Z" />
+</vector>

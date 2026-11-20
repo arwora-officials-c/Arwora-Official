@@ -110,7 +110,7 @@ class AdbNotificationPairingTest {
             connected = false
         )
         assertEquals(
-            "Paired! Resolving connection port...",
+            "Paired successfully! Connecting ADB...",
             resolvingNotif.extras.getString(Notification.EXTRA_TEXT)
         )
         assertTrue(resolvingNotif.extras.getBoolean(Notification.EXTRA_PROGRESS_INDETERMINATE))
@@ -305,6 +305,33 @@ class AdbNotificationPairingTest {
         assertEquals("ADB Connection Timed Out", posted.extras.getString(Notification.EXTRA_TITLE))
         val retryAction = NotificationCompat.getAction(posted, 0)
         assertEquals("Retry Connect", retryAction?.title?.toString())
+    }
+
+    @Test
+    fun `client x509 certificate uses arwora CN and verifies with RSA public key`() {
+        val tempDir = kotlin.io.path.createTempDirectory("adb_x509_test").toFile()
+        try {
+            val keyPair = NativeAdbProtocol.loadOrCreateKeyPair(tempDir)
+            val cert = NativeAdbProtocol.createClientX509Certificate(keyPair, NativeAdbManager.CLIENT_IDENTITY)
+            assertTrue(cert.subjectX500Principal.name.contains("CN=arwora"))
+            assertTrue(cert.issuerX500Principal.name.contains("CN=arwora"))
+            cert.verify(keyPair.public)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `stls upgrade packet encodes A_STLS command header accurately`() {
+        val stlsBytes = NativeAdbProtocol.encodePacket(
+            command = NativeAdbProtocol.A_STLS,
+            arg0 = NativeAdbProtocol.A_STLS_VERSION,
+            arg1 = 0
+        )
+        val decoded = NativeAdbProtocol.decodePacketBytes(stlsBytes)
+        assertEquals(NativeAdbProtocol.A_STLS, decoded.command)
+        assertEquals(NativeAdbProtocol.A_STLS_VERSION, decoded.arg0)
+        assertEquals(0, decoded.data.size)
     }
 
     private fun simulateWifiTransport(context: Context) {

@@ -8,6 +8,8 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -37,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -117,7 +120,7 @@ fun SystemDashboardScreen(
 
     var isWirelessDebuggingExpanded by remember { mutableStateOf(false) }
     var isAnimationExpanded by remember { mutableStateOf(false) }
-    var isFakeGpsExpanded by remember { mutableStateOf(true) } // Open by default for discovery
+    var isFakeGpsExpanded by rememberSaveable { mutableStateOf(false) }
     var isFakeDeviceExpanded by remember { mutableStateOf(false) }
     var isAppManagerExpanded by remember { mutableStateOf(false) }
     var isIpLookupExpanded by remember { mutableStateOf(false) }
@@ -452,297 +455,83 @@ fun SystemDashboardScreen(
             SectionHeader(title = "Core Controls & Spoofers")
         }
 
-            // FAKE GPS / LOCATION SPOOFER CARD
+            // FAKE GPS / LOCATION SPOOFER CARD (collapsed by default)
             item {
-                SystemFeatureCard(
-                    title = "Fake GPS / Location Spoofer",
-                    subtitle = if (isMockActive) "Broadcasting: $currentPresetName ($mockUpdateCount fixes)" else "Ready (Lat: $savedLat, Lng: $savedLng)",
-                    icon = Icons.Default.LocationOn,
-                    badge = if (isMockActive) "BROADCASTING" else "IDLE",
-                    badgeColor = if (isMockActive) Color(0xFF10B981) else MaterialTheme.colorScheme.outline,
+                FakeGpsLocationSpooferCard(
                     isExpanded = isFakeGpsExpanded,
                     onToggleExpand = {
                         SoundEffectManager.playClick()
                         isFakeGpsExpanded = !isFakeGpsExpanded
-                    }
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Mock Location Controller",
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-
-                            IconButton(
-                                onClick = {
-                                    SoundEffectManager.playClick()
-                                    showMockHelpDialog = true
-                                },
-                                modifier = Modifier.size(28.dp)
-                            ) {
-                                Icon(
-                                    Icons.Outlined.HelpOutline,
-                                    contentDescription = "Setup Help",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
+                    },
+                    isMockActive = isMockActive,
+                    savedLat = savedLat,
+                    savedLng = savedLng,
+                    mockUpdateCount = mockUpdateCount,
+                    mockError = mockError,
+                    currentPresetName = currentPresetName,
+                    inputLat = inputLat,
+                    inputLng = inputLng,
+                    onInputLatChange = { inputLat = it },
+                    onInputLngChange = { inputLng = it },
+                    onSelectPreset = { preset ->
+                        SoundEffectManager.playClick()
+                        currentPresetName = preset.name
+                        inputLat = preset.latitude.toString()
+                        inputLng = preset.longitude.toString()
+                        FakeGpsManager.saveCoordinates(context, preset.latitude, preset.longitude, preset.name)
+                        if (isMockActive) {
+                            MockLocationService.start(context, preset.latitude, preset.longitude)
                         }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        // INTERACTIVE MAP PICKER PROMINENT BUTTON
-                        Surface(
-                            shape = RoundedCornerShape(18.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    SoundEffectManager.playClick()
-                                    navController.navigate(Screen.FakeGps.route)
-                                }
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(14.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Surface(
-                                        shape = CircleShape,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(42.dp)
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Icon(
-                                                Icons.Default.Map,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.onPrimary,
-                                                modifier = Modifier.size(22.dp)
-                                            )
-                                        }
-                                    }
-                                    Column(modifier = Modifier.weight(1f).align(Alignment.CenterVertically)) {
-                                        Text(
-                                            text = "Interactive Map Picker",
-                                            fontWeight = FontWeight.Bold,
-                                            style = MaterialTheme.typography.titleSmall,
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = "Full-screen map with draggable pin & live broadcast",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        if (mockError != null) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = MaterialTheme.colorScheme.errorContainer,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        Icons.Default.Warning,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.error,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = mockError ?: "",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onErrorContainer,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-                        Text(
-                            text = "Worldwide Popular Presets",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            items(FakeGpsManager.popularPresets) { preset ->
-                                val isSelected = currentPresetName == preset.name
-                                FilterChip(
-                                    selected = isSelected,
-                                    onClick = {
-                                        SoundEffectManager.playClick()
-                                        currentPresetName = preset.name
-                                        inputLat = preset.latitude.toString()
-                                        inputLng = preset.longitude.toString()
-                                        FakeGpsManager.saveCoordinates(context, preset.latitude, preset.longitude, preset.name)
-                                        if (isMockActive) {
-                                            MockLocationService.start(context, preset.latitude, preset.longitude)
-                                        }
-                                    },
-                                    label = { Text("${preset.name} (${preset.country})", fontSize = 12.sp) },
-                                    leadingIcon = if (isSelected) {
-                                        { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
-                                    } else null,
-                                    shape = ArworaDesignTokens.PillShape
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            OutlinedTextField(
-                                value = inputLat,
-                                onValueChange = { inputLat = it },
-                                label = { Text("Latitude") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                modifier = Modifier.weight(1f),
-                                singleLine = true,
-                                shape = RoundedCornerShape(12.dp)
-                            )
-                            OutlinedTextField(
-                                value = inputLng,
-                                onValueChange = { inputLng = it },
-                                label = { Text("Longitude") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                modifier = Modifier.weight(1f),
-                                singleLine = true,
-                                shape = RoundedCornerShape(12.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        // Controls Row
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            if (!isMockActive) {
-                                Button(
-                                    onClick = {
-                                        SoundEffectManager.playClick()
-                                        val lat = inputLat.toDoubleOrNull()
-                                        val lng = inputLng.toDoubleOrNull()
-                                        if (lat == null || lng == null || lat < -90.0 || lat > 90.0 || lng < -180.0 || lng > 180.0) {
-                                            Toast.makeText(context, "Please enter valid Latitude (-90..90) and Longitude (-180..180)", Toast.LENGTH_SHORT).show()
-                                            return@Button
-                                        }
-                                        FakeGpsManager.saveCoordinates(context, lat, lng, currentPresetName)
-                                        val started = FakeGpsManager.startMockLocation(context, lat, lng)
-                                        if (started) {
-                                            MockLocationService.start(context, lat, lng)
-                                            Toast.makeText(context, "Mock Location started at ($lat, $lng)", Toast.LENGTH_SHORT).show()
-                                        } else {
-                                            showMockHelpDialog = true
-                                        }
-                                    },
-                                    modifier = Modifier.weight(1f).height(48.dp),
-                                    shape = ArworaDesignTokens.PillShape,
-                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                                ) {
-                                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Start Mock GPS", fontWeight = FontWeight.Bold)
-                                }
+                    },
+                    onOpenMapPicker = {
+                        SoundEffectManager.playClick()
+                        navController.navigate(Screen.FakeGps.route)
+                    },
+                    onShowSetupHelp = {
+                        SoundEffectManager.playClick()
+                        showMockHelpDialog = true
+                    },
+                    onStartMockGps = {
+                        SoundEffectManager.playClick()
+                        val lat = inputLat.toDoubleOrNull()
+                        val lng = inputLng.toDoubleOrNull()
+                        if (lat == null || lng == null || lat < -90.0 || lat > 90.0 || lng < -180.0 || lng > 180.0) {
+                            Toast.makeText(context, "Please enter valid Latitude (-90..90) and Longitude (-180..180)", Toast.LENGTH_SHORT).show()
+                        } else {
+                            FakeGpsManager.saveCoordinates(context, lat, lng, currentPresetName)
+                            val started = FakeGpsManager.startMockLocation(context, lat, lng)
+                            if (started) {
+                                MockLocationService.start(context, lat, lng)
+                                Toast.makeText(context, "Mock Location started at ($lat, $lng)", Toast.LENGTH_SHORT).show()
                             } else {
-                                Button(
-                                    onClick = {
-                                        SoundEffectManager.playClick()
-                                        MockLocationService.stop(context)
-                                        FakeGpsManager.stopMockLocation(context)
-                                        Toast.makeText(context, "Mock Location stopped.", Toast.LENGTH_SHORT).show()
-                                    },
-                                    modifier = Modifier.weight(1f).height(48.dp),
-                                    shape = ArworaDesignTokens.PillShape,
-                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                                ) {
-                                    Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Stop Mock GPS", fontWeight = FontWeight.Bold)
-                                }
-                            }
-
-                            OutlinedButton(
-                                onClick = {
-                                    SoundEffectManager.playClick()
-                                    val lat = inputLat.toDoubleOrNull() ?: savedLat
-                                    val lng = inputLng.toDoubleOrNull() ?: savedLng
-                                    try {
-                                        val geoUri = Uri.parse("geo:$lat,$lng?q=$lat,$lng(Spoofed+Location)")
-                                        val mapIntent = Intent(Intent.ACTION_VIEW, geoUri)
-                                        context.startActivity(mapIntent)
-                                    } catch (e: Exception) {
-                                        clipboardManager.setText(AnnotatedString("$lat, $lng"))
-                                        Toast.makeText(context, "Coordinates copied to clipboard: $lat, $lng", Toast.LENGTH_SHORT).show()
-                                    }
-                                },
-                                modifier = Modifier.height(48.dp),
-                                shape = ArworaDesignTokens.PillShape
-                            ) {
-                                Icon(Icons.Default.Map, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Map")
+                                showMockHelpDialog = true
                             }
                         }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Developer Options Setup:",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            TextButton(
-                                onClick = {
-                                    SoundEffectManager.playClick()
-                                    FakeGpsManager.openDeveloperSettings(context)
-                                }
-                            ) {
-                                Text("Open Developer Settings", fontSize = 12.sp)
-                            }
+                    },
+                    onStopMockGps = {
+                        SoundEffectManager.playClick()
+                        MockLocationService.stop(context)
+                        FakeGpsManager.stopMockLocation(context)
+                        Toast.makeText(context, "Mock Location stopped.", Toast.LENGTH_SHORT).show()
+                    },
+                    onOpenExternalMap = {
+                        SoundEffectManager.playClick()
+                        val lat = inputLat.toDoubleOrNull() ?: savedLat
+                        val lng = inputLng.toDoubleOrNull() ?: savedLng
+                        try {
+                            val geoUri = Uri.parse("geo:$lat,$lng?q=$lat,$lng(Spoofed+Location)")
+                            val mapIntent = Intent(Intent.ACTION_VIEW, geoUri)
+                            context.startActivity(mapIntent)
+                        } catch (e: Exception) {
+                            clipboardManager.setText(AnnotatedString("$lat, $lng"))
+                            Toast.makeText(context, "Coordinates copied to clipboard: $lat, $lng", Toast.LENGTH_SHORT).show()
                         }
+                    },
+                    onOpenDeveloperSettings = {
+                        SoundEffectManager.playClick()
+                        FakeGpsManager.openDeveloperSettings(context)
                     }
-                }
+                )
             }
 
 
@@ -888,24 +677,24 @@ fun SystemDashboardScreen(
                         quickPresets.forEach { provider ->
                             val isSelected = selectedDnsProvider.id == provider.id
                             Surface(
+                                onClick = {
+                                    SoundEffectManager.playClick()
+                                    DnsManager.saveSelectedDns(context, provider)
+                                    selectedDnsProvider = provider
+                                    coroutineScope.launch {
+                                        val applied = withContext(Dispatchers.IO) {
+                                            DnsSecureSettingsHelper.setPrivateDns(context, "hostname", provider.dotHost)
+                                        }
+                                        if (applied) {
+                                            Toast.makeText(context, "${provider.name} applied!", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            Toast.makeText(context, "Selected ${provider.name}. Tap below to apply via Settings or Wireless ADB", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 4.dp)
-                                    .clickable {
-                                        SoundEffectManager.playClick()
-                                        DnsManager.saveSelectedDns(context, provider)
-                                        selectedDnsProvider = provider
-                                        coroutineScope.launch {
-                                            val applied = withContext(Dispatchers.IO) {
-                                                DnsSecureSettingsHelper.setPrivateDns(context, "hostname", provider.dotHost)
-                                            }
-                                            if (applied) {
-                                                Toast.makeText(context, "${provider.name} applied!", Toast.LENGTH_SHORT).show()
-                                            } else {
-                                                Toast.makeText(context, "Selected ${provider.name}. Tap below to apply via Settings or Wireless ADB", Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    },
+                                    .padding(vertical = 4.dp),
                                 shape = RoundedCornerShape(14.dp),
                                 color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
                                 border = BorderStroke(1.dp, if (isSelected) MaterialTheme.colorScheme.primary else subtleBorderColor)
@@ -2590,6 +2379,275 @@ fun SystemSimpleCard(
 }
 
 @Composable
+fun FakeGpsLocationSpooferCard(
+    isExpanded: Boolean,
+    onToggleExpand: () -> Unit,
+    isMockActive: Boolean,
+    savedLat: Double,
+    savedLng: Double,
+    mockUpdateCount: Int,
+    mockError: String?,
+    currentPresetName: String,
+    inputLat: String,
+    inputLng: String,
+    onInputLatChange: (String) -> Unit,
+    onInputLngChange: (String) -> Unit,
+    onSelectPreset: (LocationPreset) -> Unit,
+    onOpenMapPicker: () -> Unit,
+    onShowSetupHelp: () -> Unit,
+    onStartMockGps: () -> Unit,
+    onStopMockGps: () -> Unit,
+    onOpenExternalMap: () -> Unit,
+    onOpenDeveloperSettings: () -> Unit
+) {
+    SystemFeatureCard(
+        title = "Fake GPS / Location Spoofer",
+        subtitle = if (isMockActive) "Broadcasting: $currentPresetName ($mockUpdateCount fixes)" else "Ready (Lat: $savedLat, Lng: $savedLng)",
+        icon = Icons.Default.LocationOn,
+        badge = if (isMockActive) "ACTIVE" else "IDLE",
+        badgeColor = if (isMockActive) Color(0xFF10B981) else MaterialTheme.colorScheme.outline,
+        statusDotColor = if (isMockActive) Color(0xFF10B981) else null,
+        isExpanded = isExpanded,
+        onToggleExpand = onToggleExpand,
+        headerTestTag = "fake_gps_card_header",
+        badgeTestTag = "fake_gps_card_badge",
+        chevronTestTag = "fake_gps_card_chevron"
+    ) {
+        Column(
+            modifier = Modifier
+                .padding(16.dp)
+                .testTag("fake_gps_card_content")
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Mock Location Controller",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                IconButton(
+                    onClick = onShowSetupHelp,
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        Icons.Outlined.HelpOutline,
+                        contentDescription = "Setup Help",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // INTERACTIVE MAP PICKER PROMINENT BUTTON
+            Surface(
+                onClick = onOpenMapPicker,
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(42.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    Icons.Default.Map,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+                        Column(modifier = Modifier.weight(1f).align(Alignment.CenterVertically)) {
+                            Text(
+                                text = "Interactive Map Picker",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "Full-screen map with draggable pin & live broadcast",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (mockError != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = mockError,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+            Text(
+                text = "Worldwide Popular Presets",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                items(FakeGpsManager.popularPresets) { preset ->
+                    val isSelected = currentPresetName == preset.name
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { onSelectPreset(preset) },
+                        label = { Text("${preset.name} (${preset.country})", fontSize = 12.sp) },
+                        leadingIcon = if (isSelected) {
+                            { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                        } else null,
+                        shape = ArworaDesignTokens.PillShape
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedTextField(
+                    value = inputLat,
+                    onValueChange = onInputLatChange,
+                    label = { Text("Latitude") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp)
+                )
+                OutlinedTextField(
+                    value = inputLng,
+                    onValueChange = onInputLngChange,
+                    label = { Text("Longitude") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (!isMockActive) {
+                    Button(
+                        onClick = onStartMockGps,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                            .testTag("fake_gps_start_button"),
+                        shape = ArworaDesignTokens.PillShape,
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Start Mock GPS", fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    Button(
+                        onClick = onStopMockGps,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                            .testTag("fake_gps_stop_button"),
+                        shape = ArworaDesignTokens.PillShape,
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Stop Mock GPS", fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                OutlinedButton(
+                    onClick = onOpenExternalMap,
+                    modifier = Modifier.height(48.dp),
+                    shape = ArworaDesignTokens.PillShape
+                ) {
+                    Icon(Icons.Default.Map, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Map")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Developer Options Setup:",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                TextButton(onClick = onOpenDeveloperSettings) {
+                    Text("Open Developer Settings", fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun SystemFeatureCard(
     title: String,
     subtitle: String,
@@ -2599,18 +2657,39 @@ fun SystemFeatureCard(
     statusDotColor: Color? = null,
     isExpanded: Boolean,
     onToggleExpand: () -> Unit,
+    headerTestTag: String? = null,
+    badgeTestTag: String? = null,
+    chevronTestTag: String? = null,
     content: @Composable () -> Unit
 ) {
     val isLight = MaterialTheme.colorScheme.background.red > 0.8f
     val outlineAlpha = if (isLight) 0.25f else 0.45f
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (isExpanded) 180f else 0f,
+        animationSpec = tween(
+            durationMillis = com.arwora.ui.components.ArworaMotionTokens.CARD_TOGGLE_DURATION_MS,
+            easing = com.arwora.ui.components.ArworaMotionTokens.StandardEasing
+        ),
+        label = "feature_card_chevron_rotation"
+    )
 
     SystemCard {
         Column(modifier = Modifier.fillMaxWidth()) {
+            val headerCornerShape = RoundedCornerShape(
+                topStart = 20.dp,
+                topEnd = 20.dp,
+                bottomStart = if (isExpanded) 12.dp else 20.dp,
+                bottomEnd = if (isExpanded) 12.dp else 20.dp
+            )
+            val headerModifier = Modifier
+                .fillMaxWidth()
+                .clip(headerCornerShape)
+                .let { if (headerTestTag != null) it.testTag(headerTestTag) else it }
+                .clickable { onToggleExpand() }
+                .padding(16.dp)
+
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onToggleExpand() }
-                    .padding(16.dp),
+                modifier = headerModifier,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
@@ -2675,6 +2754,7 @@ fun SystemFeatureCard(
                 Spacer(modifier = Modifier.width(8.dp))
 
                 Surface(
+                    modifier = if (badgeTestTag != null) Modifier.testTag(badgeTestTag) else Modifier,
                     shape = ArworaDesignTokens.PillShape,
                     color = badgeColor.copy(alpha = 0.12f),
                     border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.3f))
@@ -2684,6 +2764,24 @@ fun SystemFeatureCard(
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                         color = badgeColor,
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .let { if (chevronTestTag != null) it.testTag(chevronTestTag) else it },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ExpandMore,
+                        contentDescription = if (isExpanded) "Collapse $title" else "Expand $title",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .size(20.dp)
+                            .graphicsLayer { rotationZ = chevronRotation }
                     )
                 }
             }

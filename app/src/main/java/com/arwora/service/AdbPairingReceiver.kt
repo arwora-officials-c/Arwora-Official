@@ -71,12 +71,17 @@ class AdbPairingReceiver : BroadcastReceiver() {
                     .takeIf { it in 1024..65535 }
                     ?: WirelessPairingManager.lastPairingPort
 
-                val pendingResult = goAsync()
-                CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
-                    try {
-                        resolveAndConnectAfterPairing(appContext, pairingPort)
-                    } finally {
-                        pendingResult.finish()
+                val dispatchedToService = AdbPairingNotificationService.runWorkOnServiceScope {
+                    resolveAndConnectAfterPairing(appContext, pairingPort)
+                }
+                if (!dispatchedToService) {
+                    val pendingResult = goAsync()
+                    CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+                        try {
+                            resolveAndConnectAfterPairing(appContext, pairingPort)
+                        } finally {
+                            pendingResult.finish()
+                        }
                     }
                 }
                 return
@@ -102,40 +107,49 @@ class AdbPairingReceiver : BroadcastReceiver() {
                 val extraPort = intent.getIntExtra(AdbPairingNotifier.EXTRA_PORT, -1)
                     .takeIf { it in 1024..65535 }
 
-                val pendingResult = goAsync()
-                CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
-                    try {
-                        NativeAdbManager.ensureClientIdentity()
-                        WirelessPairingManager.init(appContext)
+                val work: suspend () -> Unit = {
+                    NativeAdbManager.ensureClientIdentity()
+                    WirelessPairingManager.init(appContext)
 
-                        // Step 1: Pairing with arwora...
+                    // Step 1: Pairing with arwora...
+                    AdbPairingNotifier.notifySafely(
+                        appContext,
+                        AdbPairingNotifier.buildPairingProgressNotification(appContext)
+                    )
+
+                    val (paired, message) = WirelessPairingManager.executeNotificationReplyPairing(
+                        context = appContext,
+                        host = extraHost,
+                        port = extraPort,
+                        code = pairingCode
+                    )
+
+                    if (paired) {
+                        AdbPairingNotificationService.pausePairingDiscovery()
+                        val usedPairingPort = extraPort ?: WirelessPairingManager.lastPairingPort
+                        // Brief pause so NsdManager finishes unregistering pairing listener cleanly
+                        delay(120L)
+                        resolveAndConnectAfterPairing(appContext, usedPairingPort)
+                    } else {
                         AdbPairingNotifier.notifySafely(
                             appContext,
-                            AdbPairingNotifier.buildPairingProgressNotification(appContext)
-                        )
-
-                        val (paired, message) = WirelessPairingManager.executeNotificationReplyPairing(
-                            context = appContext,
-                            host = extraHost,
-                            port = extraPort,
-                            code = pairingCode
-                        )
-
-                        if (paired) {
-                            AdbPairingNotificationService.pausePairingDiscovery()
-                            val usedPairingPort = extraPort ?: WirelessPairingManager.lastPairingPort
-                            resolveAndConnectAfterPairing(appContext, usedPairingPort)
-                        } else {
-                            AdbPairingNotifier.notifySafely(
-                                appContext,
-                                AdbPairingNotifier.buildFailureNotification(
-                                    context = appContext,
-                                    reason = message
-                                )
+                            AdbPairingNotifier.buildFailureNotification(
+                                context = appContext,
+                                reason = message
                             )
+                        )
+                    }
+                }
+
+                val dispatchedToService = AdbPairingNotificationService.runWorkOnServiceScope { work() }
+                if (!dispatchedToService) {
+                    val pendingResult = goAsync()
+                    CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+                        try {
+                            work()
+                        } finally {
+                            pendingResult.finish()
                         }
-                    } finally {
-                        pendingResult.finish()
                     }
                 }
             }
@@ -149,7 +163,7 @@ class AdbPairingReceiver : BroadcastReceiver() {
         NativeAdbManager.ensureClientIdentity()
         WirelessPairingManager.init(appContext)
 
-        // Step 2: Paired! Resolving connection port...
+        // Step 2: Paired successfully! Connecting ADB...
         AdbPairingNotifier.notifySafely(
             appContext,
             AdbPairingNotifier.buildSuccessConnectingNotification(

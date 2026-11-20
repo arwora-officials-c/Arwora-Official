@@ -651,7 +651,32 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
             // ==========================================
             SettingsCategoryHeader(title = "Data, Storage & Telemetry", icon = Icons.Default.Storage)
 
+            val compressionDefaults by com.arwora.feature.compressor.CompressionDefaultsStore.settings.collectAsStateWithLifecycle()
+            LaunchedEffect(Unit) {
+                com.arwora.feature.compressor.CompressionDefaultsStore.ensureLoaded(context)
+            }
+
             SettingsGroupCard {
+                SettingsItemRow(
+                    title = "Compression Settings",
+                    subtitle = compressionDefaults.summaryLabel(),
+                    icon = Icons.Default.Compress,
+                    modifier = Modifier.testTag("settings_compression_defaults_row"),
+                    trailingContent = {
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    onClick = {
+                        com.arwora.utils.SoundEffectManager.playClick()
+                        navController.navigate(Screen.CompressionSettings.route)
+                    }
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+
                 SettingsItemRow(
                     title = "Export Data",
                     subtitle = "Share history and favorites (TXT / CSV / JSON)",
@@ -976,10 +1001,12 @@ fun SettingsItemRow(
     Surface(
         modifier = modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
             .then(
                 if (onClick != null) Modifier.clickable(onClick = onClick)
                 else Modifier
             ),
+        shape = RoundedCornerShape(16.dp),
         color = Color.Transparent
     ) {
         Row(
@@ -1031,8 +1058,10 @@ private fun AppPermissionStatusRow(
         modifier = Modifier
             .fillMaxWidth()
             .defaultMinSize(minHeight = 64.dp)
+            .clip(RoundedCornerShape(16.dp))
             .testTag("settings_permission_item_${permission.id}")
             .clickable(onClick = onOpenSettings),
+        shape = RoundedCornerShape(16.dp),
         color = Color.Transparent
     ) {
         Row(

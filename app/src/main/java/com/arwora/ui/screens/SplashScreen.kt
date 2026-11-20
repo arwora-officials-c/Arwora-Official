@@ -1,23 +1,21 @@
 package com.arwora.ui.screens
 
 import android.app.Activity
+import android.content.res.Configuration
+import android.graphics.drawable.ColorDrawable
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -28,35 +26,57 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
-import com.arwora.ui.components.AppLogo
-import com.arwora.ui.theme.BackgroundDark
+import com.arwora.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-internal const val SPLASH_LOGO_ANIM_DURATION_MS = 550
-internal const val SPLASH_TEXT_ANIM_DURATION_MS = 700
-internal const val SPLASH_POST_ANIM_HOLD_MS = 220L
+internal const val SPLASH_LOGO_ANIM_DURATION_MS = 600
+internal const val SPLASH_POST_ANIM_HOLD_MS = 700L
+internal const val SPLASH_TOTAL_DURATION_MS = SPLASH_LOGO_ANIM_DURATION_MS.toLong() + SPLASH_POST_ANIM_HOLD_MS
+
+internal data class SplashPalette(
+    val backgroundColor: Color,
+    val foregroundColor: Color
+)
+
+internal fun resolveSplashPalette(isSystemDark: Boolean): SplashPalette {
+    return if (isSystemDark) {
+        SplashPalette(
+            backgroundColor = Color.Black,
+            foregroundColor = Color.White
+        )
+    } else {
+        SplashPalette(
+            backgroundColor = Color.White,
+            foregroundColor = Color.Black
+        )
+    }
+}
 
 @Composable
 fun SplashScreen(
     onSplashFinished: () -> Unit = {}
 ) {
+    val configuration = LocalConfiguration.current
+    val isSystemDark = remember(configuration.uiMode) {
+        (configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+    }
+    val palette = remember(isSystemDark) { resolveSplashPalette(isSystemDark) }
+
     val logoAlpha = remember { Animatable(0f) }
-    val logoScale = remember { Animatable(0.86f) }
-    val textAlpha = remember { Animatable(0f) }
-    val textScale = remember { Animatable(0.86f) }
+    val logoScale = remember { Animatable(0.85f) }
     var hasFinished by remember { mutableStateOf(false) }
 
     val view = LocalView.current
@@ -69,17 +89,37 @@ fun SplashScreen(
         }
     }
 
-    // Keep system bar icons light against the pure black #000000 splash surface.
-    DisposableEffect(view) {
+    // Match status/navigation bar colors and icon contrast seamlessly with system theme splash.
+    DisposableEffect(view, isSystemDark) {
         val window = (context as? Activity)?.window
         val insetsController = window?.let { WindowCompat.getInsetsController(it, view) }
+        val prevStatusBarColor = window?.statusBarColor
+        val prevNavBarColor = window?.navigationBarColor
         val prevLightStatus = insetsController?.isAppearanceLightStatusBars
         val prevLightNav = insetsController?.isAppearanceLightNavigationBars
-        if (insetsController != null) {
-            insetsController.isAppearanceLightStatusBars = false
-            insetsController.isAppearanceLightNavigationBars = false
+
+        val splashBgInt = palette.backgroundColor.toArgb()
+        window?.let { win ->
+            win.setBackgroundDrawable(ColorDrawable(splashBgInt))
+            @Suppress("DEPRECATION")
+            win.statusBarColor = splashBgInt
+            @Suppress("DEPRECATION")
+            win.navigationBarColor = splashBgInt
         }
+        if (insetsController != null) {
+            insetsController.isAppearanceLightStatusBars = !isSystemDark
+            insetsController.isAppearanceLightNavigationBars = !isSystemDark
+        }
+
         onDispose {
+            if (prevStatusBarColor != null) {
+                @Suppress("DEPRECATION")
+                window.statusBarColor = prevStatusBarColor
+            }
+            if (prevNavBarColor != null) {
+                @Suppress("DEPRECATION")
+                window.navigationBarColor = prevNavBarColor
+            }
             if (insetsController != null) {
                 if (prevLightStatus != null) {
                     insetsController.isAppearanceLightStatusBars = prevLightStatus
@@ -92,7 +132,7 @@ fun SplashScreen(
     }
 
     LaunchedEffect(Unit) {
-        val logoAlphaJob = launch {
+        val alphaJob = launch {
             logoAlpha.animateTo(
                 targetValue = 1.0f,
                 animationSpec = tween(
@@ -101,7 +141,7 @@ fun SplashScreen(
                 )
             )
         }
-        val logoScaleJob = launch {
+        val scaleJob = launch {
             logoScale.animateTo(
                 targetValue = 1.0f,
                 animationSpec = tween(
@@ -110,26 +150,6 @@ fun SplashScreen(
                 )
             )
         }
-        val alphaJob = launch {
-            textAlpha.animateTo(
-                targetValue = 1.0f,
-                animationSpec = tween(
-                    durationMillis = SPLASH_TEXT_ANIM_DURATION_MS,
-                    easing = FastOutSlowInEasing
-                )
-            )
-        }
-        val scaleJob = launch {
-            textScale.animateTo(
-                targetValue = 1.0f,
-                animationSpec = tween(
-                    durationMillis = SPLASH_TEXT_ANIM_DURATION_MS,
-                    easing = FastOutSlowInEasing
-                )
-            )
-        }
-        logoAlphaJob.join()
-        logoScaleJob.join()
         alphaJob.join()
         scaleJob.join()
         delay(SPLASH_POST_ANIM_HOLD_MS)
@@ -139,7 +159,7 @@ fun SplashScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(BackgroundDark)
+            .background(palette.backgroundColor)
             .systemBarsPadding()
             .testTag("splash_screen_root")
             .clickable(
@@ -150,67 +170,18 @@ fun SplashScreen(
             },
         contentAlignment = Alignment.Center
     ) {
-        Column(
+        Image(
+            painter = painterResource(id = R.drawable.ic_arwora_wordmark),
+            contentDescription = "ARWORA",
+            colorFilter = ColorFilter.tint(palette.foregroundColor),
+            contentScale = ContentScale.Fit,
             modifier = Modifier
-                .padding(horizontal = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            AppLogo(
-                size = 180.dp,
-                contentDescription = "Arwora Hyper Toolkit Logo",
-                modifier = Modifier
-                    .scale(logoScale.value)
-                    .alpha(logoAlpha.value)
-                    .testTag("splash_app_logo")
-            )
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            Column(
-                modifier = Modifier
-                    .scale(textScale.value)
-                    .alpha(textAlpha.value),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "Arwora",
-                    color = Color.White,
-                    fontSize = 34.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    letterSpacing = 2.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.testTag("splash_brand_title")
-                )
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                Box(
-                    modifier = Modifier
-                        .width(44.dp)
-                        .height(3.dp)
-                        .clip(RoundedCornerShape(50))
-                        .background(
-                            Brush.horizontalGradient(
-                                colors = listOf(
-                                    Color(0xFF8B5CF6),
-                                    Color(0xFF38BDF8)
-                                )
-                            )
-                        )
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = "HYPER TOOLKIT",
-                    color = Color(0xFFA78BFA),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = 3.2.sp,
-                    textAlign = TextAlign.Center
-                )
-            }
-        }
+                .padding(horizontal = 32.dp)
+                .width(248.dp)
+                .height(46.dp)
+                .scale(logoScale.value)
+                .alpha(logoAlpha.value)
+                .testTag("splash_arwora_wordmark")
+        )
     }
 }

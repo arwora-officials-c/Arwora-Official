@@ -1,18 +1,41 @@
 package com.arwora.ui.screens
 
-import android.content.Context
-import android.location.Address
 import android.location.Geocoder
 import android.os.Build
 import android.widget.Toast
-import androidx.compose.animation.*
-import androidx.compose.animation.core.*
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -20,20 +43,69 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Adjust
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Satellite
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Terrain
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -43,8 +115,11 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
-import com.arwora.ui.components.GooglePlayCompactLinearProgress
 import com.arwora.service.MockLocationService
+import com.arwora.ui.components.ArworaDesignTokens
+import com.arwora.ui.components.ArworaPillBadge
+import com.arwora.ui.components.ExpressiveWavyLinearProgressIndicator
+import com.arwora.ui.components.GooglePlayCompactLinearProgress
 import com.arwora.utils.FakeGpsManager
 import com.arwora.utils.LocationPreset
 import com.arwora.utils.MapTileManager
@@ -52,7 +127,6 @@ import com.arwora.utils.SoundEffectManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapListener
 import org.osmdroid.events.ScrollEvent
 import org.osmdroid.events.ZoomEvent
@@ -60,7 +134,6 @@ import org.osmdroid.tileprovider.tilesource.ITileSource
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
-import java.io.File
 import java.util.Locale
 
 /**
@@ -129,7 +202,6 @@ fun FakeGpsMapScreen(
     var locationName by remember { mutableStateOf(FakeGpsManager.getSavedPresetName(context)) }
     var searchQuery by remember { mutableStateOf("") }
     var isSearching by remember { mutableStateOf(false) }
-    var showPresetDrawer by remember { mutableStateOf(true) }
     var showFineTuneControls by remember { mutableStateOf(false) }
     var showHelpDialog by remember { mutableStateOf(false) }
     var showMapTypeSheet by remember { mutableStateOf(false) }
@@ -137,7 +209,6 @@ fun FakeGpsMapScreen(
 
     var mapViewRef by remember { mutableStateOf<MapView?>(null) }
 
-    // Helper to get matching ITileSource for the selected Map Type
     fun getTileSourceForType(type: AppMapType): ITileSource {
         return when (type) {
             AppMapType.DEFAULT -> MapTileManager.StandardOsmTileSource
@@ -147,23 +218,20 @@ fun FakeGpsMapScreen(
         }
     }
 
-    // Update tile source when user selects a new Map Type
     fun applyMapType(type: AppMapType) {
         SoundEffectManager.playClick()
         currentMapType = type
         mapViewRef?.let { map ->
-            val tileSource = getTileSourceForType(type)
-            map.setTileSource(tileSource)
+            map.setTileSource(getTileSourceForType(type))
             map.invalidate()
         }
         showMapTypeSheet = false
     }
 
-    // Pulsing animation for active broadcasting state
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val pulseScale by infiniteTransition.animateFloat(
         initialValue = 1.0f,
-        targetValue = 1.22f,
+        targetValue = 1.18f,
         animationSpec = infiniteRepeatable(
             animation = tween(1100, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
@@ -171,7 +239,6 @@ fun FakeGpsMapScreen(
         label = "pulseScale"
     )
 
-    // Geocoding helper
     fun reverseGeocode(lat: Double, lng: Double) {
         coroutineScope.launch(Dispatchers.IO) {
             try {
@@ -199,7 +266,7 @@ fun FakeGpsMapScreen(
                         }
                     }
                 }
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 // Ignore network errors in geocoding
             }
         }
@@ -211,7 +278,6 @@ fun FakeGpsMapScreen(
         focusManager.clearFocus()
         coroutineScope.launch(Dispatchers.IO) {
             try {
-                // 1. Check presets first
                 val match = FakeGpsManager.popularPresets.find {
                     it.name.contains(query, ignoreCase = true) || it.country.contains(query, ignoreCase = true)
                 }
@@ -226,7 +292,6 @@ fun FakeGpsMapScreen(
                     return@launch
                 }
 
-                // 2. Geocoder search
                 if (Geocoder.isPresent()) {
                     val geocoder = Geocoder(context, Locale.getDefault())
                     @Suppress("DEPRECATION")
@@ -283,22 +348,39 @@ fun FakeGpsMapScreen(
         }
     }
 
+    val activeGreen = Color(0xFF10B981)
+    val stopRed = Color(0xFFEF4444)
+    val chipAccent = MaterialTheme.colorScheme.primary
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text("Fake GPS Map Picker", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
                         Text(
-                            text = if (isMockActive) "Live OS Injection: Active ($mockUpdateCount fixes)" else "Drag map to target coordinates",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (isMockActive) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant
+                            text = "Fake GPS Map Picker",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        ArworaPillBadge(
+                            text = if (isMockActive) {
+                                "Live OS Injection: Active ($mockUpdateCount fixes)"
+                            } else {
+                                "Drag map to target coordinates"
+                            },
+                            tint = if (isMockActive) activeGreen else MaterialTheme.colorScheme.primary,
+                            showDot = isMockActive,
+                            modifier = Modifier.testTag("map_picker_status_pill")
                         )
                     }
                 },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
@@ -306,9 +388,12 @@ fun FakeGpsMapScreen(
                         Icon(Icons.Default.History, contentDescription = "Location History")
                     }
                     IconButton(onClick = { showHelpDialog = true }) {
-                        Icon(Icons.Outlined.HelpOutline, contentDescription = "Mock Setup Help")
+                        Icon(Icons.AutoMirrored.Outlined.HelpOutline, contentDescription = "Mock Setup Help")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
             )
         }
     ) { padding ->
@@ -317,7 +402,7 @@ fun FakeGpsMapScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // 1. FULL SCREEN HIGH-DEFINITION OSMDROID MAP VIEW
+            // 1. FULL SCREEN OSMDROID MAP VIEW
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
@@ -359,7 +444,7 @@ fun FakeGpsMapScreen(
                 }
             )
 
-            // 2. CENTER PIN MARKER OVERLAY (FIXED AT SCREEN CENTER)
+            // 2. CENTER TARGET MARKER PIN
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -370,28 +455,30 @@ fun FakeGpsMapScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.offset(y = (-24).dp)
                 ) {
-                    // Marker speech bubble
                     Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (isMockActive) Color(0xFF065F46) else MaterialTheme.colorScheme.surfaceVariant,
-                        shadowElevation = 8.dp,
-                        border = BorderStroke(1.5.dp, if (isMockActive) Color(0xFF10B981) else MaterialTheme.colorScheme.outlineVariant)
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (isMockActive) Color(0xFF065F46) else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
+                        shadowElevation = 6.dp,
+                        border = BorderStroke(
+                            1.dp,
+                            if (isMockActive) activeGreen else MaterialTheme.colorScheme.outline.copy(alpha = 0.38f)
+                        )
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Box(
                                 modifier = Modifier
                                     .size(8.dp)
-                                    .background(if (isMockActive) Color(0xFF10B981) else Color(0xFFF59E0B), CircleShape)
+                                    .background(if (isMockActive) activeGreen else Color(0xFFF59E0B), CircleShape)
                             )
                             Text(
                                 text = locationName,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = if (isMockActive) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (isMockActive) Color.White else MaterialTheme.colorScheme.onSurface,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -400,25 +487,23 @@ fun FakeGpsMapScreen(
 
                     Spacer(modifier = Modifier.height(4.dp))
 
-                    // Pin Icon with pulsing glow when active
                     Box(contentAlignment = Alignment.Center) {
                         if (isMockActive) {
                             Box(
                                 modifier = Modifier
                                     .size(46.dp)
                                     .scale(pulseScale)
-                                    .background(Color(0x3310B981), CircleShape)
+                                    .background(activeGreen.copy(alpha = 0.22f), CircleShape)
                             )
                         }
                         Icon(
                             imageVector = Icons.Default.LocationOn,
                             contentDescription = "Center Target Marker",
-                            tint = if (isMockActive) Color(0xFF10B981) else Color(0xFFEF4444),
+                            tint = if (isMockActive) activeGreen else stopRed,
                             modifier = Modifier.size(44.dp)
                         )
                     }
 
-                    // Shadow dot on ground
                     Box(
                         modifier = Modifier
                             .size(10.dp, 4.dp)
@@ -427,51 +512,73 @@ fun FakeGpsMapScreen(
                 }
             }
 
-            // 3. TOP FLOATING SEARCH & COORDINATES BAR
+            // 3. FLOATING 28dp SEARCH CARD & TONAL PRESET CHIPS
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .widthIn(max = 640.dp)
                     .align(Alignment.TopCenter)
-                    .padding(12.dp)
+                    .padding(horizontal = 16.dp, vertical = 14.dp)
                     .zIndex(20f),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Search field
                 Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
-                    shadowElevation = 6.dp,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    shape = RoundedCornerShape(28.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.94f),
+                    shadowElevation = 4.dp,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.32f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("map_picker_search_card")
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                            .padding(horizontal = 14.dp, vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            Icons.Default.Search,
+                            imageVector = Icons.Default.Search,
                             contentDescription = "Search",
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier.size(20.dp)
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
                         OutlinedTextField(
                             value = searchQuery,
                             onValueChange = { searchQuery = it },
-                            placeholder = { Text("Search city, address, or landmark...", fontSize = 14.sp) },
-                            modifier = Modifier.weight(1f),
+                            placeholder = {
+                                Text(
+                                    text = "Search city, address, or landmark...",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("map_picker_search_input"),
                             singleLine = true,
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = Color.Transparent,
-                                unfocusedBorderColor = Color.Transparent
+                                unfocusedBorderColor = Color.Transparent,
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent
                             ),
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                             keyboardActions = KeyboardActions(onSearch = { searchLocation(searchQuery) })
                         )
                         if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }, modifier = Modifier.size(28.dp)) {
-                                Icon(Icons.Default.Clear, contentDescription = "Clear", modifier = Modifier.size(18.dp))
+                            IconButton(
+                                onClick = { searchQuery = "" },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Clear,
+                                    contentDescription = "Clear",
+                                    modifier = Modifier.size(18.dp)
+                                )
                             }
                         }
                         if (isSearching) {
@@ -481,161 +588,171 @@ fun FakeGpsMapScreen(
                                 modifier = Modifier.padding(horizontal = 6.dp)
                             )
                         } else {
-                            IconButton(onClick = { searchLocation(searchQuery) }) {
-                                Icon(Icons.Default.ArrowForward, contentDescription = "Go", tint = MaterialTheme.colorScheme.primary)
+                            IconButton(
+                                onClick = { searchLocation(searchQuery) },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                    contentDescription = "Search Location",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
                             }
                         }
                     }
                 }
 
-                // Preset Chips Row
-                AnimatedVisibility(visible = showPresetDrawer) {
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        items(FakeGpsManager.popularPresets) { preset ->
-                            Surface(
-                                shape = RoundedCornerShape(20.dp),
-                                color = if (centerLat == preset.latitude && centerLng == preset.longitude)
-                                    MaterialTheme.colorScheme.primary
-                                else
-                                    MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-                                shadowElevation = 4.dp,
-                                modifier = Modifier.clickable { moveToPreset(preset) }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.Place,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(14.dp),
-                                        tint = if (centerLat == preset.latitude && centerLng == preset.longitude)
-                                            MaterialTheme.colorScheme.onPrimary
-                                        else
-                                            MaterialTheme.colorScheme.primary
-                                    )
-                                    Text(
-                                        text = preset.name,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = if (centerLat == preset.latitude && centerLng == preset.longitude)
-                                            MaterialTheme.colorScheme.onPrimary
-                                        else
-                                            MaterialTheme.colorScheme.onSurface
-                                    )
+                // Tonal Preset Chips aligned cleanly below search bar
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(horizontal = 2.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("map_picker_presets_row")
+                ) {
+                    items(FakeGpsManager.popularPresets) { preset ->
+                        val isSelected = centerLat == preset.latitude && centerLng == preset.longitude
+                        Surface(
+                            shape = ArworaDesignTokens.PillShape,
+                            color = if (isSelected) {
+                                chipAccent.copy(alpha = 0.22f)
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.90f)
+                            },
+                            shadowElevation = 2.dp,
+                            border = BorderStroke(
+                                width = 1.dp,
+                                color = if (isSelected) {
+                                    chipAccent.copy(alpha = 0.72f)
+                                } else {
+                                    chipAccent.copy(alpha = 0.28f)
                                 }
+                            ),
+                            modifier = Modifier
+                                .clip(ArworaDesignTokens.PillShape)
+                                .clickable { moveToPreset(preset) }
+                                .testTag("map_preset_chip_${preset.name}")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Place,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp),
+                                    tint = chipAccent
+                                )
+                                Text(
+                                    text = preset.name,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
                             }
                         }
                     }
                 }
             }
 
-            // 4. MAP CONTROL TOOLS (RIGHT SIDE FLOATING PANEL - INCLUDING MAP TYPE SWITCHER)
-            Column(
+            // 4. UNIFIED VERTICAL SEGMENTED PILL CONTAINER FOR RIGHT-SIDE MAP CONTROLS
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.92f),
+                shadowElevation = 6.dp,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
-                    .padding(end = 12.dp)
-                    .zIndex(20f),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .padding(end = 14.dp)
+                    .zIndex(20f)
+                    .testTag("map_picker_segmented_controls")
             ) {
-                // MAP TYPE SWITCHER BUTTON (LAYERS ICON)
-                FloatingActionButton(
-                    onClick = {
-                        SoundEffectManager.playClick()
-                        showMapTypeSheet = true
-                    },
-                    modifier = Modifier.size(46.dp),
-                    shape = CircleShape,
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
-                    contentColor = MaterialTheme.colorScheme.primary,
-                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp, pressedElevation = 10.dp)
+                Column(
+                    modifier = Modifier.width(48.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Layers,
-                        contentDescription = "Select Map Type (Default / Satellite / Terrain)",
-                        modifier = Modifier.size(24.dp)
+                    SegmentedMapControlButton(
+                        icon = Icons.Default.Layers,
+                        contentDescription = "Select Map Type",
+                        tint = MaterialTheme.colorScheme.primary,
+                        onClick = {
+                            SoundEffectManager.playClick()
+                            showMapTypeSheet = true
+                        }
                     )
-                }
-
-                // Zoom In
-                FloatingActionButton(
-                    onClick = {
-                        SoundEffectManager.playClick()
-                        mapViewRef?.controller?.zoomIn()
-                    },
-                    modifier = Modifier.size(42.dp),
-                    shape = CircleShape,
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "Zoom In", tint = MaterialTheme.colorScheme.primary)
-                }
-
-                // Zoom Out
-                FloatingActionButton(
-                    onClick = {
-                        SoundEffectManager.playClick()
-                        mapViewRef?.controller?.zoomOut()
-                    },
-                    modifier = Modifier.size(42.dp),
-                    shape = CircleShape,
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
-                ) {
-                    Icon(Icons.Default.Remove, contentDescription = "Zoom Out", tint = MaterialTheme.colorScheme.primary)
-                }
-
-                // D-Pad / Fine Tune Toggle
-                FloatingActionButton(
-                    onClick = {
-                        SoundEffectManager.playClick()
-                        showFineTuneControls = !showFineTuneControls
-                    },
-                    modifier = Modifier.size(42.dp),
-                    shape = CircleShape,
-                    containerColor = if (showFineTuneControls) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
-                ) {
-                    Icon(Icons.Default.Navigation, contentDescription = "Fine Tune D-Pad", tint = MaterialTheme.colorScheme.primary)
-                }
-
-                // Recenter / Re-anchor
-                FloatingActionButton(
-                    onClick = {
-                        SoundEffectManager.playClick()
-                        mapViewRef?.controller?.animateTo(GeoPoint(savedLat, savedLng), 16.0, 600L)
-                    },
-                    modifier = Modifier.size(42.dp),
-                    shape = CircleShape,
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
-                ) {
-                    Icon(Icons.Default.MyLocation, contentDescription = "Recenter", tint = MaterialTheme.colorScheme.primary)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), thickness = 0.5.dp)
+                    SegmentedMapControlButton(
+                        icon = Icons.Default.Add,
+                        contentDescription = "Zoom In",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        onClick = {
+                            SoundEffectManager.playClick()
+                            mapViewRef?.controller?.zoomIn()
+                        }
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), thickness = 0.5.dp)
+                    SegmentedMapControlButton(
+                        icon = Icons.Default.Remove,
+                        contentDescription = "Zoom Out",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        onClick = {
+                            SoundEffectManager.playClick()
+                            mapViewRef?.controller?.zoomOut()
+                        }
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), thickness = 0.5.dp)
+                    SegmentedMapControlButton(
+                        icon = Icons.Default.Explore,
+                        contentDescription = "Compass & Fine Tune D-Pad",
+                        tint = if (showFineTuneControls) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                        containerColor = if (showFineTuneControls) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else Color.Transparent,
+                        onClick = {
+                            SoundEffectManager.playClick()
+                            showFineTuneControls = !showFineTuneControls
+                        }
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f), thickness = 0.5.dp)
+                    SegmentedMapControlButton(
+                        icon = Icons.Default.MyLocation,
+                        contentDescription = "Recenter My Location",
+                        tint = MaterialTheme.colorScheme.primary,
+                        onClick = {
+                            SoundEffectManager.playClick()
+                            mapViewRef?.controller?.animateTo(GeoPoint(savedLat, savedLng), 16.0, 600L)
+                        }
+                    )
                 }
             }
 
-            // 5. D-PAD / FINE TUNING CONTROLLER (OPTIONAL OVERLAY)
+            // 5. D-PAD / FINE TUNING CONTROLLER
             AnimatedVisibility(
                 visible = showFineTuneControls,
                 enter = fadeIn() + slideInVertically { it / 2 },
                 exit = fadeOut() + slideOutVertically { it / 2 },
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(start = 16.dp, bottom = 120.dp)
+                    .padding(start = 16.dp, bottom = 152.dp)
                     .zIndex(25f)
             ) {
                 Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.95f),
                     shadowElevation = 8.dp,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
                 ) {
                     Column(
-                        modifier = Modifier.padding(8.dp),
+                        modifier = Modifier.padding(10.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Text("Fine Nudge (~50m)", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            text = "Fine Nudge (~50m)",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                         IconButton(onClick = { nudge(0.0005, 0.0) }, modifier = Modifier.size(36.dp)) {
                             Icon(Icons.Default.KeyboardArrowUp, contentDescription = "North", tint = MaterialTheme.colorScheme.primary)
                         }
@@ -657,89 +774,21 @@ fun FakeGpsMapScreen(
                 }
             }
 
-            // 6. BOTTOM COORDINATES CARD (STATUS & EXACT NUMERICAL VALUES)
-            Surface(
-                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
-                shadowElevation = 12.dp,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.BottomCenter)
-                    .zIndex(15f)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                        .padding(bottom = 8.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(10.dp)
-                                        .background(if (isMockActive) Color(0xFF10B981) else Color(0xFF6B7280), CircleShape)
-                                )
-                                Text(
-                                    text = if (isMockActive) "SPOOFING ACTIVE" else "READY TO BROADCAST",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    color = if (isMockActive) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "Lat: %.5f  |  Lng: %.5f".format(centerLat, centerLng),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-
-                        // Developer options quick link
-                        TextButton(
-                            onClick = { FakeGpsManager.openDeveloperSettings(context) },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Dev Settings", fontSize = 11.sp)
-                        }
-                    }
-
-                    if (mockError != null) {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = mockError ?: "",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-            }
-
-            // 7. FLOATING ACTION BUTTON (PLAY / STOP TOGGLE AT BOTTOM RIGHT)
+            // 6. PRIMARY START / STOP SPOOFING FAB (PADDED CLEANLY ABOVE FLOATING BOTTOM CARD)
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(end = 20.dp, bottom = 80.dp)
+                    .navigationBarsPadding()
+                    .padding(end = 20.dp, bottom = 148.dp)
                     .zIndex(30f)
             ) {
-                // Pulsing outer ring when broadcasting
                 if (isMockActive) {
                     Box(
                         modifier = Modifier
-                            .size(76.dp)
+                            .size(72.dp)
                             .align(Alignment.Center)
                             .scale(pulseScale)
-                            .background(Color(0x3310B981), CircleShape)
+                            .background(stopRed.copy(alpha = 0.20f), CircleShape)
                     )
                 }
 
@@ -761,17 +810,19 @@ fun FakeGpsMapScreen(
                             Toast.makeText(context, "Mock Location Stopped", Toast.LENGTH_SHORT).show()
                         }
                     },
-                    modifier = Modifier.size(64.dp),
+                    modifier = Modifier
+                        .size(60.dp)
+                        .testTag("map_picker_action_fab"),
                     shape = CircleShape,
-                    containerColor = if (isMockActive) Color(0xFFEF4444) else Color(0xFF10B981),
+                    containerColor = if (isMockActive) stopRed else activeGreen,
                     contentColor = Color.White,
-                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 10.dp, pressedElevation = 14.dp)
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 8.dp, pressedElevation = 12.dp)
                 ) {
                     AnimatedContent(
                         targetState = isMockActive,
                         transitionSpec = {
                             fadeIn(animationSpec = tween(220)) + scaleIn() togetherWith
-                                    fadeOut(animationSpec = tween(220)) + scaleOut()
+                                fadeOut(animationSpec = tween(220)) + scaleOut()
                         },
                         label = "fabIcon"
                     ) { active ->
@@ -779,22 +830,140 @@ fun FakeGpsMapScreen(
                             Icon(
                                 imageVector = Icons.Default.Stop,
                                 contentDescription = "Stop Spoofing",
-                                modifier = Modifier.size(32.dp)
+                                tint = Color.White,
+                                modifier = Modifier.size(28.dp)
                             )
                         } else {
                             Icon(
                                 imageVector = Icons.Default.PlayArrow,
                                 contentDescription = "Start Spoofing",
-                                modifier = Modifier.size(32.dp)
+                                tint = Color.White,
+                                modifier = Modifier.size(28.dp)
                             )
                         }
+                    }
+                }
+            }
+
+            // 7. FLOATING ROUNDED BOTTOM SPOOFING STATUS & COORDINATE SHEET
+            Surface(
+                shape = ArworaDesignTokens.CardShape,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
+                shadowElevation = 10.dp,
+                border = ArworaDesignTokens.cardBorder(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 640.dp)
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .zIndex(25f)
+                    .testTag("map_picker_bottom_sheet")
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 18.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    // Minimal drag handle
+                    Box(
+                        modifier = Modifier
+                            .width(36.dp)
+                            .height(4.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f))
+                            .align(Alignment.CenterHorizontally)
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            ArworaPillBadge(
+                                text = if (isMockActive) "SPOOFING ACTIVE" else "READY TO BROADCAST",
+                                tint = if (isMockActive) activeGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                                showDot = true,
+                                modifier = Modifier.testTag("map_picker_spoof_badge")
+                            )
+
+                            Text(
+                                text = String.format(Locale.US, "Lat: %.5f  •  Lng: %.5f", centerLat, centerLng),
+                                style = MaterialTheme.typography.titleSmall.copy(fontFamily = FontFamily.Monospace),
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+
+                            Text(
+                                text = locationName,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        FilledTonalButton(
+                            onClick = {
+                                SoundEffectManager.playClick()
+                                FakeGpsManager.openDeveloperSettings(context)
+                            },
+                            shape = ArworaDesignTokens.PillShape,
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                            modifier = Modifier
+                                .height(42.dp)
+                                .testTag("map_picker_dev_settings_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Dev Settings",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1
+                            )
+                        }
+                    }
+
+                    if (isMockActive) {
+                        ExpressiveWavyLinearProgressIndicator(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("map_picker_active_wave"),
+                            progress = null,
+                            color = activeGreen,
+                            trackColor = activeGreen.copy(alpha = 0.22f),
+                            height = 6.dp
+                        )
+                    }
+
+                    if (!mockError.isNullOrBlank()) {
+                        Text(
+                            text = mockError ?: "",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
             }
         }
     }
 
-    // 8. MAP TYPE SELECTOR BOTTOM SHEET (GOOGLE MAPS STYLE)
+    // 8. MAP TYPE SELECTOR BOTTOM SHEET
     if (showMapTypeSheet) {
         ModalBottomSheet(
             onDismissRequest = { showMapTypeSheet = false },
@@ -830,12 +999,11 @@ fun FakeGpsMapScreen(
 
                 Spacer(modifier = Modifier.height(18.dp))
 
-                // Map Type Option Grid
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    AppMapType.values().forEach { mapType ->
+                    AppMapType.entries.forEach { mapType ->
                         val isSelected = currentMapType == mapType
                         Surface(
                             shape = RoundedCornerShape(16.dp),
@@ -852,7 +1020,6 @@ fun FakeGpsMapScreen(
                                 modifier = Modifier.padding(10.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                // Thumbnail / Icon Container
                                 Surface(
                                     shape = RoundedCornerShape(12.dp),
                                     color = if (isSelected) MaterialTheme.colorScheme.primary else mapType.previewBg,
@@ -902,7 +1069,6 @@ fun FakeGpsMapScreen(
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // Feature details info card
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
@@ -964,6 +1130,30 @@ fun FakeGpsMapScreen(
                     Text("Dismiss")
                 }
             }
+        )
+    }
+}
+
+@Composable
+private fun SegmentedMapControlButton(
+    icon: ImageVector,
+    contentDescription: String,
+    tint: Color,
+    containerColor: Color = Color.Transparent,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .background(containerColor)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = Modifier.size(22.dp)
         )
     }
 }

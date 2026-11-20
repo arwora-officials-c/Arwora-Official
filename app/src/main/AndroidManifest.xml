@@ -72,6 +72,11 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".SplashActivity"
+            android:exported="false"
+            android:theme="@style/Theme.App.Starting" />
+
         <activity-alias
             android:name=".DefaultBlue"
             android:targetActivity=".MainActivity"
@@ -245,6 +250,13 @@
             android:name=".AnimationSettingsActivity"
             android:exported="false"
             android:label="Animation Speed &amp; Tweak"
+            android:resizeableActivity="true"
+            android:theme="@style/Theme.MyApplication" />
+
+        <activity
+            android:name=".QrScannerActivity"
+            android:exported="false"
+            android:label="All QR &amp; Barcode Scanner"
             android:resizeableActivity="true"
             android:theme="@style/Theme.MyApplication" />
 

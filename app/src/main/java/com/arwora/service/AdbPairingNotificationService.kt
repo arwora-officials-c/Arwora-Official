@@ -165,7 +165,7 @@ object AdbPairingNotifier {
         val content = if (connected) {
             "ADB Connected Successfully!"
         } else {
-            "Paired! Resolving connection port..."
+            "Paired successfully! Connecting ADB..."
         }
         val expandedText = if (connected && !detail.isNullOrBlank()) {
             "$content ($detail)"
@@ -310,6 +310,8 @@ class AdbPairingNotificationService : Service() {
     private var pairingDiscoveryListener: NsdManager.DiscoveryListener? = null
     private val isDiscoveryActive = AtomicBoolean(false)
     private val isResolving = AtomicBoolean(false)
+    private val pendingPairingQueue = ArrayDeque<NsdServiceInfo>()
+    private val queueLock = Any()
 
     @Volatile
     private var activeHost: String = "127.0.0.1"
@@ -353,6 +355,16 @@ class AdbPairingNotificationService : Service() {
 
         fun pausePairingDiscovery() {
             activeInstance?.stopPairingMdnsDiscovery()
+        }
+
+        fun runWorkOnServiceScope(block: suspend CoroutineScope.() -> Unit): Boolean {
+            val instance = activeInstance ?: return false
+            return try {
+                instance.serviceScope.launch { block() }
+                true
+            } catch (_: Throwable) {
+                false
+            }
         }
 
         fun stop(context: Context) {
@@ -442,29 +454,12 @@ class AdbPairingNotificationService : Service() {
 
                     override fun onServiceFound(serviceInfo: NsdServiceInfo?) {
                         val info = serviceInfo ?: return
-                        if (!isResolving.compareAndSet(false, true)) return
-                        try {
-                            @Suppress("DEPRECATION")
-                            nsd.resolveService(info, object : NsdManager.ResolveListener {
-                                override fun onResolveFailed(serviceInfo: NsdServiceInfo?, errorCode: Int) {
-                                    isResolving.set(false)
-                                    Log.w(TAG, "Pairing service resolve failed: $errorCode")
-                                }
-
-                                override fun onServiceResolved(resolvedInfo: NsdServiceInfo?) {
-                                    isResolving.set(false)
-                                    val port = resolvedInfo?.port ?: -1
-                                    if (port !in 1024..65535) return
-                                    val resolvedHost = NativeAdbManager.extractPreferredHostIp(
-                                        resolvedInfo = resolvedInfo,
-                                        wifiIpFallback = NativeAdbManager.getLocalWifiIpAddress(this@AdbPairingNotificationService)
-                                    )
-                                    onPairingEndpointDetected(resolvedHost, port)
-                                }
-                            })
-                        } catch (e: Exception) {
-                            isResolving.set(false)
-                            Log.w(TAG, "Error resolving pairing mDNS service", e)
+                        val shouldStart = synchronized(queueLock) {
+                            pendingPairingQueue.addLast(info)
+                            isResolving.compareAndSet(false, true)
+                        }
+                        if (shouldStart) {
+                            resolveNextPairingService(nsd)
                         }
                     }
 
@@ -508,6 +503,42 @@ class AdbPairingNotificationService : Service() {
         )
     }
 
+    private fun resolveNextPairingService(nsd: NsdManager) {
+        val nextInfo = synchronized(queueLock) {
+            if (pendingPairingQueue.isEmpty()) {
+                isResolving.set(false)
+                null
+            } else {
+                pendingPairingQueue.removeFirst()
+            }
+        } ?: return
+
+        try {
+            @Suppress("DEPRECATION")
+            nsd.resolveService(nextInfo, object : NsdManager.ResolveListener {
+                override fun onResolveFailed(serviceInfo: NsdServiceInfo?, errorCode: Int) {
+                    Log.w(TAG, "Pairing service resolve failed: $errorCode")
+                    resolveNextPairingService(nsd)
+                }
+
+                override fun onServiceResolved(resolvedInfo: NsdServiceInfo?) {
+                    val port = resolvedInfo?.port ?: -1
+                    if (port in 1024..65535) {
+                        val resolvedHost = NativeAdbManager.extractPreferredHostIp(
+                            resolvedInfo = resolvedInfo,
+                            wifiIpFallback = NativeAdbManager.getLocalWifiIpAddress(this@AdbPairingNotificationService)
+                        )
+                        onPairingEndpointDetected(resolvedHost, port)
+                    }
+                    resolveNextPairingService(nsd)
+                }
+            })
+        } catch (e: Exception) {
+            Log.w(TAG, "Error resolving pairing mDNS service", e)
+            resolveNextPairingService(nsd)
+        }
+    }
+
     private fun stopPairingMdnsDiscovery() {
         val nsd = nsdManager
         val listener = pairingDiscoveryListener
@@ -516,6 +547,9 @@ class AdbPairingNotificationService : Service() {
                 nsd.stopServiceDiscovery(listener)
             } catch (_: Exception) {
             }
+        }
+        synchronized(queueLock) {
+            pendingPairingQueue.clear()
         }
         isResolving.set(false)
         pairingDiscoveryListener = null

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/splash_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/splash_bg">
+
+    <ImageView
+        android:id="@+id/iv_arwora_wordmark"
+        android:layout_width="248dp"
+        android:layout_height="46dp"
+        android:layout_gravity="center"
+        android:alpha="0"
+        android:contentDescription="@string/app_name"
+        android:scaleType="fitCenter"
+        android:scaleX="0.85"
+        android:scaleY="0.85"
+        android:src="@drawable/ic_arwora_wordmark" />
+
+</FrameLayout>
