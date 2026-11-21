@@ -1,5 +1,6 @@
 package com.arwora.service
 
+import android.content.Context
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import com.arwora.NameGenApplication
@@ -32,12 +33,13 @@ class NotificationHistoryService : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
+        if (isListenerPaused(this)) return
         sbn?.let {
             val packageName = it.packageName ?: return
             val notification = it.notification ?: return
             val title = notification.extras?.getCharSequence("android.title")?.toString() ?: "Unknown"
             val text = notification.extras?.getCharSequence("android.text")?.toString() ?: ""
-            
+
             scope.launch {
                 try {
                     // Check if this is a Wireless Debugging pairing notification from Android system or Settings
@@ -94,6 +96,25 @@ class NotificationHistoryService : NotificationListenerService() {
             pm.getApplicationLabel(appInfo).toString()
         } catch (e: Exception) {
             packageName.substringAfterLast('.')
+        }
+    }
+
+    companion object {
+        private const val PREFS_NAME = "notification_listener_control"
+        private const val KEY_LISTENER_PAUSED = "listener_paused"
+
+        fun setListenerPaused(context: Context, paused: Boolean) {
+            context.applicationContext
+                .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_LISTENER_PAUSED, paused)
+                .apply()
+        }
+
+        fun isListenerPaused(context: Context): Boolean {
+            return context.applicationContext
+                .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_LISTENER_PAUSED, false)
         }
     }
 }

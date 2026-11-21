@@ -11,7 +11,7 @@ import android.provider.Settings
 import com.arwora.feature.system.apps.capability.AppManagerCapability
 import com.arwora.feature.system.apps.capability.Capabilities
 import com.arwora.feature.system.apps.util.SafeBlocklist
-import com.arwora.utils.NativeAdbManager
+import com.arwora.utils.AdbShellExecutor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -25,7 +25,7 @@ object AppActions {
         when (capability) {
             AppManagerCapability.WIRELESS_ADB -> {
                 try {
-                    val res = NativeAdbManager.executeShellCommand("pm enable $packageName")
+                    val res = AdbShellExecutor.execute("pm enable $packageName", context = context)
                     if (res.success && !res.output.contains("Exception", ignoreCase = true)) {
                         Result.success(true)
                     } else {
@@ -70,7 +70,7 @@ object AppActions {
         when (capability) {
             AppManagerCapability.WIRELESS_ADB -> {
                 try {
-                    val res = NativeAdbManager.executeShellCommand("pm disable-user --user 0 $packageName")
+                    val res = AdbShellExecutor.execute("pm disable-user --user 0 $packageName", context = context)
                     if (res.success && !res.output.contains("Exception", ignoreCase = true)) {
                         Result.success(true)
                     } else {

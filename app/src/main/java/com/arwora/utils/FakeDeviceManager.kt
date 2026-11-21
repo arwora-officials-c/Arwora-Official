@@ -378,10 +378,10 @@ object FakeDeviceManager {
             .apply()
     }
 
-    fun isAdbReady(): Boolean = NativeAdbManager.isAdbReady()
+    fun isAdbReady(): Boolean = AdbShellExecutor.isPrivilegedShellReady()
 
     fun executeCommandViaAdb(command: String): Boolean {
-        return NativeAdbManager.executeCommandBlocking(command).success
+        return AdbShellExecutor.executeBlocking(command).success
     }
 
     fun applyDeviceProfile(context: Context, profile: FakeDeviceProfile, useShortName: Boolean = isShortNameMode(context)): Boolean {

@@ -40,7 +40,9 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arwora.ui.components.ExpressiveWavyLinearProgressIndicator
+import com.arwora.utils.AdbShellExecutor
 import com.arwora.utils.NativeAdbManager
+import com.arwora.utils.PrivilegeEngine
 import com.arwora.utils.SoundEffectManager
 import java.text.SimpleDateFormat
 import java.util.*
@@ -56,6 +58,7 @@ fun ShellCommandSheet(
     val status by viewModel.status.collectAsStateWithLifecycle()
     val isConnecting by viewModel.isConnecting.collectAsStateWithLifecycle()
     val adbConnected by NativeAdbManager.isConnected.collectAsStateWithLifecycle()
+    val activePrivilegeEngine by AdbShellExecutor.activeEngine.collectAsStateWithLifecycle()
     val requiresDevOptionsGuidance by NativeAdbManager.requiresDevOptionsGuidance.collectAsStateWithLifecycle()
     val adbStatusMessage by NativeAdbManager.statusMessage.collectAsStateWithLifecycle()
     val commandText by viewModel.commandText.collectAsStateWithLifecycle()
@@ -68,7 +71,7 @@ fun ShellCommandSheet(
 
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    LaunchedEffect(adbConnected) {
+    LaunchedEffect(adbConnected, activePrivilegeEngine) {
         viewModel.refreshStatus()
     }
 
@@ -150,8 +153,13 @@ fun ShellCommandSheet(
                                     border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.3f)),
                                     modifier = Modifier.padding(top = 4.dp)
                                 ) {
+                                    val badgeText = if (status == ShellStatus.READY && activePrivilegeEngine != PrivilegeEngine.NONE) {
+                                        activePrivilegeEngine.statusBadgeLabel
+                                    } else {
+                                        status.label
+                                    }
                                     Text(
-                                        text = status.label,
+                                        text = badgeText,
                                         style = MaterialTheme.typography.labelSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = badgeColor,

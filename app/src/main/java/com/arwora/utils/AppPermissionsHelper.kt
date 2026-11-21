@@ -222,7 +222,8 @@ object AppPermissionsHelper {
     }
 
     fun isWirelessAdbGranted(context: Context): Boolean = try {
-        NativeAdbManager.isAdbReady() || NativeAdbManager.isWirelessDebuggingSettingEnabled(context)
+        AdbShellExecutor.isPrivilegedShellReady(context) ||
+            NativeAdbManager.isWirelessDebuggingSettingEnabled(context)
     } catch (_: Throwable) {
         false
     }
@@ -369,6 +370,165 @@ object AppPermissionsHelper {
             } catch (_: Exception) {
                 false
             }
+        }
+    }
+
+    fun openAppDetailsSettings(context: Context): Boolean {
+        return try {
+            val intent = Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.fromParts("package", context.packageName, null)
+            ).apply {
+                if (context !is android.app.Activity) {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            }
+            context.startActivity(intent)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    data class BulkPermissionAdbResult(
+        val commandsAttempted: Int,
+        val commandsSucceeded: Int
+    )
+
+    fun buildAdbGrantCommands(
+        packageName: String,
+        sdkInt: Int = Build.VERSION.SDK_INT
+    ): List<String> = buildList {
+        add("pm grant $packageName ${Manifest.permission.CAMERA}")
+        add("pm grant $packageName ${Manifest.permission.RECORD_AUDIO}")
+        if (sdkInt >= Build.VERSION_CODES.TIRAMISU) {
+            add("pm grant $packageName ${Manifest.permission.READ_MEDIA_IMAGES}")
+            add("pm grant $packageName ${Manifest.permission.READ_MEDIA_VIDEO}")
+            add("pm grant $packageName ${Manifest.permission.POST_NOTIFICATIONS}")
+        } else {
+            add("pm grant $packageName ${Manifest.permission.READ_EXTERNAL_STORAGE}")
+        }
+        add("appops set $packageName SYSTEM_ALERT_WINDOW allow")
+        add("appops set $packageName GET_USAGE_STATS allow")
+        add("cmd notification allow_listener $packageName/com.arwora.service.NotificationHistoryService")
+    }
+
+    fun buildAdbRevokeCommands(
+        packageName: String,
+        sdkInt: Int = Build.VERSION.SDK_INT
+    ): List<String> = buildList {
+        add("pm revoke $packageName ${Manifest.permission.CAMERA}")
+        add("pm revoke $packageName ${Manifest.permission.RECORD_AUDIO}")
+        if (sdkInt >= Build.VERSION_CODES.TIRAMISU) {
+            add("pm revoke $packageName ${Manifest.permission.READ_MEDIA_IMAGES}")
+            add("pm revoke $packageName ${Manifest.permission.READ_MEDIA_VIDEO}")
+            add("pm revoke $packageName ${Manifest.permission.POST_NOTIFICATIONS}")
+        } else {
+            add("pm revoke $packageName ${Manifest.permission.READ_EXTERNAL_STORAGE}")
+        }
+        add("appops set $packageName SYSTEM_ALERT_WINDOW ignore")
+        add("appops set $packageName GET_USAGE_STATS ignore")
+        add("cmd notification disallow_listener $packageName/com.arwora.service.NotificationHistoryService")
+    }
+
+    fun allRevocableRuntimePermissions(
+        sdkInt: Int = Build.VERSION.SDK_INT
+    ): List<String> = buildList {
+        add(Manifest.permission.CAMERA)
+        add(Manifest.permission.RECORD_AUDIO)
+        if (sdkInt >= Build.VERSION_CODES.TIRAMISU) {
+            add(Manifest.permission.READ_MEDIA_IMAGES)
+            add(Manifest.permission.READ_MEDIA_VIDEO)
+            add(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            add(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+    }
+
+    fun findRemainingSpecialPermissions(
+        permissions: List<ManagedAppPermission>
+    ): List<ManagedAppPermission> {
+        val specialCategories = setOf(
+            ManagedPermissionCategory.OVERLAY,
+            ManagedPermissionCategory.NOTIFICATION_LISTENER,
+            ManagedPermissionCategory.USAGE_STATS,
+            ManagedPermissionCategory.WIRELESS_ADB
+        )
+        return permissions.filter { !it.isGranted && it.category in specialCategories }
+    }
+
+    suspend fun grantAllPermissionsViaAdb(context: Context): BulkPermissionAdbResult {
+        com.arwora.service.NotificationHistoryService.setListenerPaused(context, false)
+        val commands = buildAdbGrantCommands(context.packageName, Build.VERSION.SDK_INT)
+        var succeeded = 0
+        for (cmd in commands) {
+            val result = try {
+                AdbShellExecutor.execute(cmd, context = context)
+            } catch (_: Throwable) {
+                null
+            }
+            if (result?.success == true) {
+                succeeded++
+            }
+        }
+        return BulkPermissionAdbResult(commands.size, succeeded)
+    }
+
+    suspend fun revokeAllPermissionsViaAdb(context: Context): BulkPermissionAdbResult {
+        val commands = buildAdbRevokeCommands(context.packageName, Build.VERSION.SDK_INT)
+        var succeeded = 0
+        for (cmd in commands) {
+            val result = try {
+                AdbShellExecutor.execute(cmd, context = context)
+            } catch (_: Throwable) {
+                null
+            }
+            if (result?.success == true) {
+                succeeded++
+            }
+        }
+        return BulkPermissionAdbResult(commands.size, succeeded)
+    }
+
+    fun stopPermissionDependentServices(context: Context) {
+        try {
+            com.arwora.service.NotificationHistoryService.setListenerPaused(context, true)
+        } catch (_: Throwable) {
+        }
+        try {
+            com.arwora.service.FloatingWindowService.stop(context)
+        } catch (_: Throwable) {
+        }
+        try {
+            val stopAutoClickerIntent = Intent(
+                context,
+                com.arwora.service.AutoClickerOverlayService::class.java
+            ).apply {
+                action = com.arwora.service.AutoClickerOverlayService.ACTION_STOP_OVERLAY
+            }
+            context.stopService(stopAutoClickerIntent)
+        } catch (_: Throwable) {
+        }
+        try {
+            FakeGpsManager.stopMockLocation(context)
+        } catch (_: Throwable) {
+        }
+    }
+
+    fun requestSelfRevokeRuntimePermissions(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return false
+        return try {
+            val grantedPerms = allRevocableRuntimePermissions(Build.VERSION.SDK_INT).filter { perm ->
+                ContextCompat.checkSelfPermission(context, perm) == PackageManager.PERMISSION_GRANTED
+            }
+            if (grantedPerms.isNotEmpty()) {
+                context.revokeSelfPermissionsOnKill(grantedPerms)
+                true
+            } else {
+                false
+            }
+        } catch (_: Throwable) {
+            false
         }
     }
 }

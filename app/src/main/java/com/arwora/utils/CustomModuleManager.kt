@@ -245,8 +245,8 @@ object CustomModuleManager {
     }
 
     private fun executeCommand(command: String): Boolean {
-        if (NativeAdbManager.isAdbReady()) {
-            if (NativeAdbManager.executeCommandBlocking(command).success) return true
+        if (AdbShellExecutor.isPrivilegedShellReady()) {
+            if (AdbShellExecutor.executeBlocking(command).success) return true
         }
         if (isRootAvailable()) {
             if (executeViaRoot(command)) return true
@@ -254,7 +254,7 @@ object CustomModuleManager {
         return executeLocally(command)
     }
 
-    fun isAdbReady(): Boolean = NativeAdbManager.isAdbReady()
+    fun isAdbReady(): Boolean = AdbShellExecutor.isPrivilegedShellReady()
 
     private fun isRootAvailable(): Boolean {
         return try {

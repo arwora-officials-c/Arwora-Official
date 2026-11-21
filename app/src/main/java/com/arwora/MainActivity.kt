@@ -34,6 +34,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         checkNotificationPermissionStatus()
         com.arwora.utils.NativeAdbManager.refreshConnectionStatus(this)
+        com.arwora.utils.AdbShellExecutor.refreshEngineStatus(this)
         val creds = com.arwora.utils.EncryptedAdbCredentialStore.loadState(this)
         if (creds.isPaired && !creds.userStopped && !com.arwora.utils.NativeAdbManager.isAdbReady()) {
             com.arwora.service.AdbConnectionService.startPersistentSession(this)
@@ -53,6 +54,7 @@ class MainActivity : ComponentActivity() {
         com.arwora.feature.common.metrics.StartupMetrics.onActivityCreate()
 
         com.arwora.utils.NativeAdbManager.init(this)
+        com.arwora.utils.AdbShellExecutor.init(this)
         com.arwora.service.WifiAutoPairMonitor.syncWithPreference(this)
         
         enableEdgeToEdge()

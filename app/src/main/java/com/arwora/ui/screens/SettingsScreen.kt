@@ -58,11 +58,12 @@ import com.arwora.ui.MainViewModel
 import com.arwora.ui.components.AppLogo
 import com.arwora.ui.components.ArworaAnimatedSwitch
 import com.arwora.ui.components.ArworaDesignTokens
-import com.arwora.ui.components.ArworaPrimaryPillButton
 import com.arwora.ui.navigation.Screen
+import com.arwora.utils.AdbShellExecutor
 import com.arwora.utils.AppPermissionsHelper
 import com.arwora.utils.ManagedAppPermission
 import com.arwora.utils.ManagedPermissionCategory
+import com.arwora.utils.PrivilegeEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -115,6 +116,10 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
     var permissionsLoaded by remember { mutableStateOf(false) }
     var pendingPermissionCategory by remember { mutableStateOf<ManagedPermissionCategory?>(null) }
     var pendingQuickFixNextStep by remember { mutableStateOf(false) }
+    var isBulkPermissionBusy by remember { mutableStateOf(false) }
+    var showRevokeAllConfirmDialog by remember { mutableStateOf(false) }
+    var remainingSpecialPermissionsDialogList by remember { mutableStateOf<List<ManagedAppPermission>>(emptyList()) }
+    val activePrivilegeEngine by AdbShellExecutor.activeEngine.collectAsStateWithLifecycle()
 
     val singleCategoryRuntimeLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -152,20 +157,10 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
             appPermissions = loaded
             permissionsLoaded = true
             if (continueToSystemSettings) {
-                val nextCategory = AppPermissionsHelper.findNextMissingSystemCategory(loaded)
-                if (nextCategory != null) {
-                    val runtimeForNext = AppPermissionsHelper.runtimePermissionsForCategory(nextCategory)
-                    if (runtimeForNext.isEmpty()) {
-                        val nextTitle = loaded.firstOrNull { it.category == nextCategory }?.title
-                            ?: "System permission"
-                        Toast.makeText(
-                            context,
-                            "Next: enable $nextTitle in Settings",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                        AppPermissionsHelper.openPermissionSettings(context, nextCategory)
-                    }
-                } else {
+                val remainingSpecial = AppPermissionsHelper.findRemainingSpecialPermissions(loaded)
+                if (remainingSpecial.isNotEmpty()) {
+                    remainingSpecialPermissionsDialogList = remainingSpecial
+                } else if (loaded.all { it.isGranted }) {
                     Toast.makeText(
                         context,
                         "All permissions granted",
@@ -221,6 +216,113 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
             },
             dismissButton = {
                 TextButton(onClick = { showPermissionDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showRevokeAllConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showRevokeAllConfirmDialog = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Block,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+            },
+            title = { Text("Disable App Permissions?") },
+            text = { Text("Disable all app permissions and pause background listeners?") },
+            confirmButton = {
+                TextButton(
+                    modifier = Modifier.testTag("settings_confirm_all_off_button"),
+                    onClick = {
+                        showRevokeAllConfirmDialog = false
+                        isBulkPermissionBusy = true
+                        coroutineScope.launch {
+                            viewModel.setFloatingMode(false)
+                            withContext(Dispatchers.IO) {
+                                AppPermissionsHelper.stopPermissionDependentServices(context)
+                            }
+                            if (AdbShellExecutor.isPrivilegedShellReady(context)) {
+                                val usedEngine = AdbShellExecutor.resolveActiveEngine(context)
+                                val adbResult = withContext(Dispatchers.IO) {
+                                    AppPermissionsHelper.revokeAllPermissionsViaAdb(context)
+                                }
+                                val reloaded = withContext(Dispatchers.IO) {
+                                    AppPermissionsHelper.inspectPermissions(context)
+                                }
+                                appPermissions = reloaded
+                                permissionsLoaded = true
+                                isBulkPermissionBusy = false
+                                val engineName = if (usedEngine == PrivilegeEngine.SHIZUKU) "Shizuku" else "Wireless ADB"
+                                Toast.makeText(
+                                    context,
+                                    "Permissions revoked via $engineName (${adbResult.commandsSucceeded}/${adbResult.commandsAttempted})",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            } else {
+                                AppPermissionsHelper.requestSelfRevokeRuntimePermissions(context)
+                                val reloaded = withContext(Dispatchers.IO) {
+                                    AppPermissionsHelper.inspectPermissions(context)
+                                }
+                                appPermissions = reloaded
+                                permissionsLoaded = true
+                                isBulkPermissionBusy = false
+                                Toast.makeText(
+                                    context,
+                                    "Background listeners stopped. Toggle remaining permissions off in App Info.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                                AppPermissionsHelper.openAppDetailsSettings(context)
+                            }
+                        }
+                    }
+                ) { Text("Disable All", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(
+                    modifier = Modifier.testTag("settings_cancel_all_off_button"),
+                    onClick = { showRevokeAllConfirmDialog = false }
+                ) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (remainingSpecialPermissionsDialogList.isNotEmpty()) {
+        val nextSpecial = AppPermissionsHelper.findNextMissingSystemCategory(
+            remainingSpecialPermissionsDialogList
+        )
+        val remainingNames = remainingSpecialPermissionsDialogList.joinToString("\n• ") { it.title }
+        AlertDialog(
+            onDismissRequest = { remainingSpecialPermissionsDialogList = emptyList() },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.AdminPanelSettings,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            },
+            title = { Text("Additional System Toggles Needed") },
+            text = {
+                Text(
+                    "Android requires manual confirmation in System Settings for:\n• $remainingNames"
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    modifier = Modifier.testTag("settings_special_perm_open_next_button"),
+                    onClick = {
+                        remainingSpecialPermissionsDialogList = emptyList()
+                        if (nextSpecial != null) {
+                            AppPermissionsHelper.openPermissionSettings(context, nextSpecial)
+                        }
+                    }
+                ) { Text("Open Next Setting") }
+            },
+            dismissButton = {
+                TextButton(onClick = { remainingSpecialPermissionsDialogList = emptyList() }) {
+                    Text("Later")
+                }
             }
         )
     }
@@ -686,6 +788,82 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
                 AnimatedVisibility(visible = isPermissionsExpanded) {
                     Column(modifier = Modifier.fillMaxWidth()) {
                         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+
+                        val engineBadgeColor = when (activePrivilegeEngine) {
+                            PrivilegeEngine.SHIZUKU,
+                            PrivilegeEngine.WIRELESS_ADB -> Color(0xFF10B981)
+                            PrivilegeEngine.NONE -> Color(0xFFDC2626)
+                        }
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 10.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .testTag("settings_privilege_engine_row")
+                                .clickable {
+                                    com.arwora.utils.SoundEffectManager.playClick()
+                                    if (AdbShellExecutor.isShizukuRunning() && !AdbShellExecutor.hasShizukuPermission()) {
+                                        AdbShellExecutor.requestShizukuPermission()
+                                    } else if (AdbShellExecutor.isShizukuInstalled(context) && !AdbShellExecutor.isShizukuRunning()) {
+                                        AdbShellExecutor.openOrInstallShizuku(context)
+                                    } else {
+                                        AppPermissionsHelper.openPermissionSettings(
+                                            context,
+                                            ManagedPermissionCategory.WIRELESS_ADB
+                                        )
+                                    }
+                                },
+                            shape = RoundedCornerShape(14.dp),
+                            color = engineBadgeColor.copy(alpha = 0.08f),
+                            border = BorderStroke(1.dp, engineBadgeColor.copy(alpha = 0.28f))
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                    Text(
+                                        text = "Shell & Permission Engine",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = when (activePrivilegeEngine) {
+                                            PrivilegeEngine.SHIZUKU -> "Prioritizing Shizuku RISH for 1-click grants"
+                                            PrivilegeEngine.WIRELESS_ADB -> "Routing via active Wireless ADB session"
+                                            PrivilegeEngine.NONE -> "Authorize Shizuku or connect Wireless ADB for zero-prompt toggles"
+                                        },
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                Surface(
+                                    shape = CircleShape,
+                                    color = engineBadgeColor.copy(alpha = 0.14f),
+                                    border = BorderStroke(1.dp, engineBadgeColor.copy(alpha = 0.35f)),
+                                    modifier = Modifier.testTag("settings_privilege_engine_badge")
+                                ) {
+                                    Text(
+                                        text = activePrivilegeEngine.statusBadgeLabel,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = engineBadgeColor,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.08f))
+
                         appPermissions.forEachIndexed { index, permission ->
                             AppPermissionStatusRow(
                                 permission = permission,
@@ -725,45 +903,130 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
                         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
 
                         val missingCount = appPermissions.count { !it.isGranted }
-                        Box(
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 14.dp)
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            ArworaPrimaryPillButton(
-                                text = if (missingCount > 0) "Grant All Missing" else "All Permissions Granted",
-                                enabled = permissionsLoaded && missingCount > 0,
-                                height = 48.dp,
-                                modifier = Modifier.testTag("settings_grant_all_missing_button"),
+                            Button(
                                 onClick = {
                                     com.arwora.utils.SoundEffectManager.playClick()
-                                    val missingRuntime = AppPermissionsHelper.collectMissingRuntimePermissions(
-                                        context = context,
-                                        permissions = appPermissions
-                                    )
-                                    if (missingRuntime.isNotEmpty()) {
-                                        pendingQuickFixNextStep = true
-                                        quickFixRuntimeLauncher.launch(missingRuntime.toTypedArray())
-                                    } else {
-                                        val nextCategory = AppPermissionsHelper.findNextMissingSystemCategory(
-                                            appPermissions
-                                        )
-                                        if (nextCategory != null) {
-                                            val opened = AppPermissionsHelper.openPermissionSettings(
-                                                context,
-                                                nextCategory
-                                            )
-                                            if (!opened) {
+                                    if (AdbShellExecutor.isPrivilegedShellReady(context)) {
+                                        val usedEngine = AdbShellExecutor.resolveActiveEngine(context)
+                                        isBulkPermissionBusy = true
+                                        coroutineScope.launch {
+                                            val adbResult = withContext(Dispatchers.IO) {
+                                                AppPermissionsHelper.grantAllPermissionsViaAdb(context)
+                                            }
+                                            val reloaded = withContext(Dispatchers.IO) {
+                                                AppPermissionsHelper.inspectPermissions(context)
+                                            }
+                                            appPermissions = reloaded
+                                            permissionsLoaded = true
+                                            isBulkPermissionBusy = false
+                                            val remainingSpecial = AppPermissionsHelper.findRemainingSpecialPermissions(reloaded)
+                                            if (remainingSpecial.isNotEmpty()) {
+                                                remainingSpecialPermissionsDialogList = remainingSpecial
+                                            } else {
+                                                val engineName = if (usedEngine == PrivilegeEngine.SHIZUKU) "Shizuku" else "Wireless ADB"
                                                 Toast.makeText(
                                                     context,
-                                                    "Unable to open system settings",
+                                                    "Permissions enabled via $engineName (${adbResult.commandsSucceeded}/${adbResult.commandsAttempted})",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                        }
+                                    } else {
+                                        com.arwora.service.NotificationHistoryService.setListenerPaused(context, false)
+                                        val missingRuntime = AppPermissionsHelper.collectMissingRuntimePermissions(
+                                            context = context,
+                                            permissions = appPermissions
+                                        )
+                                        if (missingRuntime.isNotEmpty()) {
+                                            pendingQuickFixNextStep = true
+                                            quickFixRuntimeLauncher.launch(missingRuntime.toTypedArray())
+                                        } else {
+                                            val remainingSpecial = AppPermissionsHelper.findRemainingSpecialPermissions(
+                                                appPermissions
+                                            )
+                                            if (remainingSpecial.isNotEmpty()) {
+                                                remainingSpecialPermissionsDialogList = remainingSpecial
+                                            } else {
+                                                Toast.makeText(
+                                                    context,
+                                                    "All permissions granted",
                                                     Toast.LENGTH_SHORT
                                                 ).show()
                                             }
                                         }
                                     }
-                                }
-                            )
+                                },
+                                enabled = permissionsLoaded && !isBulkPermissionBusy && missingCount > 0,
+                                shape = RoundedCornerShape(22.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                ),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(44.dp)
+                                    .testTag("settings_permissions_all_on_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.VerifiedUser,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "1-Click All ON",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    com.arwora.utils.SoundEffectManager.playClick()
+                                    showRevokeAllConfirmDialog = true
+                                },
+                                enabled = permissionsLoaded && !isBulkPermissionBusy,
+                                shape = RoundedCornerShape(22.dp),
+                                border = BorderStroke(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.error.copy(alpha = 0.45f)
+                                ),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.08f),
+                                    contentColor = MaterialTheme.colorScheme.error
+                                ),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(44.dp)
+                                    .testTag("settings_permissions_all_off_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Block,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "1-Click All OFF",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                     }
                 }

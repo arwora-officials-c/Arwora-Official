@@ -17,8 +17,8 @@ android {
     applicationId = "com.arworahyper.toolkit"
     minSdk = 24
     targetSdk = 35
-    versionCode = 210
-    versionName = "1.49.49"
+    versionCode = 212
+    versionName = "1.49.51"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -125,6 +125,8 @@ dependencies {
   implementation(libs.youtubedl.android)
   implementation(libs.ffmpeg.android)
   implementation(libs.apksig)
+  implementation(libs.shizuku.api)
+  implementation(libs.shizuku.provider)
   // implementation("me.legrange:mikrotik:3.0")
   implementation(libs.play.services.location)
   // implementation(libs.retrofit)

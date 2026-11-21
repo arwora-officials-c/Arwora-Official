@@ -96,6 +96,7 @@ fun SystemDashboardScreen(
     val coroutineScope = rememberCoroutineScope()
     LaunchedEffect(Unit) {
         NativeAdbManager.init(context)
+        AdbShellExecutor.init(context)
         com.arwora.utils.AppLockerManager.init(context)
     }
 
@@ -227,6 +228,9 @@ fun SystemDashboardScreen(
     // Animation & Refresh state
     var animScale by remember { mutableStateOf(AnimationTweakManager.getCurrentAnimationScale(context)) }
     val isAdbConnected by NativeAdbManager.isConnected.collectAsStateWithLifecycle()
+    val activePrivilegeEngine by AdbShellExecutor.activeEngine.collectAsStateWithLifecycle()
+    val isPrivilegeReady = isAdbConnected || activePrivilegeEngine != PrivilegeEngine.NONE
+    var showPrivilegeEngineDialog by remember { mutableStateOf(false) }
     val hasNotificationAccess by WirelessPairingManager.notificationAccessGranted.collectAsStateWithLifecycle()
 
     // Fake Device State
@@ -263,6 +267,7 @@ fun SystemDashboardScreen(
         coroutineScope.launch {
             checkNotificationPermissionStatus()
             NativeAdbManager.refreshConnectionStatus(context)
+            AdbShellExecutor.refreshEngineStatus(context)
             val (scale, dns) = withContext(Dispatchers.IO) {
                 AnimationTweakManager.getCurrentAnimationScale(context) to
                     DnsManager.getSelectedDns(context)
@@ -301,6 +306,7 @@ fun SystemDashboardScreen(
                     currentSpoof = spoof
                     checkNotificationPermissionStatus()
                     NativeAdbManager.refreshConnectionStatus(context)
+                    AdbShellExecutor.refreshEngineStatus(context)
                     shellViewModel.refreshStatus()
                 }
             }
@@ -447,6 +453,19 @@ fun SystemDashboardScreen(
             item {
                 AnimatedListItem(index = 2) {
                     CentralizedControlPanelHeroCard()
+                }
+            }
+
+            // 2B. UNIVERSAL DUAL-ENGINE PRIVILEGE BRIDGE STATUS CARD
+            item {
+                AnimatedListItem(index = 3) {
+                    PrivilegeEngineBridgeCard(
+                        engine = activePrivilegeEngine,
+                        onClick = {
+                            SoundEffectManager.playClick()
+                            showPrivilegeEngineDialog = true
+                        }
+                    )
                 }
             }
 
@@ -800,8 +819,8 @@ fun SystemDashboardScreen(
                     subtitle = "Saved Wi-Fi networks, reveal passwords & quick connect",
                     icon = Icons.Default.Password,
                     iconColor = MaterialTheme.colorScheme.primary,
-                    badge = if (isAdbConnected) "ADB Ready" else "ADB Required",
-                    badgeColor = if (isAdbConnected) Color(0xFF10B981) else MaterialTheme.colorScheme.error,
+                    badge = if (isPrivilegeReady) "ADB Ready" else "ADB Required",
+                    badgeColor = if (isPrivilegeReady) Color(0xFF10B981) else MaterialTheme.colorScheme.error,
                     onClick = {
                         SoundEffectManager.playClick()
                         navigateGuarded(Screen.WifiPassword.route) {
@@ -2142,8 +2161,8 @@ fun SystemDashboardScreen(
                     title = "Animation Speed",
                     subtitle = "Window/Transition/Animator scales: ${animScale}x",
                     icon = Icons.Default.Speed,
-                    badge = if (isAdbConnected) "ADB Ready" else "ADB Required",
-                    badgeColor = if (isAdbConnected) Color(0xFF10B981) else MaterialTheme.colorScheme.error,
+                    badge = if (isPrivilegeReady) "ADB Ready" else "ADB Required",
+                    badgeColor = if (isPrivilegeReady) Color(0xFF10B981) else MaterialTheme.colorScheme.error,
                     isExpanded = isAnimationExpanded,
                     onToggleExpand = {
                         SoundEffectManager.playClick()
@@ -2217,8 +2236,8 @@ fun SystemDashboardScreen(
                     subtitle = "Filter packages, permission controls & standby ops",
                     icon = Icons.Default.AdminPanelSettings,
                     iconColor = Color(0xFF10B981),
-                    badge = if (isAdbConnected) "ADB Ready" else "ADB Required",
-                    badgeColor = if (isAdbConnected) Color(0xFF10B981) else MaterialTheme.colorScheme.error,
+                    badge = if (isPrivilegeReady) "ADB Ready" else "ADB Required",
+                    badgeColor = if (isPrivilegeReady) Color(0xFF10B981) else MaterialTheme.colorScheme.error,
                     onClick = {
                         SoundEffectManager.playClick()
                         navController.navigate(Screen.AppOps.route)
@@ -2330,6 +2349,118 @@ fun SystemDashboardScreen(
         visible = showHtmlToApkSheet,
         onDismissRequest = { showHtmlToApkSheet = false }
     )
+
+    if (showPrivilegeEngineDialog) {
+        val shizukuRunning = AdbShellExecutor.isShizukuRunning()
+        val shizukuPermitted = AdbShellExecutor.hasShizukuPermission()
+        val shizukuInstalled = AdbShellExecutor.isShizukuInstalled(context)
+        AlertDialog(
+            onDismissRequest = { showPrivilegeEngineDialog = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Security,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            },
+            title = { Text("Privilege & Shell Engine", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Arwora automatically executes privileged commands using Shizuku (Priority 1) or Native Wireless ADB (Priority 2).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Active Engine:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(activePrivilegeEngine.statusBadgeLabel, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Shizuku Daemon:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    text = when {
+                                        shizukuPermitted -> "Authorized"
+                                        shizukuRunning -> "Running (Tap Authorize)"
+                                        shizukuInstalled -> "Installed (Service Stopped)"
+                                        else -> "Not Installed"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Wireless ADB:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    text = if (isAdbConnected) "Connected" else "Offline",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                SoundEffectManager.playClick()
+                                showPrivilegeEngineDialog = false
+                                if (shizukuRunning && !shizukuPermitted) {
+                                    AdbShellExecutor.requestShizukuPermission()
+                                } else {
+                                    AdbShellExecutor.openOrInstallShizuku(context)
+                                }
+                            },
+                            modifier = Modifier.weight(1f).height(44.dp),
+                            shape = ArworaDesignTokens.PillShape
+                        ) {
+                            Text(
+                                text = when {
+                                    shizukuRunning && !shizukuPermitted -> "Authorize Shizuku"
+                                    shizukuInstalled -> "Open Shizuku"
+                                    else -> "Get Shizuku"
+                                },
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Button(
+                            onClick = {
+                                SoundEffectManager.playClick()
+                                showPrivilegeEngineDialog = false
+                                isWirelessDebuggingExpanded = true
+                                coroutineScope.launch {
+                                    val (_, msg) = WirelessPairingManager.connectUnifiedWirelessAdb(context)
+                                    refreshDashboardStatuses()
+                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier.weight(1f).height(44.dp),
+                            shape = ArworaDesignTokens.PillShape
+                        ) {
+                            Text("Wireless ADB", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        refreshDashboardStatuses()
+                        showPrivilegeEngineDialog = false
+                    }
+                ) { Text("Done") }
+            }
+        )
+    }
 
     if (pendingGuardedRoute != null) {
         com.arwora.ui.components.PinAuthDialog(
@@ -3115,3 +3246,107 @@ internal fun CentralizedControlPanelHeroCard(
         }
     }
 }
+
+@Composable
+internal fun PrivilegeEngineBridgeCard(
+    engine: PrivilegeEngine,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val badgeColor = when (engine) {
+        PrivilegeEngine.SHIZUKU,
+        PrivilegeEngine.WIRELESS_ADB -> Color(0xFF10B981)
+        PrivilegeEngine.NONE -> Color(0xFFDC2626)
+    }
+    val subtitleText = when (engine) {
+        PrivilegeEngine.SHIZUKU -> "Priority 1: Shizuku RISH active • Auto fallback ready"
+        PrivilegeEngine.WIRELESS_ADB -> "Priority 2: Native Wireless ADB connected"
+        PrivilegeEngine.NONE -> "Tap to authorize Shizuku or connect Wireless ADB"
+    }
+
+    SystemCard(
+        modifier = modifier.testTag("system_privilege_engine_card"),
+        onClick = onClick
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(badgeColor.copy(alpha = 0.10f))
+                    .border(
+                        width = 1.dp,
+                        color = badgeColor.copy(alpha = 0.25f),
+                        shape = RoundedCornerShape(14.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.AdminPanelSettings,
+                    contentDescription = "Privilege Engine Status",
+                    tint = badgeColor,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 8.dp)
+                    .align(Alignment.CenterVertically)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(badgeColor)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Privilege Engine",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = (-0.2).sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitleText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Surface(
+                shape = ArworaDesignTokens.PillShape,
+                color = badgeColor.copy(alpha = 0.12f),
+                border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.35f)),
+                modifier = Modifier.testTag("system_privilege_engine_badge")
+            ) {
+                Text(
+                    text = engine.statusBadgeLabel,
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                    color = badgeColor,
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                )
+            }
+        }
+    }
+}
+

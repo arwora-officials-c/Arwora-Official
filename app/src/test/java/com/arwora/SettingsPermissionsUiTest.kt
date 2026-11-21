@@ -2,7 +2,7 @@ package com.arwora
 
 import android.content.Context
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -21,14 +21,16 @@ import com.arwora.ui.MainViewModel
 import com.arwora.ui.screens.SettingsScreen
 import com.arwora.ui.theme.NameGenProTheme
 import org.junit.After
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import kotlin.math.abs
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [36])
+@Config(sdk = [36], qualifiers = "w380dp-h800dp")
 class SettingsPermissionsUiTest {
 
     @get:Rule
@@ -43,7 +45,7 @@ class SettingsPermissionsUiTest {
     }
 
     @Test
-    fun settingsScreenDisplaysEightPermissionsAndGrantAllMissingButtonWhenExpanded() {
+    fun settingsScreenDisplaysEightPermissionsAndSideBySideAllOnAllOffButtons() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
             .allowMainThreadQueries()
@@ -95,10 +97,29 @@ class SettingsPermissionsUiTest {
             composeTestRule.onNodeWithTag(tag).performScrollTo().assertIsDisplayed()
         }
 
-        // Verify the Grant All Missing quick-fix pill action button is visible
-        composeTestRule.onNodeWithTag("settings_grant_all_missing_button")
+        // Verify both side-by-side pill controls: 1-Click All ON & 1-Click All OFF
+        val allOnBtn = composeTestRule.onNodeWithTag("settings_permissions_all_on_button")
             .performScrollTo()
             .assertIsDisplayed()
-        composeTestRule.onNodeWithText("Grant All Missing").assertIsDisplayed()
+        val allOffBtn = composeTestRule.onNodeWithTag("settings_permissions_all_off_button")
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText("1-Click All ON").assertIsDisplayed()
+        composeTestRule.onNodeWithText("1-Click All OFF").assertIsDisplayed()
+
+        val onBounds = allOnBtn.getUnclippedBoundsInRoot()
+        val offBounds = allOffBtn.getUnclippedBoundsInRoot()
+        assertTrue("1-Click All ON must sit left of 1-Click All OFF", onBounds.right < offBounds.left)
+        assertTrue(
+            "Both pill buttons must align at the same vertical top edge",
+            abs((onBounds.top - offBounds.top).value) <= 1f
+        )
+
+        // Verify clicking 1-Click All OFF opens the confirmation Material 3 dialog
+        allOffBtn.performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Disable App Permissions?").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("settings_cancel_all_off_button").performClick()
+        composeTestRule.waitForIdle()
     }
 }

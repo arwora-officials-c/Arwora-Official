@@ -13,8 +13,8 @@ object WirelessPairingHelper {
     }
 
     suspend fun executeAdbCommand(command: String): Pair<Boolean, String> = withContext(Dispatchers.IO) {
-        if (NativeAdbManager.isAdbReady()) {
-            val res = NativeAdbManager.executeShellCommand(command)
+        if (AdbShellExecutor.isPrivilegedShellReady()) {
+            val res = AdbShellExecutor.execute(command)
             return@withContext Pair(res.success, res.output.ifBlank { if (res.success) "Success" else "Command failed" })
         }
         try {

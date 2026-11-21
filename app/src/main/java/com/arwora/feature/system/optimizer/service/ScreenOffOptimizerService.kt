@@ -14,6 +14,7 @@ import android.os.*
 import android.provider.Settings
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.arwora.utils.AdbShellExecutor
 import com.arwora.utils.NativeAdbManager
 import kotlinx.coroutines.*
 
@@ -288,7 +289,7 @@ class ScreenOffOptimizerService : Service() {
         val runningProcesses = am.runningAppProcesses ?: return 0
         
         val useAdb = ScreenOffOptimizerManager.useWirelessAdb.value
-        val hasAdb = useAdb && NativeAdbManager.isAdbReady()
+        val hasAdb = useAdb && AdbShellExecutor.isPrivilegedShellReady(this)
 
         val protectedPackages = setOf(
             packageName, // Arwora Toolkit
@@ -355,7 +356,7 @@ class ScreenOffOptimizerService : Service() {
 
     private fun performRadioShutdown(): String {
         val useAdb = ScreenOffOptimizerManager.useWirelessAdb.value
-        val hasAdb = useAdb && NativeAdbManager.isAdbReady()
+        val hasAdb = useAdb && AdbShellExecutor.isPrivilegedShellReady(this)
 
         var btSuccess = false
         var locSuccess = false
@@ -415,9 +416,9 @@ class ScreenOffOptimizerService : Service() {
 
     private fun runAdbCommand(command: String): Boolean {
         return try {
-            NativeAdbManager.executeCommandBlocking(command).success
+            AdbShellExecutor.executeBlocking(command, context = this).success
         } catch (e: Exception) {
-            Log.e(TAG, "Wireless ADB CMD failed ($command): ${e.message}")
+            Log.e(TAG, "Privileged CMD failed ($command): ${e.message}")
             false
         }
     }
@@ -504,7 +505,7 @@ class ScreenOffOptimizerService : Service() {
         // 3. Full Volume Maximization for ALL Streams:
         // Attempt Wireless ADB maximization first if enabled, fallback to standard API
         val useAdb = ScreenOffOptimizerManager.useWirelessAdb.value
-        val hasAdb = useAdb && NativeAdbManager.isAdbReady()
+        val hasAdb = useAdb && AdbShellExecutor.isPrivilegedShellReady(this)
 
         var streamsMaxed = 0
         if (hasAdb) {

@@ -42,6 +42,7 @@ import com.arwora.feature.system.apps.revert.RevertSheet
 import com.arwora.ui.components.ArworaAnimatedSwitch
 import com.arwora.ui.navigation.Screen
 import com.arwora.ui.screens.SystemFeatureCard
+import com.arwora.utils.AdbShellExecutor
 import com.arwora.utils.NativeAdbManager
 import com.arwora.utils.SoundEffectManager
 import kotlinx.coroutines.flow.collectLatest
@@ -84,9 +85,10 @@ fun AppManagerCard(
     var selectedFilter by remember { mutableStateOf(AppFilter.ALL) }
 
     val nativeAdbConnected by NativeAdbManager.isConnected.collectAsStateWithLifecycle()
+    val activePrivilegeEngine by AdbShellExecutor.activeEngine.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    LaunchedEffect(nativeAdbConnected) {
+    LaunchedEffect(nativeAdbConnected, activePrivilegeEngine) {
         viewModel.refreshCapability()
     }
 

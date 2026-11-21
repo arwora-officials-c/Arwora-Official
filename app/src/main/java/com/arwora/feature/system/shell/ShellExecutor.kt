@@ -3,7 +3,9 @@ package com.arwora.feature.system.shell
 import android.content.Context
 import android.os.SystemClock
 import android.util.Log
+import com.arwora.utils.AdbShellExecutor
 import com.arwora.utils.NativeAdbManager
+import com.arwora.utils.PrivilegeEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -11,27 +13,33 @@ object ShellExecutor {
     private const val TAG = "ShellExecutor"
 
     /**
-     * Checks the availability of built-in Wireless ADB.
+     * Checks availability of any active privilege engine (Shizuku first, then Wireless ADB).
      */
     fun checkAdbStatus(context: Context): ShellStatus {
         return try {
-            NativeAdbManager.refreshConnectionStatus(context)
+            val engine = AdbShellExecutor.refreshEngineStatus(context)
             when {
-                NativeAdbManager.isAdbReady() -> ShellStatus.READY
+                engine != PrivilegeEngine.NONE -> ShellStatus.READY
                 !NativeAdbManager.isWifiConnected(context) -> ShellStatus.WIFI_REQUIRED
                 else -> ShellStatus.ADB_REQUIRED
             }
         } catch (e: Throwable) {
-            Log.e(TAG, "Failed checking Wireless ADB status", e)
+            Log.e(TAG, "Failed checking privilege engine status", e)
             ShellStatus.DISCONNECTED
         }
+    }
+
+    fun getActiveEngineLabel(context: Context): String {
+        return AdbShellExecutor.getEngineStatusBadge(context)
     }
 
     /**
      * Automatically detects active Wi-Fi and binds to the local ADB daemon.
      */
     suspend fun connectAdb(context: Context): Pair<Boolean, String> {
-        return NativeAdbManager.connectAutomatically(context)
+        val result = NativeAdbManager.connectAutomatically(context)
+        AdbShellExecutor.refreshEngineStatus(context)
+        return result
     }
 
     /**
@@ -56,23 +64,23 @@ object ShellExecutor {
     }
 
     /**
-     * Executes a shell command via built-in Wireless ADB on Dispatchers.IO.
+     * Executes a shell command via Shizuku (Priority 1) or Native Wireless ADB (Priority 2) on Dispatchers.IO.
      */
     suspend fun executeCommand(command: String): ShellCommandResult = withContext(Dispatchers.IO) {
         val startTime = SystemClock.elapsedRealtime()
         try {
-            if (!NativeAdbManager.isAdbReady()) {
+            if (!AdbShellExecutor.isPrivilegedShellReady()) {
                 val elapsed = SystemClock.elapsedRealtime() - startTime
                 return@withContext ShellCommandResult(
                     command = command,
                     stdout = "",
-                    stderr = "Wireless ADB is not connected. Enable Wi-Fi & Wireless Debugging and tap Connect Now.",
+                    stderr = "Privilege engine not connected. Authorize Shizuku or connect Wireless ADB first.",
                     exitCode = -1,
                     executionTimeMs = elapsed
                 )
             }
 
-            val result = NativeAdbManager.executeShellCommand(command, timeoutMs = 30_000L)
+            val result = AdbShellExecutor.executeWithEngine(command, timeoutMs = 30_000L)
             val executionTimeMs = SystemClock.elapsedRealtime() - startTime
             ShellCommandResult(
                 command = command,
@@ -87,7 +95,7 @@ object ShellExecutor {
             ShellCommandResult(
                 command = command,
                 stdout = "",
-                stderr = e.message ?: "Failed to execute command via Wireless ADB",
+                stderr = e.message ?: "Failed to execute privileged command",
                 exitCode = -1,
                 executionTimeMs = executionTimeMs
             )

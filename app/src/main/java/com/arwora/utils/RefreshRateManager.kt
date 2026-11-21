@@ -7,7 +7,7 @@ import android.util.Log
 object RefreshRateManager {
     private const val TAG = "RefreshRateManager"
 
-    fun isAdbAvailable(): Boolean = NativeAdbManager.isAdbReady()
+    fun isAdbAvailable(): Boolean = AdbShellExecutor.isPrivilegedShellReady()
 
     fun setRefreshRates(context: Context, peak: Float?, min: Float?): Boolean {
         val cmds = mutableListOf<String>()
@@ -23,10 +23,10 @@ object RefreshRateManager {
             cmds.add("settings delete system min_refresh_rate")
         }
 
-        // 1. Native Wireless ADB execution
-        NativeAdbManager.init(context)
-        if (NativeAdbManager.isAdbReady()) {
-            val allSuccess = cmds.all { NativeAdbManager.executeCommandBlocking(it).success }
+        // 1. Dual-Engine Privilege Bridge (Shizuku or Native Wireless ADB)
+        AdbShellExecutor.init(context)
+        if (AdbShellExecutor.isPrivilegedShellReady(context)) {
+            val allSuccess = cmds.all { AdbShellExecutor.executeBlocking(it, context = context).success }
             if (allSuccess) {
                 return true
             }
@@ -81,8 +81,8 @@ object RefreshRateManager {
         } catch (_: Exception) {
         }
 
-        if (NativeAdbManager.isAdbReady()) {
-            val res = NativeAdbManager.executeCommandBlocking("settings get system peak_refresh_rate")
+        if (AdbShellExecutor.isPrivilegedShellReady(context)) {
+            val res = AdbShellExecutor.executeBlocking("settings get system peak_refresh_rate", context = context)
             if (res.success && res.output.isNotBlank() && res.output != "null") {
                 return res.output.trim().toFloatOrNull() ?: 120.0f
             }
@@ -101,8 +101,8 @@ object RefreshRateManager {
         } catch (_: Exception) {
         }
 
-        if (NativeAdbManager.isAdbReady()) {
-            val res = NativeAdbManager.executeCommandBlocking("settings get system min_refresh_rate")
+        if (AdbShellExecutor.isPrivilegedShellReady(context)) {
+            val res = AdbShellExecutor.executeBlocking("settings get system min_refresh_rate", context = context)
             if (res.success && res.output.isNotBlank() && res.output != "null") {
                 return res.output.trim().toFloatOrNull() ?: 60.0f
             }

@@ -37,6 +37,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.arwora.feature.system.optimizer.service.ScreenOffOptimizerManager
 import com.arwora.ui.components.ArworaAnimatedSwitch
+import com.arwora.utils.AdbShellExecutor
 import com.arwora.utils.NativeAdbManager
 import com.arwora.utils.SoundEffectManager
 import kotlinx.coroutines.launch
@@ -60,6 +61,7 @@ fun ScreenOffOptimizerScreen(
     val useWirelessAdb by ScreenOffOptimizerManager.useWirelessAdb.collectAsStateWithLifecycle()
     val adbConnected by ScreenOffOptimizerManager.adbConnected.collectAsStateWithLifecycle()
     val nativeAdbConnected by NativeAdbManager.isConnected.collectAsStateWithLifecycle()
+    val anyEngineReady by AdbShellExecutor.isAnyEngineReady.collectAsStateWithLifecycle()
     val mediaVolume by ScreenOffOptimizerManager.mediaVolume.collectAsStateWithLifecycle()
     val ringtoneVolume by ScreenOffOptimizerManager.ringtoneVolume.collectAsStateWithLifecycle()
     val notificationVolume by ScreenOffOptimizerManager.notificationVolume.collectAsStateWithLifecycle()
@@ -99,15 +101,15 @@ fun ScreenOffOptimizerScreen(
         }
     }
 
-    LaunchedEffect(nativeAdbConnected) {
-        ScreenOffOptimizerManager.setAdbConnected(nativeAdbConnected)
+    LaunchedEffect(nativeAdbConnected, anyEngineReady) {
+        ScreenOffOptimizerManager.setAdbConnected(nativeAdbConnected || anyEngineReady)
     }
 
     // Dynamic pre-check handler on ON_RESUME: auto-resumes service immediately once permission is granted!
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
-        NativeAdbManager.refreshConnectionStatus(context)
-        ScreenOffOptimizerManager.setAdbConnected(NativeAdbManager.isAdbReady())
+        AdbShellExecutor.refreshEngineStatus(context)
+        ScreenOffOptimizerManager.setAdbConnected(AdbShellExecutor.isPrivilegedShellReady(context))
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 val granted = notificationManager?.isNotificationPolicyAccessGranted == true
@@ -115,9 +117,9 @@ fun ScreenOffOptimizerScreen(
                 hasPolicyAccess = granted
                 ScreenOffOptimizerManager.checkAndSyncDndPermission(context)
 
-                // Refresh Wireless ADB connection state
-                NativeAdbManager.refreshConnectionStatus(context)
-                ScreenOffOptimizerManager.setAdbConnected(NativeAdbManager.isAdbReady())
+                // Refresh Shizuku / Wireless ADB privilege engine state
+                AdbShellExecutor.refreshEngineStatus(context)
+                ScreenOffOptimizerManager.setAdbConnected(AdbShellExecutor.isPrivilegedShellReady(context))
 
                 // Auto-start / auto-resume service immediately when user returns with permission granted
                 if (granted) {

@@ -53,6 +53,7 @@ import com.arwora.feature.system.appops.model.AppOpsItem
 import com.arwora.feature.system.appops.model.AppOpsSort
 import com.arwora.feature.system.appops.model.StandbyBucketMode
 import com.arwora.ui.components.GoogleStyleLoadingView
+import com.arwora.utils.AdbShellExecutor
 import com.arwora.utils.NativeAdbManager
 import com.arwora.utils.SoundEffectManager
 
@@ -109,6 +110,7 @@ fun AppOpsScreen(
     val isLoading by vm.isLoading.collectAsStateWithLifecycle()
     val isAdbConnected by vm.isAdbConnected.collectAsStateWithLifecycle()
     val nativeAdbConnected by NativeAdbManager.isConnected.collectAsStateWithLifecycle()
+    val activePrivilegeEngine by AdbShellExecutor.activeEngine.collectAsStateWithLifecycle()
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
     val selectedFilter by vm.selectedFilter.collectAsStateWithLifecycle()
     val selectedSort by vm.selectedSort.collectAsStateWithLifecycle()
@@ -118,7 +120,7 @@ fun AppOpsScreen(
     var showSortMenu by remember { mutableStateOf(false) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    LaunchedEffect(nativeAdbConnected) {
+    LaunchedEffect(nativeAdbConnected, activePrivilegeEngine) {
         vm.checkAdbStatus()
     }
 

@@ -8,6 +8,7 @@ import com.arwora.feature.system.appops.model.AppOpsFilter
 import com.arwora.feature.system.appops.model.AppOpsItem
 import com.arwora.feature.system.appops.model.AppOpsSort
 import com.arwora.feature.system.appops.model.StandbyBucketMode
+import com.arwora.utils.AdbShellExecutor
 import com.arwora.utils.NativeAdbManager
 import com.arwora.utils.WirelessPairingManager
 import kotlinx.coroutines.Dispatchers
@@ -104,8 +105,18 @@ class AppOpsViewModel(application: Application) : AndroidViewModel(application) 
         loadApps()
         viewModelScope.launch {
             NativeAdbManager.isConnected.collectLatest { connected ->
-                _isAdbConnected.value = connected
-                if (connected) {
+                val anyReady = connected || AdbShellExecutor.isPrivilegedShellReady(getApplication())
+                _isAdbConnected.value = anyReady
+                if (anyReady) {
+                    loadApps()
+                }
+            }
+        }
+        viewModelScope.launch {
+            AdbShellExecutor.isAnyEngineReady.collectLatest { ready ->
+                val anyReady = ready || NativeAdbManager.isAdbReady()
+                _isAdbConnected.value = anyReady
+                if (anyReady) {
                     loadApps()
                 }
             }
@@ -114,7 +125,7 @@ class AppOpsViewModel(application: Application) : AndroidViewModel(application) 
 
     fun checkAdbStatus() {
         viewModelScope.launch(Dispatchers.IO) {
-            NativeAdbManager.refreshConnectionStatus(getApplication())
+            AdbShellExecutor.refreshEngineStatus(getApplication())
             _isAdbConnected.value = AppOpsManager.isAdbAvailable()
         }
     }

@@ -454,8 +454,8 @@ object LanScanner {
 
         val merged = parseArpAndNeighOutput(arpText, neighText).toMutableMap()
 
-        // 3. If neighbor entries are empty and Wireless ADB is connected, read via elevated ADB shell
-        if (merged.isEmpty() && com.arwora.utils.NativeAdbManager.isAdbReady()) {
+        // 3. If neighbor entries are empty and a privilege engine (Shizuku or Wireless ADB) is active, read via shell
+        if (merged.isEmpty() && com.arwora.utils.AdbShellExecutor.isPrivilegedShellReady()) {
             try {
                 val adbOut = runBlocking {
                     com.arwora.feature.system.shell.ShellExecutor.executeCommand(

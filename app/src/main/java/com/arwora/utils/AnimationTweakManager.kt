@@ -7,7 +7,7 @@ import android.util.Log
 object AnimationTweakManager {
     private const val TAG = "AnimationTweakManager"
 
-    fun isAdbAvailable(): Boolean = NativeAdbManager.isAdbReady()
+    fun isAdbAvailable(): Boolean = AdbShellExecutor.isPrivilegedShellReady()
 
     fun setAnimationScales(context: Context, scale: Float): Boolean {
         val cmd1 = "settings put global window_animation_scale $scale"
@@ -26,12 +26,12 @@ object AnimationTweakManager {
             }
         }
 
-        // 2. Native Wireless ADB execution
-        NativeAdbManager.init(context)
-        if (NativeAdbManager.isAdbReady()) {
-            val s1 = NativeAdbManager.executeCommandBlocking(cmd1).success
-            val s2 = NativeAdbManager.executeCommandBlocking(cmd2).success
-            val s3 = NativeAdbManager.executeCommandBlocking(cmd3).success
+        // 2. Dual-Engine Privilege Bridge (Shizuku or Native Wireless ADB)
+        AdbShellExecutor.init(context)
+        if (AdbShellExecutor.isPrivilegedShellReady(context)) {
+            val s1 = AdbShellExecutor.executeBlocking(cmd1, context = context).success
+            val s2 = AdbShellExecutor.executeBlocking(cmd2, context = context).success
+            val s3 = AdbShellExecutor.executeBlocking(cmd3, context = context).success
             if (s1 && s2 && s3) {
                 return true
             }
@@ -60,8 +60,8 @@ object AnimationTweakManager {
         } catch (_: Exception) {
         }
 
-        if (NativeAdbManager.isAdbReady()) {
-            val res = NativeAdbManager.executeCommandBlocking("settings get global window_animation_scale")
+        if (AdbShellExecutor.isPrivilegedShellReady(context)) {
+            val res = AdbShellExecutor.executeBlocking("settings get global window_animation_scale", context = context)
             if (res.success && res.output.isNotBlank() && res.output != "null") {
                 return res.output.trim().toFloatOrNull() ?: 1.0f
             }

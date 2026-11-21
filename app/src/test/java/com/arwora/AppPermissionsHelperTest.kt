@@ -186,4 +186,40 @@ class AppPermissionsHelperTest {
         )
         assertNull(AppPermissionsHelper.findNextMissingSystemCategory(allGranted))
     }
+
+    @Test
+    fun adbGrantAndRevokeCommandsCoverRuntimeAndAppOpsTargets() {
+        val pkg = "com.arworahyper.toolkit"
+
+        val grantApi34 = AppPermissionsHelper.buildAdbGrantCommands(pkg, Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+        assertTrue(grantApi34.contains("pm grant $pkg ${Manifest.permission.CAMERA}"))
+        assertTrue(grantApi34.contains("pm grant $pkg ${Manifest.permission.RECORD_AUDIO}"))
+        assertTrue(grantApi34.contains("pm grant $pkg ${Manifest.permission.READ_MEDIA_IMAGES}"))
+        assertTrue(grantApi34.contains("pm grant $pkg ${Manifest.permission.READ_MEDIA_VIDEO}"))
+        assertTrue(grantApi34.contains("pm grant $pkg ${Manifest.permission.POST_NOTIFICATIONS}"))
+        assertTrue(grantApi34.contains("appops set $pkg SYSTEM_ALERT_WINDOW allow"))
+        assertTrue(grantApi34.contains("appops set $pkg GET_USAGE_STATS allow"))
+        assertTrue(grantApi34.contains("cmd notification allow_listener $pkg/com.arwora.service.NotificationHistoryService"))
+
+        val revokeApi34 = AppPermissionsHelper.buildAdbRevokeCommands(pkg, Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+        assertTrue(revokeApi34.contains("pm revoke $pkg ${Manifest.permission.CAMERA}"))
+        assertTrue(revokeApi34.contains("pm revoke $pkg ${Manifest.permission.RECORD_AUDIO}"))
+        assertTrue(revokeApi34.contains("pm revoke $pkg ${Manifest.permission.POST_NOTIFICATIONS}"))
+        assertTrue(revokeApi34.contains("appops set $pkg SYSTEM_ALERT_WINDOW ignore"))
+        assertTrue(revokeApi34.contains("appops set $pkg GET_USAGE_STATS ignore"))
+        assertTrue(revokeApi34.contains("cmd notification disallow_listener $pkg/com.arwora.service.NotificationHistoryService"))
+
+        val grantLegacy = AppPermissionsHelper.buildAdbGrantCommands(pkg, Build.VERSION_CODES.S)
+        assertTrue(grantLegacy.contains("pm grant $pkg ${Manifest.permission.READ_EXTERNAL_STORAGE}"))
+        assertFalse(grantLegacy.any { it.contains("POST_NOTIFICATIONS") })
+    }
+
+    @Test
+    fun notificationListenerPausePreferenceTogglesCleanly() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        com.arwora.service.NotificationHistoryService.setListenerPaused(context, true)
+        assertTrue(com.arwora.service.NotificationHistoryService.isListenerPaused(context))
+        com.arwora.service.NotificationHistoryService.setListenerPaused(context, false)
+        assertFalse(com.arwora.service.NotificationHistoryService.isListenerPaused(context))
+    }
 }

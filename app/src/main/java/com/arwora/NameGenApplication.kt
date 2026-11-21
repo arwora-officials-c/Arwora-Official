@@ -98,6 +98,7 @@ class NameGenApplication : Application() {
             com.arwora.utils.SoundEffectManager.init(this@NameGenApplication)
             com.arwora.feature.system.battery.service.BatteryMonitorManager.init(this@NameGenApplication)
             com.arwora.utils.NativeAdbManager.init(this@NameGenApplication)
+            com.arwora.utils.AdbShellExecutor.init(this@NameGenApplication)
             com.arwora.utils.WirelessPairingManager.init(this@NameGenApplication)
             com.arwora.service.WifiAutoPairMonitor.syncWithPreference(this@NameGenApplication)
             val adbCreds = com.arwora.utils.EncryptedAdbCredentialStore.loadState(this@NameGenApplication)

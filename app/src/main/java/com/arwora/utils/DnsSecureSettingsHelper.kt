@@ -42,7 +42,7 @@ object DnsSecureSettingsHelper {
         }
     }
 
-    fun isAdbAvailable(): Boolean = NativeAdbManager.isAdbReady()
+    fun isAdbAvailable(): Boolean = AdbShellExecutor.isPrivilegedShellReady()
 
     /**
      * Checks if the app has WRITE_SECURE_SETTINGS permission natively.
@@ -93,12 +93,12 @@ object DnsSecureSettingsHelper {
             }
         }
 
-        // 2. Native Wireless ADB shell execution (safe across main/worker callers via executeCommandBlocking)
-        NativeAdbManager.init(context)
-        if (NativeAdbManager.isAdbReady()) {
-            val modeSuccess = NativeAdbManager.executeCommandBlocking("settings put global private_dns_mode $mode").success
+        // 2. Dual-Engine Privilege Bridge (Shizuku or Native Wireless ADB)
+        AdbShellExecutor.init(context)
+        if (AdbShellExecutor.isPrivilegedShellReady(context)) {
+            val modeSuccess = AdbShellExecutor.executeBlocking("settings put global private_dns_mode $mode", context = context).success
             val specifierSuccess = if (mode == "hostname" && specifier != null) {
-                NativeAdbManager.executeCommandBlocking("settings put global private_dns_specifier $specifier").success
+                AdbShellExecutor.executeBlocking("settings put global private_dns_specifier $specifier", context = context).success
             } else {
                 true
             }

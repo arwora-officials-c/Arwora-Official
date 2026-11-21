@@ -6,6 +6,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.arwora.utils.AdbShellExecutor
 import com.arwora.utils.NativeAdbManager
 import com.arwora.utils.WirelessPairingManager
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -53,6 +54,11 @@ class ShellCommandViewModel(application: Application) : AndroidViewModel(applica
         }
         viewModelScope.launch {
             NativeAdbManager.connectionState.collectLatest {
+                refreshStatus()
+            }
+        }
+        viewModelScope.launch {
+            AdbShellExecutor.activeEngine.collectLatest {
                 refreshStatus()
             }
         }

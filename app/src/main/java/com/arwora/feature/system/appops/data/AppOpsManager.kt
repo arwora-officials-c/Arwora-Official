@@ -14,7 +14,7 @@ import android.util.Log
 import com.arwora.feature.system.appops.model.AppOpsItem
 import com.arwora.feature.system.appops.model.PermissionItem
 import com.arwora.feature.system.appops.model.StandbyBucketMode
-import com.arwora.utils.NativeAdbManager
+import com.arwora.utils.AdbShellExecutor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.BufferedReader
@@ -29,12 +29,12 @@ object AppOpsManager {
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
 
     fun isAdbAvailable(): Boolean {
-        return NativeAdbManager.isAdbReady()
+        return AdbShellExecutor.isPrivilegedShellReady()
     }
 
     fun runShellCommand(command: String): String {
         if (isAdbAvailable()) {
-            val adbRes = NativeAdbManager.executeCommandBlocking(command)
+            val adbRes = AdbShellExecutor.executeBlocking(command)
             if (adbRes.success) {
                 return adbRes.output.trim()
             }
