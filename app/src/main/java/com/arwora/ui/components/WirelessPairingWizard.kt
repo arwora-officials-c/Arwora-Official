@@ -74,6 +74,7 @@ fun WirelessPairingWizard(
     val isWifiConnected by WirelessPairingManager.isWifiConnected.collectAsStateWithLifecycle()
     val lastWifiEventSummary by WirelessPairingManager.lastWifiEventSummary.collectAsStateWithLifecycle()
     val isNativeAdbConnected by NativeAdbManager.isConnected.collectAsStateWithLifecycle()
+    val isWirelessDebuggingEnabled by NativeAdbManager.isWirelessDebuggingEnabled.collectAsStateWithLifecycle()
     val adbConnectionState by NativeAdbManager.connectionState.collectAsStateWithLifecycle()
     val requiresDevOptionsGuidance by NativeAdbManager.requiresDevOptionsGuidance.collectAsStateWithLifecycle()
     val adbStatusMessage by NativeAdbManager.statusMessage.collectAsStateWithLifecycle()
@@ -256,10 +257,12 @@ fun WirelessPairingWizard(
                         enabled = autoPairOnWifiEnabled,
                         isWifiConnected = isWifiConnected,
                         isAdbConnected = isNativeAdbConnected,
+                        isWirelessDebuggingEnabled = isWirelessDebuggingEnabled,
                         lastEventSummary = lastWifiEventSummary ?: adbStatusMessage,
                         isBusy = pairingStatus is PairingStatus.PairingInProgress ||
                             adbConnectionState == NativeAdbConnectionState.CONNECTING,
                         showDevOptionsGuidance = !isNativeAdbConnected &&
+                            !isWirelessDebuggingEnabled &&
                             (requiresDevOptionsGuidance || pairingStatus is PairingStatus.Failed),
                         onToggleEnabled = { checked ->
                             SoundEffectManager.playClick()
@@ -565,7 +568,7 @@ private fun ManualNotificationPairingCard(
         border = ArworaDesignTokens.cardBorder(),
         elevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
     ) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -623,37 +626,55 @@ private fun ManualNotificationPairingCard(
                 Text("Open Developer Options", fontWeight = FontWeight.SemiBold)
             }
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.16f))
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 2.dp),
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)
+            )
 
             Text(
                 text = "Manual Input Fallback",
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp)
             )
 
             OutlinedTextField(
                 value = hostInput,
                 onValueChange = onHostChange,
-                label = { Text("Device Host / IP") },
+                label = { Text("Device Host / IP", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 placeholder = { Text("127.0.0.1") },
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("manual_pairing_host_input"),
                 shape = RoundedCornerShape(12.dp)
             )
 
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.Top
+            ) {
                 OutlinedTextField(
                     value = codeInput,
                     onValueChange = onCodeChange,
-                    label = { Text("6-Digit Code") },
+                    label = {
+                        Text(
+                            text = "6-Digit Code",
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
                     placeholder = { Text("123456") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier
-                        .weight(1.2f)
+                        .weight(1.5f)
                         .testTag("manual_pairing_code_input"),
                     shape = RoundedCornerShape(12.dp)
                 )
@@ -661,7 +682,14 @@ private fun ManualNotificationPairingCard(
                 OutlinedTextField(
                     value = portInput,
                     onValueChange = onPortChange,
-                    label = { Text("Port") },
+                    label = {
+                        Text(
+                            text = "Port",
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
                     placeholder = { Text("37491") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -840,6 +868,7 @@ private fun AutoPairOnWifiCard(
     enabled: Boolean,
     isWifiConnected: Boolean,
     isAdbConnected: Boolean,
+    isWirelessDebuggingEnabled: Boolean,
     lastEventSummary: String?,
     isBusy: Boolean,
     showDevOptionsGuidance: Boolean,
@@ -929,7 +958,7 @@ private fun AutoPairOnWifiCard(
                     }
                 }
 
-                if (isAdbConnected) {
+                if (isAdbConnected || isWirelessDebuggingEnabled) {
                     Surface(
                         shape = RoundedCornerShape(50),
                         color = Color(0xFF10B981).copy(alpha = 0.14f),
@@ -948,7 +977,7 @@ private fun AutoPairOnWifiCard(
                                     .background(Color(0xFF10B981))
                             )
                             Text(
-                                text = "Active / Connected",
+                                text = if (isAdbConnected) "Active / Connected" else "Active / Ready",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF10B981)

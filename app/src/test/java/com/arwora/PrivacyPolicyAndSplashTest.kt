@@ -2,6 +2,9 @@ package com.arwora
 
 import android.content.Context
 import android.content.res.Configuration
+import android.graphics.drawable.ColorDrawable
+import android.widget.FrameLayout
+import android.widget.ImageView
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -12,6 +15,8 @@ import androidx.core.content.ContextCompat
 import androidx.test.core.app.ApplicationProvider
 import com.arwora.ui.navigation.Screen
 import com.arwora.ui.screens.PrivacyPolicyContent
+import com.arwora.ui.screens.SPLASH_INITIAL_SCALE
+import com.arwora.ui.screens.SPLASH_INITIAL_TRANSLATION_Y_DP
 import com.arwora.ui.screens.SPLASH_LOGO_ANIM_DURATION_MS
 import com.arwora.ui.screens.SPLASH_POST_ANIM_HOLD_MS
 import com.arwora.ui.screens.SPLASH_TOTAL_DURATION_MS
@@ -22,10 +27,12 @@ import com.arwora.ui.theme.NameGenProTheme
 import com.arwora.ui.theme.ThemeManager
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
@@ -38,19 +45,18 @@ class PrivacyPolicyAndSplashTest {
 
     @Test
     fun splashAnimationDurationFitsSmoothTargetRange() {
-        assertTrue(
-            "Splash wordmark fade/scale animation should stay between 400ms and 700ms",
-            SPLASH_LOGO_ANIM_DURATION_MS in 400..700
-        )
-        assertTrue(
-            "Total splash hold duration should stay smoothly between 1200ms and 1500ms",
-            SPLASH_TOTAL_DURATION_MS in 1200L..1500L
-        )
-        assertTrue(
-            "Post-animation hold should be positive",
-            SPLASH_POST_ANIM_HOLD_MS >= 500L
-        )
+        assertEquals(700, SPLASH_LOGO_ANIM_DURATION_MS)
+        assertEquals(500L, SPLASH_POST_ANIM_HOLD_MS)
+        assertEquals(1200L, SPLASH_TOTAL_DURATION_MS)
+        assertEquals(0.82f, SPLASH_INITIAL_SCALE, 0.001f)
+        assertEquals(24f, SPLASH_INITIAL_TRANSLATION_Y_DP, 0.001f)
         assertEquals("splash", Screen.Splash.route)
+
+        assertEquals(700L, SplashActivity.ANIM_DURATION_MS)
+        assertEquals(500L, SplashActivity.HOLD_DURATION_MS)
+        assertEquals(1200L, SplashActivity.TOTAL_DURATION_MS)
+        assertEquals(0.82f, SplashActivity.INITIAL_SCALE, 0.001f)
+        assertEquals(24f, SplashActivity.INITIAL_TRANSLATION_Y_DP, 0.001f)
     }
 
     @Test
@@ -77,27 +83,51 @@ class PrivacyPolicyAndSplashTest {
             android.graphics.Color.BLACK,
             ContextCompat.getColor(nightContext, R.color.splash_bg)
         )
+
+        val wordmarkDrawable = ContextCompat.getDrawable(context, R.drawable.ic_arwora_wordmark)
+        assertNotNull("Custom ARWORA vector wordmark drawable must resolve", wordmarkDrawable)
     }
 
     @Test
-    fun splashScreenDisplaysArworaWordmarkWithoutOldLogo() {
+    @Config(qualifiers = "night")
+    fun splashActivityAppliesPureBlackBackgroundAndWhiteWordmarkInDarkMode() {
+        val controller = Robolectric.buildActivity(SplashActivity::class.java).setup()
+        val activity = controller.get()
+        val root = activity.findViewById<FrameLayout>(R.id.splash_root)
+        val wordmark = activity.findViewById<ImageView>(R.id.iv_arwora_wordmark)
+
+        assertEquals(android.graphics.Color.BLACK, (root.background as ColorDrawable).color)
+        assertNotNull(wordmark.drawable)
+        assertNotNull(wordmark.colorFilter)
+        controller.destroy()
+    }
+
+    @Test
+    fun splashScreenDisplaysArworaWordmarkWithoutOldLogoAndCompletesAfterHold() {
+        var finished = false
         composeTestRule.mainClock.autoAdvance = false
         composeTestRule.setContent {
             NameGenProTheme(darkTheme = true) {
-                SplashScreen(onSplashFinished = {})
+                SplashScreen(onSplashFinished = { finished = true })
             }
         }
 
-        // Step one frame so LaunchedEffect(Unit) starts the 600ms Animatable fade+scale,
-        // then advance 650ms before the 1300ms auto-dismiss completes.
+        // Step one frame so LaunchedEffect(Unit) starts the 700ms Animatable fade+scale+slide,
+        // then advance 650ms before the 1200ms auto-dismiss completes.
         composeTestRule.mainClock.advanceTimeByFrame()
         composeTestRule.mainClock.advanceTimeBy(650L)
         composeTestRule.waitForIdle()
+        assertFalse(finished)
         composeTestRule.onNodeWithTag("splash_screen_root").assertIsDisplayed()
         composeTestRule.onNodeWithTag("splash_arwora_wordmark", useUnmergedTree = true).assertIsDisplayed()
         composeTestRule.onNodeWithContentDescription("ARWORA", useUnmergedTree = true).assertIsDisplayed()
         composeTestRule.onNodeWithTag("splash_app_logo", useUnmergedTree = true).assertDoesNotExist()
         composeTestRule.onNodeWithText("HYPER TOOLKIT", useUnmergedTree = true).assertDoesNotExist()
+
+        // Advance past 700ms animation + 500ms hold to verify completion callback triggers smoothly.
+        composeTestRule.mainClock.advanceTimeBy(650L)
+        composeTestRule.waitForIdle()
+        assertTrue(finished)
     }
 
     @Test

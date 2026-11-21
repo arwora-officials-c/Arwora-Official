@@ -280,6 +280,15 @@
                 android:value="Discovering local wireless ADB pairing port via mDNS and displaying interactive Direct Reply pairing notification" />
         </service>
 
+        <service
+            android:name=".service.AdbConnectionService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Maintaining persistent background Wireless ADB session health and silent reconnect on Wi-Fi transitions" />
+        </service>
+
         <receiver
             android:name=".service.AdbPairingReceiver"
             android:exported="false" />

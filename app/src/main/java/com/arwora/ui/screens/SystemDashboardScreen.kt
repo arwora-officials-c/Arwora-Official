@@ -1762,13 +1762,17 @@ fun SystemDashboardScreen(
                 var showAdbHelpDialog by remember { mutableStateOf(false) }
 
                 val wifiIp = remember(isWirelessDebuggingExpanded, isAdbConnected) {
-                    NativeAdbManager.getLocalWifiIpAddress(context) ?: "127.0.0.1"
+                    com.arwora.service.AdbPairingReceiver.parseCleanHost(
+                        NativeAdbManager.getLocalWifiIpAddress(context)
+                    ) ?: "127.0.0.1"
                 }
 
                 val adbConnectionState by NativeAdbManager.connectionState.collectAsStateWithLifecycle()
                 val connectedHostState by NativeAdbManager.connectedHost.collectAsStateWithLifecycle()
                 val connectedPortState by NativeAdbManager.connectedPort.collectAsStateWithLifecycle()
                 val discoveredPortState by NativeAdbManager.discoveredPort.collectAsStateWithLifecycle()
+                val isWirelessDebuggingState by NativeAdbManager.isWirelessDebuggingEnabled.collectAsStateWithLifecycle()
+                val isPairedState by NativeAdbManager.isPaired.collectAsStateWithLifecycle()
                 val requiresDevOptionsGuidance by NativeAdbManager.requiresDevOptionsGuidance.collectAsStateWithLifecycle()
                 val adbStatusMessage by NativeAdbManager.statusMessage.collectAsStateWithLifecycle()
 
@@ -1777,19 +1781,29 @@ fun SystemDashboardScreen(
 
                 val cardLifecycleOwner = LocalLifecycleOwner.current
                 val updateAdbStatus = {
-                    adbPort = NativeAdbManager.getSystemWirelessDebugPort(context)
+                    val sysPort = NativeAdbManager.getSystemWirelessDebugPort(context)
+                    adbPort = sysPort
                         ?: NativeAdbManager.connectedPort.value
                         ?: NativeAdbManager.discoveredPort.value
                         ?: -1
-                    isWirelessAdbEnabled = NativeAdbManager.isWirelessDebuggingSettingEnabled(context)
-                    isUserStopped = adbPrefs.getBoolean("is_user_stopped", false)
+                    isWirelessAdbEnabled = NativeAdbManager.checkWirelessDebuggingState(context)
+                    val creds = com.arwora.utils.EncryptedAdbCredentialStore.loadState(context)
+                    isUserStopped = creds.userStopped || adbPrefs.getBoolean("is_user_stopped", false)
                     NativeAdbManager.refreshConnectionStatus(context)
+                    if (creds.isPaired && !isUserStopped && !NativeAdbManager.isAdbReady()) {
+                        coroutineScope.launch {
+                            NativeAdbManager.reconnectSavedSession(context)
+                        }
+                    }
                     checkNotificationPermissionStatus()
                 }
 
-                val effectiveHost = connectedHostState?.takeIf { it.isNotBlank() } ?: wifiIp
-                val effectivePort = connectedPortState ?: discoveredPortState ?: adbPort
+                val effectiveHost = com.arwora.service.AdbPairingReceiver.parseCleanHost(connectedHostState)
+                    ?: wifiIp
+                val effectivePort = (connectedPortState ?: discoveredPortState ?: adbPort)
+                    .takeIf { it in 1024..65535 } ?: -1
                 val isAdbConnecting = adbConnectionState == NativeAdbConnectionState.CONNECTING
+                val isWirelessReady = isWirelessAdbEnabled || isWirelessDebuggingState || effectivePort > 0
 
                 DisposableEffect(cardLifecycleOwner) {
                     updateAdbStatus()
@@ -1807,6 +1821,7 @@ fun SystemDashboardScreen(
                 val badgeColor = when {
                     isAdbConnected -> Color(0xFF10B981)
                     isAdbConnecting -> MaterialTheme.colorScheme.primary
+                    isWirelessReady && !isUserStopped -> Color(0xFF10B981)
                     isUserStopped && !isAdbConnected -> MaterialTheme.colorScheme.error
                     else -> Color(0xFFFF9800)
                 }
@@ -1814,14 +1829,22 @@ fun SystemDashboardScreen(
                 val connectionStatusText = when {
                     isAdbConnected -> "Active / Connected"
                     isAdbConnecting -> "Connecting..."
+                    isWirelessReady && !isUserStopped -> "Active / Ready"
                     else -> "Inactive / Disconnected"
+                }
+
+                val badgeLabel = when {
+                    isAdbConnected -> "Active / Connected"
+                    isAdbConnecting -> "Connecting"
+                    isWirelessReady && !isUserStopped -> "Active / Ready"
+                    else -> "Inactive"
                 }
 
                 SystemFeatureCard(
                     title = "Wireless Debugging",
                     subtitle = "IP: $effectiveHost${if (effectivePort > 0) ":$effectivePort" else ""} • Status: $connectionStatusText",
                     icon = Icons.Default.Wifi,
-                    badge = if (isAdbConnected) "Active / Connected" else if (isAdbConnecting) "Connecting" else "Inactive",
+                    badge = badgeLabel,
                     badgeColor = badgeColor,
                     statusDotColor = badgeColor,
                     isExpanded = isWirelessDebuggingExpanded,
@@ -1862,11 +1885,27 @@ fun SystemDashboardScreen(
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                     Text("Developer ADB:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     Text(
-                                        text = if (isAdbConnected || isWirelessAdbEnabled) "Enabled" else "Disabled / Check Settings",
+                                        text = when {
+                                            isAdbConnected -> "Active / Connected"
+                                            isWirelessReady -> "Active / Ready"
+                                            else -> "Disabled / Check Settings"
+                                        },
                                         style = MaterialTheme.typography.bodySmall,
                                         fontWeight = FontWeight.Bold,
-                                        color = if (isAdbConnected || isWirelessAdbEnabled) Color(0xFF10B981) else MaterialTheme.colorScheme.error
+                                        color = if (isAdbConnected || isWirelessReady) Color(0xFF10B981) else MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.testTag("wireless_adb_developer_state_text")
                                     )
+                                }
+                                if (isPairedState) {
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text("Persistent Auto-Reconnect:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(
+                                            text = if (isUserStopped) "Paused by User" else "Enabled",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isUserStopped) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xFF10B981)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1886,7 +1925,7 @@ fun SystemDashboardScreen(
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.primary
                             )
-                        } else if (!isAdbConnected && requiresDevOptionsGuidance) {
+                        } else if (!isAdbConnected && !isWirelessReady && requiresDevOptionsGuidance) {
                             Spacer(modifier = Modifier.height(10.dp))
                             Surface(
                                 shape = ArworaDesignTokens.InnerTileShape,
@@ -2676,17 +2715,17 @@ fun SystemFeatureCard(
     SystemCard {
         Column(modifier = Modifier.fillMaxWidth()) {
             val headerCornerShape = RoundedCornerShape(
-                topStart = 20.dp,
-                topEnd = 20.dp,
-                bottomStart = if (isExpanded) 12.dp else 20.dp,
-                bottomEnd = if (isExpanded) 12.dp else 20.dp
+                topStart = ArworaDesignTokens.CardCornerRadius,
+                topEnd = ArworaDesignTokens.CardCornerRadius,
+                bottomStart = if (isExpanded) 0.dp else ArworaDesignTokens.CardCornerRadius,
+                bottomEnd = if (isExpanded) 0.dp else ArworaDesignTokens.CardCornerRadius
             )
             val headerModifier = Modifier
                 .fillMaxWidth()
                 .clip(headerCornerShape)
                 .let { if (headerTestTag != null) it.testTag(headerTestTag) else it }
                 .clickable { onToggleExpand() }
-                .padding(16.dp)
+                .padding(horizontal = 16.dp, vertical = 16.dp)
 
             Row(
                 modifier = headerModifier,
@@ -2712,11 +2751,12 @@ fun SystemFeatureCard(
                     )
                 }
 
-                Spacer(modifier = Modifier.width(14.dp))
+                Spacer(modifier = Modifier.width(12.dp))
 
                 Column(
                     modifier = Modifier
                         .weight(1f)
+                        .padding(end = 8.dp)
                         .align(Alignment.CenterVertically)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2741,7 +2781,7 @@ fun SystemFeatureCard(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
-                    Spacer(modifier = Modifier.height(1.dp))
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = subtitle,
                         style = MaterialTheme.typography.bodySmall,
@@ -2751,38 +2791,42 @@ fun SystemFeatureCard(
                     )
                 }
 
-                Spacer(modifier = Modifier.width(8.dp))
-
-                Surface(
-                    modifier = if (badgeTestTag != null) Modifier.testTag(badgeTestTag) else Modifier,
-                    shape = ArworaDesignTokens.PillShape,
-                    color = badgeColor.copy(alpha = 0.12f),
-                    border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.3f))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.wrapContentWidth(unbounded = false)
                 ) {
-                    Text(
-                        text = badge,
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = badgeColor,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                    )
-                }
+                    Surface(
+                        modifier = if (badgeTestTag != null) Modifier.testTag(badgeTestTag) else Modifier,
+                        shape = ArworaDesignTokens.PillShape,
+                        color = badgeColor.copy(alpha = 0.12f),
+                        border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.3f))
+                    ) {
+                        Text(
+                            text = badge,
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = badgeColor,
+                            maxLines = 1,
+                            softWrap = false,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
 
-                Spacer(modifier = Modifier.width(6.dp))
-
-                Box(
-                    modifier = Modifier
-                        .size(20.dp)
-                        .let { if (chevronTestTag != null) it.testTag(chevronTestTag) else it },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ExpandMore,
-                        contentDescription = if (isExpanded) "Collapse $title" else "Expand $title",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    Box(
                         modifier = Modifier
-                            .size(20.dp)
-                            .graphicsLayer { rotationZ = chevronRotation }
-                    )
+                            .size(24.dp)
+                            .let { if (chevronTestTag != null) it.testTag(chevronTestTag) else it },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ExpandMore,
+                            contentDescription = if (isExpanded) "Collapse $title" else "Expand $title",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .size(20.dp)
+                                .graphicsLayer { rotationZ = chevronRotation }
+                        )
+                    }
                 }
             }
 
@@ -2902,6 +2946,8 @@ fun SystemActionRowCard(
                         text = badge,
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                         color = badgeColor,
+                        maxLines = 1,
+                        softWrap = false,
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                     )
                 }

@@ -97,8 +97,13 @@ class NameGenApplication : Application() {
         StartupDefer.schedulePostFirstFrame(this) {
             com.arwora.utils.SoundEffectManager.init(this@NameGenApplication)
             com.arwora.feature.system.battery.service.BatteryMonitorManager.init(this@NameGenApplication)
+            com.arwora.utils.NativeAdbManager.init(this@NameGenApplication)
             com.arwora.utils.WirelessPairingManager.init(this@NameGenApplication)
             com.arwora.service.WifiAutoPairMonitor.syncWithPreference(this@NameGenApplication)
+            val adbCreds = com.arwora.utils.EncryptedAdbCredentialStore.loadState(this@NameGenApplication)
+            if (adbCreds.isPaired && !adbCreds.userStopped && !com.arwora.utils.NativeAdbManager.isAdbReady()) {
+                com.arwora.service.AdbConnectionService.startPersistentSession(this@NameGenApplication)
+            }
         }
     }
 }

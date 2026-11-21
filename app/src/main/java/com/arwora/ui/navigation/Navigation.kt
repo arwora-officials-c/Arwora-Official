@@ -138,6 +138,7 @@ sealed class Screen(val route: String) {
     object BatteryMonitor : Screen("battery_monitor")
     object WakelockDetector : Screen("wakelock_detector")
     object AppOps : Screen("app_ops")
+    object CompressorHub : Screen("compressor_hub")
     object CompressorTool : Screen("compressor/{typeId}") {
         fun createRoute(typeId: String = "image") = "compressor/$typeId"
     }
@@ -159,6 +160,7 @@ fun MainAppScreen(
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { bottomNavItems.size })
     val coroutineScope = rememberCoroutineScope()
     val bottomBarScrollController = rememberBottomBarScrollController()
+    var showSplashOverlay by remember(skipSplash) { mutableStateOf(!skipSplash) }
 
     // Always reveal the bottom navigation bar automatically when switching tabs via swipe gestures
     LaunchedEffect(pagerState.currentPage, pagerState.targetPage, pagerState.isScrollInProgress) {
@@ -212,7 +214,7 @@ fun MainAppScreen(
                 navController = navController,
                 viewModel = viewModel,
                 pagerState = pagerState,
-                skipSplash = skipSplash,
+                skipSplash = true,
                 onSelectMainTab = { index, animate -> selectMainTab(index, animate) },
                 onSplashDismissed = onSplashDismissed,
                 modifier = Modifier
@@ -224,7 +226,7 @@ fun MainAppScreen(
             val currentDestination = navBackStackEntry?.destination
             val currentRoute = currentDestination?.route
             val isOnMainTabs = currentRoute == Screen.MainTabs.route
-            val showBottomBar = isOnMainTabs || bottomNavItems.any { it.route == currentRoute }
+            val showBottomBar = !showSplashOverlay && (isOnMainTabs || bottomNavItems.any { it.route == currentRoute })
 
             LaunchedEffect(showBottomBar) {
                 if (showBottomBar) {
@@ -359,6 +361,33 @@ fun MainAppScreen(
                 }
             }
         }
+
+            AnimatedVisibility(
+                visible = showSplashOverlay,
+                enter = EnterTransition.None,
+                exit = fadeOut(
+                    animationSpec = tween(
+                        durationMillis = 300,
+                        easing = ArworaMotionTokens.StandardEasing
+                    )
+                ) + scaleOut(
+                    targetScale = 1.03f,
+                    animationSpec = tween(
+                        durationMillis = 300,
+                        easing = ArworaMotionTokens.StandardEasing
+                    )
+                ),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .zIndex(200f)
+            ) {
+                SplashScreen(
+                    onSplashFinished = {
+                        showSplashOverlay = false
+                        onSplashDismissed()
+                    }
+                )
+            }
         }
     }
 }
@@ -752,6 +781,17 @@ fun NameGenNavHost(
         }
         composable(Screen.AppOps.route) {
             com.arwora.feature.system.appops.ui.AppOpsScreen(onBack = { navController.popBackStack() })
+        }
+        composable(Screen.CompressorHub.route) {
+            com.arwora.feature.compressor.CompressorHubScreen(
+                onBack = { navController.popBackStack() },
+                onSelectCompressor = { type ->
+                    navController.navigate(Screen.CompressorTool.createRoute(type.id))
+                },
+                onOpenCompressionSettings = {
+                    navController.navigate(Screen.CompressionSettings.route)
+                }
+            )
         }
         composable(
             route = Screen.CompressorTool.route,

@@ -7,14 +7,15 @@
 
     <ImageView
         android:id="@+id/iv_arwora_wordmark"
-        android:layout_width="248dp"
-        android:layout_height="46dp"
+        android:layout_width="266dp"
+        android:layout_height="53dp"
         android:layout_gravity="center"
         android:alpha="0"
         android:contentDescription="@string/app_name"
         android:scaleType="fitCenter"
-        android:scaleX="0.85"
-        android:scaleY="0.85"
+        android:scaleX="0.82"
+        android:scaleY="0.82"
+        android:translationY="24dp"
         android:src="@drawable/ic_arwora_wordmark" />
 
 </FrameLayout>

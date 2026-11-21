@@ -39,10 +39,13 @@ class DnsChangerActivity : ComponentActivity() {
             val isSystemDark = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
             val resolvedDarkTheme = (isDark ?: isSystemDark) && !whiteTheme
 
-            // Fix Status Bar Color Mismatch: Match light background (#F8F9FE) and set dark icons
-            val bgColor = if (resolvedDarkTheme) 0xFF1A1C1E.toInt() else 0xFFF8F9FE.toInt()
-            window.statusBarColor = bgColor
-            WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = !resolvedDarkTheme
+            enableEdgeToEdge()
+            val themeConfig = com.arwora.ui.theme.ThemeManager.getThemeConfig(
+                darkModeState = isDark,
+                whiteThemeState = whiteTheme,
+                isSystemDark = isSystemDark
+            )
+            com.arwora.ui.theme.ThemeManager.applySystemBarsTheme(window, themeConfig)
 
             setContent {
                 NameGenProTheme(

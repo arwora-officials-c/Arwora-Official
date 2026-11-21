@@ -109,6 +109,12 @@ object NativeAdbManager {
     private val _discoveredPort = MutableStateFlow<Int?>(null)
     val discoveredPort: StateFlow<Int?> = _discoveredPort.asStateFlow()
 
+    private val _isPaired = MutableStateFlow(false)
+    val isPaired: StateFlow<Boolean> = _isPaired.asStateFlow()
+
+    private val _isWirelessDebuggingEnabled = MutableStateFlow(false)
+    val isWirelessDebuggingEnabled: StateFlow<Boolean> = _isWirelessDebuggingEnabled.asStateFlow()
+
     private val _requiresDevOptionsGuidance = MutableStateFlow(false)
     val requiresDevOptionsGuidance: StateFlow<Boolean> = _requiresDevOptionsGuidance.asStateFlow()
 
@@ -122,17 +128,24 @@ object NativeAdbManager {
 
     fun init(context: Context) {
         ensureClientIdentity()
-        appContext = context.applicationContext
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        if (_connectedHost.value == null) {
-            val savedHost = prefs.getString(KEY_LAST_HOST, null)
-            val savedPort = prefs.getInt(KEY_LAST_PORT, -1)
-            if (!savedHost.isNullOrBlank() && savedPort in 1024..65535) {
-                _connectedHost.value = savedHost
-                _connectedPort.value = savedPort
-            }
+        val appCtx = context.applicationContext
+        appContext = appCtx
+        val prefs = appCtx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val creds = EncryptedAdbCredentialStore.loadState(appCtx)
+
+        val savedHost = creds.host.takeIf { it.isNotBlank() }
+            ?: prefs.getString(KEY_LAST_HOST, null)
+        val savedPort = creds.connectPort.takeIf { it in 1024..65535 }
+            ?: prefs.getInt(KEY_LAST_PORT, -1).takeIf { it in 1024..65535 }
+            ?: -1
+
+        if (_connectedHost.value == null && !savedHost.isNullOrBlank() && savedPort in 1024..65535) {
+            _connectedHost.value = savedHost
+            _connectedPort.value = savedPort
         }
-        refreshConnectionStatus(context)
+        _isPaired.value = creds.isPaired
+        checkWirelessDebuggingState(appCtx)
+        refreshConnectionStatus(appCtx)
     }
 
     fun resolveConnectionState(
@@ -207,16 +220,50 @@ object NativeAdbManager {
 
     fun isWirelessDebuggingSettingEnabled(context: Context): Boolean {
         return try {
-            Settings.Global.getInt(context.contentResolver, "adb_enabled", 0) == 1 ||
-                Settings.Global.getInt(context.contentResolver, "adb_wifi_enabled", 0) == 1
+            val adbEnabled = Settings.Global.getInt(context.contentResolver, Settings.Global.ADB_ENABLED, 0) == 1
+            val adbWifiEnabled = Settings.Global.getInt(context.contentResolver, "adb_wifi_enabled", 0) == 1
+            val sysPort = getSystemWirelessDebugPort(context) != null
+            adbEnabled || adbWifiEnabled || sysPort
         } catch (_: Exception) {
             false
         }
     }
 
+    fun checkWirelessDebuggingState(context: Context): Boolean {
+        val enabled = isWirelessDebuggingSettingEnabled(context)
+        _isWirelessDebuggingEnabled.value = enabled
+        val creds = runCatching { EncryptedAdbCredentialStore.loadState(context) }.getOrNull()
+        if (creds != null) {
+            _isPaired.value = creds.isPaired
+        }
+        if (enabled && _requiresDevOptionsGuidance.value) {
+            _requiresDevOptionsGuidance.value = false
+            if (!_isConnected.value && _connectionState.value != NativeAdbConnectionState.CONNECTING) {
+                _statusMessage.value = "Wireless Debugging is Active / Ready."
+            }
+        }
+        return enabled
+    }
+
+    fun markPairedState(context: Context, host: String? = null, pairingPort: Int? = null) {
+        val appCtx = context.applicationContext
+        appContext = appCtx
+        val keyPair = runCatching { getOrInitKeyPair(appCtx) }.getOrNull()
+        val fingerprint = keyPair?.let { EncryptedAdbCredentialStore.computeKeyFingerprint(it) }
+        EncryptedAdbCredentialStore.markPaired(
+            context = appCtx,
+            host = host,
+            pairingPort = pairingPort,
+            rsaFingerprint = fingerprint
+        )
+        _isPaired.value = true
+    }
+
     fun refreshConnectionStatus(context: Context) {
-        appContext = context.applicationContext
-        val wifiOk = isWifiConnected(context)
+        val appCtx = context.applicationContext
+        appContext = appCtx
+        val wifiOk = isWifiConnected(appCtx)
+        checkWirelessDebuggingState(appCtx)
         if (!wifiOk && _isConnected.value && _connectedHost.value != "127.0.0.1") {
             _isConnected.value = false
         }
@@ -237,11 +284,17 @@ object NativeAdbManager {
                 .edit()
                 .putBoolean(KEY_USER_STOPPED, userInitiated)
                 .apply()
+            EncryptedAdbCredentialStore.setUserStopped(ctx, userInitiated)
             _connectionState.value = resolveConnectionState(
                 isWifiConnected = isWifiConnected(ctx),
                 isConnecting = false,
                 isConnected = false
             )
+            if (userInitiated) {
+                runCatching {
+                    ctx.stopService(android.content.Intent(ctx, com.arwora.service.AdbConnectionService::class.java))
+                }
+            }
         } else {
             _connectionState.value = NativeAdbConnectionState.DISCONNECTED
         }
@@ -282,14 +335,22 @@ object NativeAdbManager {
             _connectionState.value = NativeAdbConnectionState.CONNECTING
             _statusMessage.value = "Paired successfully! Connecting ADB..."
 
-            // Give adbd a short window to publish _adb-tls-connect._tcp after pairing finishes, retrying once if needed.
+            // Give adbd a short window to publish _adb-tls-connect._tcp after pairing finishes, retrying cleanly on real devices.
             var candidates = discoverLocalAdbEndpoints(
                 context = context,
                 excludePort = pairingPort,
                 nsdTimeoutMs = 2_500L
             )
             if (candidates.isEmpty()) {
-                kotlinx.coroutines.delay(250L)
+                kotlinx.coroutines.delay(if (nsdConnectResolverOverride != null) 50L else 300L)
+                candidates = discoverLocalAdbEndpoints(
+                    context = context,
+                    excludePort = pairingPort,
+                    nsdTimeoutMs = NSD_CONNECT_DISCOVERY_TIMEOUT_MS
+                )
+            }
+            if (candidates.isEmpty() && nsdConnectResolverOverride == null) {
+                kotlinx.coroutines.delay(450L)
                 candidates = discoverLocalAdbEndpoints(
                     context = context,
                     excludePort = pairingPort,
@@ -297,17 +358,23 @@ object NativeAdbManager {
                 )
             }
 
+            val debugSettingOn = checkWirelessDebuggingState(context)
+
             if (candidates.isEmpty()) {
                 _isConnected.value = false
                 _discoveredPort.value = null
                 _connectedPort.value = null
-                _requiresDevOptionsGuidance.value = true
+                _requiresDevOptionsGuidance.value = !debugSettingOn
                 _connectionState.value = resolveConnectionState(
                     isWifiConnected = isWifiConnected(context),
                     isConnecting = false,
                     isConnected = false
                 )
-                val timeoutMsg = "Timed out resolving Wireless Debugging connection port after pairing."
+                val timeoutMsg = if (debugSettingOn) {
+                    "Wireless Debugging is active, but the connection port timed out. Tap Retry Connect."
+                } else {
+                    "Timed out resolving Wireless Debugging connection port after pairing."
+                }
                 _statusMessage.value = timeoutMsg
                 return@withLock Pair(false, timeoutMsg)
             }
@@ -324,7 +391,7 @@ object NativeAdbManager {
 
                 val (ok, detail) = performVerifiedHandshake(endpoint.host, endpoint.port, keyPair)
                 if (ok) {
-                    markConnected(context, endpoint.host, endpoint.port)
+                    markConnected(context, endpoint.host, endpoint.port, pairingPort = pairingPort)
                     val msg = "Active / Connected (${endpoint.host}:${endpoint.port})"
                     _statusMessage.value = msg
                     return@withLock Pair(true, msg)
@@ -336,16 +403,21 @@ object NativeAdbManager {
             _isConnected.value = false
             _discoveredPort.value = null
             _connectedPort.value = null
-            _requiresDevOptionsGuidance.value = true
+            _requiresDevOptionsGuidance.value = !debugSettingOn
             _connectionState.value = resolveConnectionState(
                 isWifiConnected = isWifiConnected(context),
                 isConnecting = false,
                 isConnected = false
             )
             val failMsg = lastFailureDetail ?: "Timed out connecting to Wireless Debugging port."
-            _statusMessage.value = ERROR_WIRELESS_DEBUGGING_OFF
+            val statusErr = if (debugSettingOn) {
+                "Wireless Debugging is Active / Ready, but ADB socket refused connection ($failMsg)."
+            } else {
+                ERROR_WIRELESS_DEBUGGING_OFF
+            }
+            _statusMessage.value = statusErr
             Log.w(TAG, "Post-pairing connect failed across ${candidates.size} candidate(s): $failMsg")
-            Pair(false, ERROR_WIRELESS_DEBUGGING_OFF)
+            Pair(false, statusErr)
         }
     }
 
@@ -376,19 +448,25 @@ object NativeAdbManager {
             _connectionState.value = NativeAdbConnectionState.CONNECTING
             _statusMessage.value = "Scanning mDNS (_adb-tls-connect._tcp) for Wireless Debugging..."
 
+            val debugSettingOn = checkWirelessDebuggingState(context)
             val candidates = discoverLocalAdbEndpoints(context, excludePort = excludePairingPort)
             if (candidates.isEmpty()) {
                 _isConnected.value = false
                 _discoveredPort.value = null
                 _connectedPort.value = null
-                _requiresDevOptionsGuidance.value = true
+                _requiresDevOptionsGuidance.value = !debugSettingOn
                 _connectionState.value = resolveConnectionState(
                     isWifiConnected = isWifiConnected(context),
                     isConnecting = false,
                     isConnected = false
                 )
-                _statusMessage.value = ERROR_WIRELESS_DEBUGGING_OFF
-                return@withLock Pair(false, ERROR_WIRELESS_DEBUGGING_OFF)
+                val errMsg = if (debugSettingOn) {
+                    "Wireless Debugging is Active / Ready — waiting for local ADB connect port discovery."
+                } else {
+                    ERROR_WIRELESS_DEBUGGING_OFF
+                }
+                _statusMessage.value = errMsg
+                return@withLock Pair(false, errMsg)
             }
 
             val keyPair = getOrInitKeyPair(context)
@@ -414,20 +492,94 @@ object NativeAdbManager {
             _isConnected.value = false
             _discoveredPort.value = null
             _connectedPort.value = null
-            _requiresDevOptionsGuidance.value = true
+            _requiresDevOptionsGuidance.value = !debugSettingOn
             _connectionState.value = resolveConnectionState(
                 isWifiConnected = isWifiConnected(context),
                 isConnecting = false,
                 isConnected = false
             )
-            _statusMessage.value = ERROR_WIRELESS_DEBUGGING_OFF
+            val errMsg = if (debugSettingOn) {
+                "Wireless Debugging is Active / Ready — authorization pending or port rotated (${lastFailureDetail ?: "retry"})."
+            } else {
+                ERROR_WIRELESS_DEBUGGING_OFF
+            }
+            _statusMessage.value = errMsg
             Log.w(TAG, "Wireless ADB connection failed across ${candidates.size} candidate(s): $lastFailureDetail")
-            Pair(false, ERROR_WIRELESS_DEBUGGING_OFF)
+            Pair(false, errMsg)
         }
     }
 
     suspend fun connectAutomatically(context: Context, excludePairingPort: Int? = null): Pair<Boolean, String> {
         return connectWirelessAdb(context, excludePairingPort = excludePairingPort)
+    }
+
+    /**
+     * Silently re-establishes an already-paired Wireless ADB session without requiring user re-pairing.
+     * 1. Attempts direct TLS/ADB socket handshake against the persisted host:port from [EncryptedAdbCredentialStore].
+     * 2. If the saved port was rotated by adbd, automatically triggers `_adb-tls-connect._tcp` mDNS discovery
+     *    via [connectWirelessAdb] using the saved `arwora` RSA keypair.
+     */
+    suspend fun reconnectSavedSession(
+        context: Context,
+        force: Boolean = false
+    ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        val appCtx = context.applicationContext
+        init(appCtx)
+        val creds = EncryptedAdbCredentialStore.loadState(appCtx)
+        if (!force && (!creds.isPaired || creds.userStopped)) {
+            return@withContext Pair(false, "No active paired ADB session stored for silent reconnect.")
+        }
+        if (!isWifiConnected(appCtx) && creds.host != "127.0.0.1") {
+            refreshConnectionStatus(appCtx)
+            return@withContext Pair(false, "Waiting for Wi-Fi connection to resume Wireless ADB.")
+        }
+
+        val directOk: Pair<Boolean, String>? = connectMutex.withLock {
+            val savedPort = creds.connectPort
+            if (savedPort in 1024..65535) {
+                val candidateHosts = buildList {
+                    if (creds.host.isNotBlank()) add(creds.host)
+                    getLocalWifiIpAddress(appCtx)?.takeIf { it.isNotBlank() }?.let { add(it) }
+                    add("127.0.0.1")
+                }.distinct()
+
+                val keyPair = getOrInitKeyPair(appCtx)
+                for (candidateHost in candidateHosts) {
+                    val (ok, _) = performVerifiedHandshake(candidateHost, savedPort, keyPair)
+                    if (ok) {
+                        markConnected(appCtx, candidateHost, savedPort)
+                        val msg = "Active / Connected ($candidateHost:$savedPort)"
+                        _statusMessage.value = msg
+                        return@withLock Pair(true, msg)
+                    }
+                }
+            }
+            null
+        }
+        if (directOk != null && directOk.first) {
+            return@withContext directOk
+        }
+
+        // Saved port rotated or unreachable -> fall back silently to _adb-tls-connect._tcp mDNS re-discovery
+        connectWirelessAdb(appCtx, excludePairingPort = creds.pairingPort.takeIf { it in 1024..65535 })
+    }
+
+    suspend fun verifyConnectionAlive(): Boolean = withContext(Dispatchers.IO) {
+        val ctx = appContext ?: return@withContext _isConnected.value
+        val host = _connectedHost.value ?: return@withContext false
+        val port = _connectedPort.value ?: return@withContext false
+        if (port !in 1024..65535) return@withContext false
+        if (isTcpPortReachable(host, port, PROBE_TIMEOUT_MS)) {
+            return@withContext true
+        }
+        // Socket dropped; try silent reconnect if paired and not user-stopped
+        val creds = EncryptedAdbCredentialStore.loadState(ctx)
+        if (creds.isPaired && !creds.userStopped) {
+            return@withContext reconnectSavedSession(ctx).first
+        }
+        _isConnected.value = false
+        refreshConnectionStatus(ctx)
+        false
     }
 
     suspend fun connectToEndpoint(
@@ -441,6 +593,7 @@ object NativeAdbManager {
             if (cleanHost.isEmpty() || port !in 1024..65535) {
                 return@withLock Pair(false, ERROR_WIRELESS_DEBUGGING_OFF)
             }
+            val debugSettingOn = checkWirelessDebuggingState(context)
             _requiresDevOptionsGuidance.value = false
             _discoveredPort.value = port
             _connectionState.value = NativeAdbConnectionState.CONNECTING
@@ -454,7 +607,7 @@ object NativeAdbManager {
                 Pair(true, msg)
             } else {
                 _isConnected.value = false
-                _requiresDevOptionsGuidance.value = true
+                _requiresDevOptionsGuidance.value = !debugSettingOn
                 _connectionState.value = resolveConnectionState(
                     isWifiConnected = isWifiConnected(context),
                     isConnecting = false,
@@ -489,6 +642,23 @@ object NativeAdbManager {
             }
         }
         if (port == null || port !in 1024..65535) {
+            if (ctx != null) {
+                val creds = EncryptedAdbCredentialStore.loadState(ctx)
+                if (creds.isPaired && !creds.userStopped && reconnectSavedSession(ctx).first) {
+                    val reconnectedHost = _connectedHost.value ?: "127.0.0.1"
+                    val reconnectedPort = _connectedPort.value
+                    if (reconnectedPort != null && reconnectedPort in 1024..65535) {
+                        val kp = getOrInitKeyPair(ctx)
+                        return@withContext runCatching {
+                            executeOverSocket(reconnectedHost, reconnectedPort, command, kp, useTls = false, timeoutMs = timeoutMs)
+                        }.recoverCatching {
+                            executeOverSocket(reconnectedHost, reconnectedPort, command, kp, useTls = true, timeoutMs = timeoutMs)
+                        }.getOrElse { err ->
+                            NativeShellResult(false, err.message ?: ERROR_WIRELESS_DEBUGGING_OFF, -1)
+                        }
+                    }
+                }
+            }
             return@withContext NativeShellResult(
                 success = false,
                 output = ERROR_WIRELESS_DEBUGGING_OFF,
@@ -505,6 +675,23 @@ object NativeAdbManager {
             try {
                 executeOverSocket(host, port, command, keyPair, useTls = true, timeoutMs = timeoutMs)
             } catch (tlsError: Exception) {
+                // Socket dropped -> attempt one silent reconnect via saved session / mDNS if paired
+                if (ctx != null) {
+                    val creds = EncryptedAdbCredentialStore.loadState(ctx)
+                    if (creds.isPaired && !creds.userStopped && reconnectSavedSession(ctx).first) {
+                        val newHost = _connectedHost.value ?: host
+                        val newPort = _connectedPort.value ?: port
+                        val retryResult = runCatching {
+                            executeOverSocket(newHost, newPort, command, keyPair, useTls = false, timeoutMs = timeoutMs)
+                        }.recoverCatching {
+                            executeOverSocket(newHost, newPort, command, keyPair, useTls = true, timeoutMs = timeoutMs)
+                        }.getOrNull()
+                        if (retryResult != null) {
+                            return@withContext retryResult
+                        }
+                    }
+                }
+
                 _isConnected.value = false
                 if (ctx != null) {
                     _connectionState.value = resolveConnectionState(
@@ -756,14 +943,32 @@ object NativeAdbManager {
         return result.toList()
     }
 
-    private fun markConnected(context: Context, host: String, port: Int) {
+    private fun markConnected(
+        context: Context,
+        host: String,
+        port: Int,
+        pairingPort: Int? = null
+    ) {
+        val appCtx = context.applicationContext
         _isConnected.value = true
+        _isPaired.value = true
         _requiresDevOptionsGuidance.value = false
         _connectedHost.value = host
         _connectedPort.value = port
         _discoveredPort.value = port
         _connectionState.value = NativeAdbConnectionState.CONNECTED
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+        val keyPair = runCatching { getOrInitKeyPair(appCtx) }.getOrNull()
+        val fingerprint = keyPair?.let { EncryptedAdbCredentialStore.computeKeyFingerprint(it) }
+        EncryptedAdbCredentialStore.savePairedSession(
+            context = appCtx,
+            host = host,
+            connectPort = port,
+            pairingPort = pairingPort,
+            rsaFingerprint = fingerprint
+        )
+
+        appCtx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_LAST_HOST, host)
             .putInt(KEY_LAST_PORT, port)

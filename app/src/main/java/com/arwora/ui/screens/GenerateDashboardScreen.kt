@@ -101,9 +101,14 @@ fun GenerateDashboardScreen(navController: NavController, viewModel: MainViewMod
     val history by viewModel.allHistory.collectAsStateWithLifecycle()
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text("Generate", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
+                title = { Text("Generate", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    scrolledContainerColor = MaterialTheme.colorScheme.background
+                )
             )
         }
     ) { padding ->
@@ -220,88 +225,101 @@ fun GenerateDashboardScreen(navController: NavController, viewModel: MainViewMod
             }
 
             item(span = { GridItemSpan(maxLineSpan) }) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(
-                            text = "All-in-One Compressor",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "Specialized local compression engines",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    ArworaPillBadge(text = "8 Engines")
-                }
-            }
-
-            items(
-                items = CompressorType.entries,
-                key = { "compressor_${it.id}" }
-            ) { compressor ->
-                val accent = if (isWhiteTheme) MaterialTheme.colorScheme.onSurface else compressor.accentColor
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(148.dp)
-                        .testTag("compressor_card_${compressor.id}"),
+                        .testTag("generate_compressor_hub_card"),
                     onClick = {
                         com.arwora.utils.SoundEffectManager.playClick()
-                        navController.navigate(Screen.CompressorTool.createRoute(compressor.id))
+                        navController.navigate(Screen.CompressorHub.route)
                     },
-                    shape = cardShape,
+                    shape = RoundedCornerShape(28.dp),
                     colors = CardDefaults.cardColors(containerColor = cardBgColor),
                     border = cardBorder,
                     elevation = cardElevation
                 ) {
                     Column(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.SpaceBetween,
-                        horizontalAlignment = Alignment.Start
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            ArworaTonalIconBadge(
-                                icon = compressor.icon,
-                                contentDescription = compressor.title,
-                                tint = accent,
-                                size = ArworaDesignTokens.IconBadgeSize,
-                                iconSize = 22.dp
-                            )
-                            ArworaPillBadge(
-                                text = compressor.badge,
-                                tint = accent
-                            )
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                ArworaTonalIconBadge(
+                                    icon = Icons.Filled.Compress,
+                                    contentDescription = "All-in-One Compressor",
+                                    size = 46.dp,
+                                    iconSize = 23.dp,
+                                    cornerRadius = 15.dp
+                                )
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        text = "All-in-One Compressor",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "Specialized local compression engines (8 Modules)",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            ArworaPillBadge(text = "8 Modules")
                         }
-                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            listOf("Video", "Audio", "Image", "PDF", "+4").forEach { tag ->
+                                Surface(
+                                    shape = ArworaDesignTokens.PillShape,
+                                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.65f),
+                                    border = ArworaDesignTokens.innerTileBorder()
+                                ) {
+                                    Text(
+                                        text = tag,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Button(
+                            onClick = {
+                                com.arwora.utils.SoundEffectManager.playClick()
+                                navController.navigate(Screen.CompressorHub.route)
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("open_compressor_hub_button"),
+                            shape = ArworaDesignTokens.PillShape
+                        ) {
                             Text(
-                                text = compressor.title,
-                                style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp),
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = compressor.subtitle,
-                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                text = "Open Hub",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }

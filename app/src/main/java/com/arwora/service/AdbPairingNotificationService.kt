@@ -78,9 +78,10 @@ object AdbPairingNotifier {
         port: Int? = null
     ): Notification {
         createChannel(context)
-        val cleanHost = host.trim().ifBlank { "127.0.0.1" }
-        val contentText = if (port != null && port in 1024..65535) {
-            "Pairing port detected ($port). Enter the 6-digit code from Developer Options below."
+        val cleanHost = AdbPairingReceiver.parseCleanHost(host) ?: "127.0.0.1"
+        val cleanPort = port?.takeIf { it in 1024..65535 }
+        val contentText = if (cleanPort != null) {
+            "Pairing port detected ($cleanPort). Enter the 6-digit code from Developer Options below."
         } else {
             "Scanning for Wireless Debugging pairing port... Open Developer Options > Pair device with pairing code."
         }

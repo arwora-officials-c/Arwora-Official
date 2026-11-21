@@ -65,6 +65,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -134,6 +135,7 @@ fun CompressorScreen(
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = {
@@ -185,7 +187,8 @@ fun CompressorScreen(
                     )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
+                    containerColor = MaterialTheme.colorScheme.background,
+                    scrolledContainerColor = MaterialTheme.colorScheme.background
                 )
             )
         }
@@ -684,14 +687,50 @@ private fun SpecializedOptionsContent(
         CompressorType.VIDEO -> {
             val opts = state.videoOptions
             Text("Target Resolution", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("video_resolution_row"),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 listOf(720 to "720p HD", 480 to "480p SD", 360 to "360p Compact").forEach { (h, label) ->
-                    FilterChip(
-                        selected = opts.targetHeight == h,
-                        onClick = { viewModel.updateVideoOptions { it.copy(targetHeight = h) } },
-                        label = { Text(label) },
-                        shape = ArworaDesignTokens.PillShape
-                    )
+                    val selected = opts.targetHeight == h
+                    Surface(
+                        selected = selected,
+                        onClick = {
+                            SoundEffectManager.playClick()
+                            viewModel.updateVideoOptions { it.copy(targetHeight = h) }
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(40.dp)
+                            .testTag("video_res_$h"),
+                        shape = ArworaDesignTokens.PillShape,
+                        color = if (selected) accent.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(
+                            width = 1.dp,
+                            color = if (selected) accent else MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
+                        )
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = label,
+                                fontSize = 12.sp,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
                 }
             }
             Text("Target Bitrate: ${opts.bitrateKbps} kbps", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)

@@ -1,8 +1,10 @@
 package com.arwora.ui.theme
 
 import android.graphics.Color as AndroidColor
+import android.os.Build
 import android.view.Window
 import androidx.compose.ui.graphics.Color
+import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.arwora.ui.MainViewModel
 
@@ -105,15 +107,24 @@ object ThemeManager {
      * including statusBarColor, decorView background, and WindowInsetsControllerCompat appearance.
      */
     fun applySystemBarsTheme(window: Window, themeConfig: ThemeConfig) {
-        // 1. Update status bar and navigation bar background colors
-        window.statusBarColor = themeConfig.statusBarColorInt
-        window.navigationBarColor = themeConfig.navigationBarColorInt
+        WindowCompat.setDecorFitsSystemWindows(window, false)
 
-        // 2. Update window and decorView background to eliminate white-flash/bleed artifacts
+        // Transparent system bars let the Compose TopAppBar / Scaffold background extend
+        // seamlessly behind the status and navigation bars with zero two-tone color split.
+        @Suppress("DEPRECATION")
+        window.statusBarColor = AndroidColor.TRANSPARENT
+        @Suppress("DEPRECATION")
+        window.navigationBarColor = AndroidColor.TRANSPARENT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
+        }
+
+        // Update window and decorView background to match the active root theme surface
         window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(themeConfig.statusBarColorInt))
         window.decorView.setBackgroundColor(themeConfig.statusBarColorInt)
 
-        // 3. Update light/dark status bar icon appearances using WindowInsetsControllerCompat
+        // Update light/dark system bar icon appearances using WindowInsetsControllerCompat
         val controller = WindowInsetsControllerCompat(window, window.decorView)
         controller.isAppearanceLightStatusBars = themeConfig.isLightStatusBar
         controller.isAppearanceLightNavigationBars = themeConfig.isLightNavigationBar

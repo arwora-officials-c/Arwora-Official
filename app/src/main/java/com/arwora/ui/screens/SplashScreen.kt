@@ -29,10 +29,12 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -42,9 +44,11 @@ import com.arwora.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-internal const val SPLASH_LOGO_ANIM_DURATION_MS = 600
-internal const val SPLASH_POST_ANIM_HOLD_MS = 700L
+internal const val SPLASH_LOGO_ANIM_DURATION_MS = 700
+internal const val SPLASH_POST_ANIM_HOLD_MS = 500L
 internal const val SPLASH_TOTAL_DURATION_MS = SPLASH_LOGO_ANIM_DURATION_MS.toLong() + SPLASH_POST_ANIM_HOLD_MS
+internal const val SPLASH_INITIAL_SCALE = 0.82f
+internal const val SPLASH_INITIAL_TRANSLATION_Y_DP = 24f
 
 internal data class SplashPalette(
     val backgroundColor: Color,
@@ -76,11 +80,13 @@ fun SplashScreen(
     val palette = remember(isSystemDark) { resolveSplashPalette(isSystemDark) }
 
     val logoAlpha = remember { Animatable(0f) }
-    val logoScale = remember { Animatable(0.85f) }
+    val logoScale = remember { Animatable(SPLASH_INITIAL_SCALE) }
+    val logoTranslationYDp = remember { Animatable(SPLASH_INITIAL_TRANSLATION_Y_DP) }
     var hasFinished by remember { mutableStateOf(false) }
 
     val view = LocalView.current
     val context = LocalContext.current
+    val density = LocalDensity.current
 
     fun finishOnce() {
         if (!hasFinished) {
@@ -112,46 +118,39 @@ fun SplashScreen(
         }
 
         onDispose {
-            if (prevStatusBarColor != null) {
-                @Suppress("DEPRECATION")
-                window.statusBarColor = prevStatusBarColor
-            }
-            if (prevNavBarColor != null) {
-                @Suppress("DEPRECATION")
-                window.navigationBarColor = prevNavBarColor
-            }
-            if (insetsController != null) {
-                if (prevLightStatus != null) {
-                    insetsController.isAppearanceLightStatusBars = prevLightStatus
+            // Do not overwrite the dashboard theme bars if splash exited normally.
+            if (!hasFinished) {
+                if (prevStatusBarColor != null) {
+                    @Suppress("DEPRECATION")
+                    window.statusBarColor = prevStatusBarColor
                 }
-                if (prevLightNav != null) {
-                    insetsController.isAppearanceLightNavigationBars = prevLightNav
+                if (prevNavBarColor != null) {
+                    @Suppress("DEPRECATION")
+                    window.navigationBarColor = prevNavBarColor
+                }
+                if (insetsController != null) {
+                    if (prevLightStatus != null) {
+                        insetsController.isAppearanceLightStatusBars = prevLightStatus
+                    }
+                    if (prevLightNav != null) {
+                        insetsController.isAppearanceLightNavigationBars = prevLightNav
+                    }
                 }
             }
         }
     }
 
     LaunchedEffect(Unit) {
-        val alphaJob = launch {
-            logoAlpha.animateTo(
-                targetValue = 1.0f,
-                animationSpec = tween(
-                    durationMillis = SPLASH_LOGO_ANIM_DURATION_MS,
-                    easing = FastOutSlowInEasing
-                )
-            )
-        }
-        val scaleJob = launch {
-            logoScale.animateTo(
-                targetValue = 1.0f,
-                animationSpec = tween(
-                    durationMillis = SPLASH_LOGO_ANIM_DURATION_MS,
-                    easing = FastOutSlowInEasing
-                )
-            )
-        }
+        val animSpec = tween<Float>(
+            durationMillis = SPLASH_LOGO_ANIM_DURATION_MS,
+            easing = FastOutSlowInEasing
+        )
+        val alphaJob = launch { logoAlpha.animateTo(targetValue = 1.0f, animationSpec = animSpec) }
+        val scaleJob = launch { logoScale.animateTo(targetValue = 1.0f, animationSpec = animSpec) }
+        val slideJob = launch { logoTranslationYDp.animateTo(targetValue = 0f, animationSpec = animSpec) }
         alphaJob.join()
         scaleJob.join()
+        slideJob.join()
         delay(SPLASH_POST_ANIM_HOLD_MS)
         finishOnce()
     }
@@ -176,11 +175,15 @@ fun SplashScreen(
             colorFilter = ColorFilter.tint(palette.foregroundColor),
             contentScale = ContentScale.Fit,
             modifier = Modifier
-                .padding(horizontal = 32.dp)
-                .width(248.dp)
-                .height(46.dp)
-                .scale(logoScale.value)
-                .alpha(logoAlpha.value)
+                .padding(horizontal = 24.dp)
+                .width(266.dp)
+                .height(53.dp)
+                .graphicsLayer {
+                    scaleX = logoScale.value
+                    scaleY = logoScale.value
+                    translationY = with(density) { logoTranslationYDp.value.dp.toPx() }
+                    alpha = logoAlpha.value
+                }
                 .testTag("splash_arwora_wordmark")
         )
     }

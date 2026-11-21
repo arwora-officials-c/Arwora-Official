@@ -25,6 +25,9 @@ class AdbPairingReceiver : BroadcastReceiver() {
 
     companion object {
         private val DIGIT_RUN_REGEX = Regex("\\d{6}")
+        private val HOST_PORT_REGEX = Regex("(?:[\\[(]?([\\w.:-]+)[\\])]?):\\[?(\\d{4,5})\\]?(?!\\d)")
+        private val EXPLICIT_PORT_REGEX = Regex("(?i)port\\s*[:=]?\\s*\\[?(\\d{4,5})\\]?(?!\\d)")
+        private val STANDALONE_PORT_REGEX = Regex("(?<!\\d)\\[?(\\d{4,5})\\]?(?!\\d)")
         internal var successCancelDelayMs: Long = 1_500L
 
         internal fun extractSixDigitReplyCode(rawInput: CharSequence?): String? {
@@ -38,6 +41,77 @@ class AdbPairingReceiver : BroadcastReceiver() {
                 return digitsOnly
             }
             return DIGIT_RUN_REGEX.find(trimmed)?.value
+        }
+
+        /**
+         * Strictly parses a TCP port integer (1024..65535) from raw mDNS/notification strings or extras,
+         * stripping brackets (`[38331]`), trailing punctuation (`38331]`), whitespace, and `host:port` prefixes,
+         * while never truncating 6-digit pairing codes into 5-digit port numbers.
+         */
+        fun parseCleanPort(raw: CharSequence?): Int? {
+            if (raw.isNullOrBlank()) return null
+            val text = raw.toString().trim()
+
+            val stripped = text.trim('[', ']', '(', ')', '"', '\'', ' ', '\t', '\r', '\n')
+            stripped.toIntOrNull()?.let { direct ->
+                if (direct in 1024..65535) return direct
+            }
+
+            EXPLICIT_PORT_REGEX.findAll(text).forEach { match ->
+                val candidate = match.groupValues[1].toIntOrNull()
+                if (candidate != null && candidate in 1024..65535) return candidate
+            }
+
+            HOST_PORT_REGEX.findAll(text).forEach { match ->
+                val candidate = match.groupValues[2].toIntOrNull()
+                if (candidate != null && candidate in 1024..65535) return candidate
+            }
+
+            STANDALONE_PORT_REGEX.findAll(text).forEach { match ->
+                val candidate = match.groupValues[1].toIntOrNull()
+                if (candidate != null && candidate in 1024..65535) return candidate
+            }
+
+            return null
+        }
+
+        fun parseCleanHost(raw: CharSequence?): String? {
+            if (raw.isNullOrBlank()) return null
+            var cleaned = raw.toString().trim()
+                .trim('"', '\'', ' ')
+            if (cleaned.startsWith("[") && cleaned.contains("]:")) {
+                cleaned = cleaned.substringAfter("[").substringBefore("]:")
+            } else {
+                val lastColon = cleaned.lastIndexOf(':')
+                if (lastColon > 0 && cleaned.count { it == ':' } == 1) {
+                    val maybePort = cleaned.substring(lastColon + 1).trim('[', ']', ' ')
+                    if (maybePort.all { it.isDigit() }) {
+                        cleaned = cleaned.substring(0, lastColon)
+                    }
+                }
+            }
+            cleaned = cleaned.trim('[', ']', ' ')
+            return cleaned.takeIf { it.isNotEmpty() }
+        }
+
+        internal fun extractPortFromIntent(
+            intent: Intent,
+            primaryKey: String = AdbPairingNotifier.EXTRA_PORT
+        ): Int? {
+            val intVal = intent.getIntExtra(primaryKey, -1)
+            if (intVal in 1024..65535) return intVal
+
+            val strVal = intent.getStringExtra(primaryKey)
+                ?: intent.getCharSequenceExtra(primaryKey)
+            parseCleanPort(strVal)?.let { return it }
+
+            val fallbackInt = intent.getIntExtra(AdbPairingNotifier.EXTRA_PAIRING_PORT, -1)
+            if (fallbackInt in 1024..65535) return fallbackInt
+
+            parseCleanPort(intent.getStringExtra(AdbPairingNotifier.EXTRA_PAIRING_PORT))?.let { return it }
+            parseCleanPort(intent.getStringExtra(AdbPairingNotifier.EXTRA_HOST))?.let { return it }
+            parseCleanPort(intent.getStringExtra(Intent.EXTRA_TEXT))?.let { return it }
+            return null
         }
     }
 
@@ -59,7 +133,7 @@ class AdbPairingReceiver : BroadcastReceiver() {
                     appContext,
                     AdbPairingNotifier.buildReadyNotification(
                         context = appContext,
-                        host = WirelessPairingManager.savedHost.value.ifBlank { "127.0.0.1" },
+                        host = parseCleanHost(WirelessPairingManager.savedHost.value) ?: "127.0.0.1",
                         port = WirelessPairingManager.discoveredPort.value
                     )
                 )
@@ -67,8 +141,7 @@ class AdbPairingReceiver : BroadcastReceiver() {
             }
 
             AdbPairingNotifier.ACTION_RETRY_CONNECT -> {
-                val pairingPort = intent.getIntExtra(AdbPairingNotifier.EXTRA_PAIRING_PORT, -1)
-                    .takeIf { it in 1024..65535 }
+                val pairingPort = extractPortFromIntent(intent, AdbPairingNotifier.EXTRA_PAIRING_PORT)
                     ?: WirelessPairingManager.lastPairingPort
 
                 val dispatchedToService = AdbPairingNotificationService.runWorkOnServiceScope {
@@ -103,9 +176,8 @@ class AdbPairingReceiver : BroadcastReceiver() {
                     return
                 }
 
-                val extraHost = intent.getStringExtra(AdbPairingNotifier.EXTRA_HOST)
-                val extraPort = intent.getIntExtra(AdbPairingNotifier.EXTRA_PORT, -1)
-                    .takeIf { it in 1024..65535 }
+                val extraHost = parseCleanHost(intent.getStringExtra(AdbPairingNotifier.EXTRA_HOST))
+                val extraPort = extractPortFromIntent(intent, AdbPairingNotifier.EXTRA_PORT)
 
                 val work: suspend () -> Unit = {
                     NativeAdbManager.ensureClientIdentity()
@@ -176,7 +248,7 @@ class AdbPairingReceiver : BroadcastReceiver() {
             context = appContext,
             pairingPort = pairingPort
         )
-        val connectedHost = NativeAdbManager.connectedHost.value
+        val connectedHost = parseCleanHost(NativeAdbManager.connectedHost.value) ?: "127.0.0.1"
         val connectedPort = NativeAdbManager.connectedPort.value
 
         WirelessPairingManager.markNotificationConnectResult(
@@ -188,13 +260,19 @@ class AdbPairingReceiver : BroadcastReceiver() {
         )
 
         if (connected && NativeAdbManager.isAdbReady()) {
+            AdbConnectionService.startPersistentSession(appContext)
             // Step 3: ADB Connected Successfully!
+            val cleanEndpoint = if (connectedPort != null && connectedPort in 1024..65535) {
+                "$connectedHost:$connectedPort"
+            } else {
+                connectedHost
+            }
             AdbPairingNotifier.notifySafely(
                 appContext,
                 AdbPairingNotifier.buildSuccessConnectingNotification(
                     context = appContext,
                     connected = true,
-                    detail = "$connectedHost:$connectedPort"
+                    detail = cleanEndpoint
                 )
             )
             if (successCancelDelayMs > 0L) {

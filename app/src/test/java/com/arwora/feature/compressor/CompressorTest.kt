@@ -5,11 +5,28 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.arwora.data.datastore.SettingsRepository
+import com.arwora.data.datastore.dataStore
+import com.arwora.data.db.AppDatabase
+import com.arwora.data.repository.FavoriteRepository
+import com.arwora.data.repository.HistoryRepository
+import com.arwora.data.repository.SavedTextRepository
+import com.arwora.ui.MainViewModel
+import com.arwora.ui.navigation.Screen
+import com.arwora.ui.screens.GenerateDashboardScreen
 import com.arwora.ui.theme.NameGenProTheme
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
@@ -282,5 +299,145 @@ class CompressorTest {
         val reset = CompressionDefaultsStore.settings.value
         assertEquals(ImageOutputFormat.AUTO, reset.imageFormat)
         assertEquals(1400, reset.videoBitrateKbps)
+    }
+
+    @Test
+    fun `compressor hub screen renders all eight specialized modules and dispatches selection`() {
+        var selectedType: CompressorType? = null
+        var openedSettings = false
+        var wentBack = false
+
+        composeTestRule.setContent {
+            NameGenProTheme(darkTheme = true) {
+                CompressorHubScreen(
+                    onBack = { wentBack = true },
+                    onSelectCompressor = { selectedType = it },
+                    onOpenCompressionSettings = { openedSettings = true }
+                )
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("All-in-One Compressor").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("compressor_hub_grid").assertIsDisplayed()
+
+        CompressorType.entries.forEach { type ->
+            composeTestRule.onNodeWithTag("compressor_hub_grid")
+                .performScrollToNode(hasTestTag("compressor_card_${type.id}"))
+            composeTestRule.onNodeWithTag("compressor_card_${type.id}").assertIsDisplayed()
+            composeTestRule.onNodeWithText(type.title).assertIsDisplayed()
+        }
+
+        composeTestRule.onNodeWithTag("compressor_hub_grid")
+            .performScrollToNode(hasTestTag("compressor_card_batch"))
+        composeTestRule.onNodeWithTag("compressor_card_batch").performClick()
+        composeTestRule.waitForIdle()
+        assertEquals(CompressorType.BATCH, selectedType)
+
+        composeTestRule.onNodeWithTag("compressor_hub_settings").performClick()
+        composeTestRule.waitForIdle()
+        assertTrue(openedSettings)
+
+        composeTestRule.onNodeWithTag("compressor_hub_back").performClick()
+        composeTestRule.waitForIdle()
+        assertTrue(wentBack)
+    }
+
+    @Test
+    fun `generate tab renders single compressor master card and navigates to dedicated hub`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()
+        val mainViewModel = MainViewModel(
+            HistoryRepository(db.historyDao()),
+            FavoriteRepository(db.favoriteDao()),
+            SettingsRepository(context.dataStore),
+            SavedTextRepository(db.savedTextDao())
+        )
+        var lastOpenedToolType: CompressorType? = null
+
+        try {
+            composeTestRule.setContent {
+                NameGenProTheme(darkTheme = true) {
+                    val navController = rememberNavController()
+                    NavHost(
+                        navController = navController,
+                        startDestination = Screen.GenerateDashboard.route
+                    ) {
+                        composable(Screen.GenerateDashboard.route) {
+                            GenerateDashboardScreen(
+                                navController = navController,
+                                viewModel = mainViewModel
+                            )
+                        }
+                        composable(Screen.CompressorHub.route) {
+                            CompressorHubScreen(
+                                onBack = { navController.popBackStack() },
+                                onSelectCompressor = { lastOpenedToolType = it }
+                            )
+                        }
+                    }
+                }
+            }
+
+            composeTestRule.waitForIdle()
+            composeTestRule.onNodeWithTag("generate_compressor_hub_card").assertIsDisplayed()
+            composeTestRule.onNodeWithText("All-in-One Compressor").assertIsDisplayed()
+            composeTestRule.onNodeWithText("Specialized local compression engines (8 Modules)").assertIsDisplayed()
+            composeTestRule.onNodeWithTag("open_compressor_hub_button").assertIsDisplayed()
+
+            // Ensure the 8 individual module cards are NOT cluttered onto the root Generate tab
+            assertEquals(0, composeTestRule.onAllNodesWithTag("compressor_card_video").fetchSemanticsNodes().size)
+
+            // Tap Open Hub to transition cleanly into the Compressor Hub sub-screen
+            composeTestRule.onNodeWithTag("open_compressor_hub_button").performClick()
+            composeTestRule.waitForIdle()
+
+            composeTestRule.onNodeWithTag("compressor_hub_grid").assertIsDisplayed()
+            composeTestRule.onNodeWithTag("compressor_card_video").performClick()
+            composeTestRule.waitForIdle()
+            assertEquals(CompressorType.VIDEO, lastOpenedToolType)
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun `video compressor renders target resolution buttons on a single aligned horizontal row`() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        CompressionDefaultsStore.resetToDefaults(app)
+
+        composeTestRule.setContent {
+            NameGenProTheme(darkTheme = false) {
+                CompressorScreen(
+                    initialTypeId = "video",
+                    onBack = {}
+                )
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("video_resolution_row").assertIsDisplayed()
+        val hd = composeTestRule.onNodeWithTag("video_res_720").assertIsDisplayed()
+        val sd = composeTestRule.onNodeWithTag("video_res_480").assertIsDisplayed()
+        val compact = composeTestRule.onNodeWithTag("video_res_360").assertIsDisplayed()
+
+        val hdBounds = hd.getUnclippedBoundsInRoot()
+        val sdBounds = sd.getUnclippedBoundsInRoot()
+        val compactBounds = compact.getUnclippedBoundsInRoot()
+
+        val hdWidth = hdBounds.right.value - hdBounds.left.value
+        val sdWidth = sdBounds.right.value - sdBounds.left.value
+        val compactWidth = compactBounds.right.value - compactBounds.left.value
+
+        assertEquals(hdBounds.top.value, sdBounds.top.value, 1f)
+        assertEquals(sdBounds.top.value, compactBounds.top.value, 1f)
+        assertEquals(hdBounds.bottom.value, compactBounds.bottom.value, 1f)
+        assertTrue(hdBounds.right.value < sdBounds.left.value)
+        assertTrue(sdBounds.right.value < compactBounds.left.value)
+        assertEquals(hdWidth, sdWidth, 2f)
+        assertEquals(sdWidth, compactWidth, 2f)
+
+        compact.performClick()
+        composeTestRule.waitForIdle()
     }
 }

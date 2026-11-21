@@ -9,11 +9,14 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.wifi.WifiManager
 import android.util.Log
+import com.arwora.utils.EncryptedAdbCredentialStore
+import com.arwora.utils.NativeAdbManager
 import com.arwora.utils.WirelessPairingManager
 
 /**
  * Monitors device Wi-Fi connectivity using ConnectivityManager NetworkCapabilities.TRANSPORT_WIFI
- * so Mode 3 (Auto-Pair on Any Wi-Fi Connection) responds reliably whenever any Wi-Fi connects.
+ * so Mode 3 (Auto-Pair on Any Wi-Fi Connection) and previously paired Wireless ADB sessions
+ * automatically resume whenever Wi-Fi connects or reconnects.
  */
 object WifiAutoPairMonitor {
     private const val TAG = "WifiAutoPairMonitor"
@@ -25,8 +28,11 @@ object WifiAutoPairMonitor {
         val appContext = context.applicationContext
         appContextRef = appContext
         updateCurrentWifiState(appContext)
+        val creds = EncryptedAdbCredentialStore.loadState(appContext)
+        val shouldMonitor = WirelessPairingManager.autoPairOnWifiEnabled.value ||
+            (creds.isPaired && !creds.userStopped)
 
-        if (WirelessPairingManager.autoPairOnWifiEnabled.value) {
+        if (shouldMonitor) {
             register(appContext)
         } else {
             unregister()
@@ -67,6 +73,10 @@ object WifiAutoPairMonitor {
                 override fun onAvailable(network: Network) {
                     Log.i(TAG, "TRANSPORT_WIFI available")
                     WirelessPairingManager.onWifiNetworkConnected(appContext)
+                    val creds = EncryptedAdbCredentialStore.loadState(appContext)
+                    if (creds.isPaired && !creds.userStopped && !NativeAdbManager.isAdbReady()) {
+                        AdbConnectionService.scheduleReconnect(appContext, "network_callback_available")
+                    }
                 }
 
                 override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
@@ -78,6 +88,7 @@ object WifiAutoPairMonitor {
                 override fun onLost(network: Network) {
                     Log.i(TAG, "TRANSPORT_WIFI lost")
                     WirelessPairingManager.updateWifiConnectivityState(isWifiCurrentlyConnected(appContext))
+                    NativeAdbManager.refreshConnectionStatus(appContext)
                 }
             }
 
@@ -105,7 +116,7 @@ object WifiAutoPairMonitor {
 
 /**
  * BroadcastReceiver companion for Wi-Fi state changes, validating TRANSPORT_WIFI capabilities
- * and triggering automatic pairing/re-connection when enabled in Mode 3.
+ * and triggering automatic pairing or silent ADB session reconnection when paired.
  */
 class WifiAutoPairReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
@@ -117,12 +128,20 @@ class WifiAutoPairReceiver : BroadcastReceiver() {
             return
         }
 
-        WirelessPairingManager.init(context)
-        val wifiConnected = WifiAutoPairMonitor.isWifiCurrentlyConnected(context)
+        val appCtx = context.applicationContext
+        NativeAdbManager.init(appCtx)
+        WirelessPairingManager.init(appCtx)
+        val wifiConnected = WifiAutoPairMonitor.isWifiCurrentlyConnected(appCtx)
         WirelessPairingManager.updateWifiConnectivityState(wifiConnected)
 
-        if (wifiConnected && WirelessPairingManager.autoPairOnWifiEnabled.value) {
-            WirelessPairingManager.onWifiNetworkConnected(context)
+        if (wifiConnected) {
+            if (WirelessPairingManager.autoPairOnWifiEnabled.value) {
+                WirelessPairingManager.onWifiNetworkConnected(appCtx)
+            }
+            val creds = EncryptedAdbCredentialStore.loadState(appCtx)
+            if (creds.isPaired && !creds.userStopped && !NativeAdbManager.isAdbReady()) {
+                AdbConnectionService.scheduleReconnect(appCtx, "connectivity_broadcast")
+            }
         }
     }
 }

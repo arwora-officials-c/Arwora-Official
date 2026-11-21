@@ -82,14 +82,13 @@ object WirelessPairingManager {
 
     internal const val AUTO_PAIR_DISCOVERY_TIMEOUT_MS = 10_000L
     internal const val SOCKET_PROBE_TIMEOUT_MS = 200
-    internal const val SOCKET_PAIRING_CONNECT_TIMEOUT_MS = 2_000
-    internal const val SOCKET_PAIRING_READ_TIMEOUT_MS = 2_500
+    internal const val SOCKET_PAIRING_CONNECT_TIMEOUT_MS = 4_000
+    internal const val SOCKET_PAIRING_READ_TIMEOUT_MS = 5_000
     internal const val STAGE_SCANNING_PORT = "Scanning local ADB port..."
     internal const val STAGE_ESTABLISHING_PAIRING = "Establishing secure pairing..."
     internal const val STAGE_CONNECTED = "Connected successfully!"
 
     private val PAIRING_CODE_REGEX = Pattern.compile("\\b(\\d{6})\\b")
-    private val PORT_REGEX = Pattern.compile("(?:[:]|port\\s*[:=]?\\s*)(\\d{4,5})\\b", Pattern.CASE_INSENSITIVE)
 
     private val _status = MutableStateFlow<PairingStatus>(PairingStatus.Idle)
     val status: StateFlow<PairingStatus> = _status.asStateFlow()
@@ -344,6 +343,9 @@ object WirelessPairingManager {
         }
 
         val (ok, msg) = NativeAdbManager.connectWirelessAdb(appContext)
+        if (ok && NativeAdbManager.isAdbReady()) {
+            com.arwora.service.AdbConnectionService.startPersistentSession(appContext)
+        }
         updateUiState {
             _lastWifiEventSummary.value = msg
             if (ok && NativeAdbManager.isAdbReady()) {
@@ -484,15 +486,7 @@ object WirelessPairingManager {
     }
 
     fun extractPairingPort(text: String): Int? {
-        if (text.isBlank()) return null
-        val matcher = PORT_REGEX.matcher(text)
-        while (matcher.find()) {
-            val candidate = matcher.group(1)?.toIntOrNull()
-            if (candidate != null && candidate in 1024..65535) {
-                return candidate
-            }
-        }
-        return null
+        return com.arwora.service.AdbPairingReceiver.parseCleanPort(text)
     }
 
     /**
@@ -780,6 +774,11 @@ object WirelessPairingManager {
         pairingPort: Int? = lastPairingPort
     ) {
         stopListening()
+        NativeAdbManager.markPairedState(
+            context = context,
+            host = _savedHost.value.ifBlank { "127.0.0.1" },
+            pairingPort = pairingPort
+        )
         updateUiState {
             _status.value = PairingStatus.PairingInProgress(
                 port = pairingPort ?: 0,
@@ -793,6 +792,9 @@ object WirelessPairingManager {
             } else {
                 NativeAdbManager.connectAfterPairing(context, pairingPort = pairingPort)
             }
+        }
+        if (connected && NativeAdbManager.isAdbReady()) {
+            com.arwora.service.AdbConnectionService.startPersistentSession(context)
         }
         updateUiState {
             if (connected && NativeAdbManager.isAdbReady()) {
@@ -878,6 +880,7 @@ object WirelessPairingManager {
         stopMdnsDiscovery()
         try {
             if (tryPairViaIAdbManager(cleanCode)) {
+                NativeAdbManager.markPairedState(appContext, resolvedHost, resolvedPort)
                 updateUiState {
                     _status.value = PairingStatus.PairingInProgress(
                         port = resolvedPort,
@@ -889,6 +892,7 @@ object WirelessPairingManager {
             }
 
             if (tryShellPairing(resolvedHost, resolvedPort, cleanCode)) {
+                NativeAdbManager.markPairedState(appContext, resolvedHost, resolvedPort)
                 updateUiState {
                     _status.value = PairingStatus.PairingInProgress(
                         port = resolvedPort,
@@ -901,6 +905,7 @@ object WirelessPairingManager {
 
             val socketResult = trySocketPairing(resolvedHost, resolvedPort, cleanCode, appContext)
             if (socketResult.success) {
+                NativeAdbManager.markPairedState(appContext, resolvedHost, resolvedPort)
                 updateUiState {
                     _status.value = PairingStatus.PairingInProgress(
                         port = resolvedPort,
@@ -1131,6 +1136,79 @@ object WirelessPairingManager {
             val nsd = context.getSystemService(Context.NSD_SERVICE) as? NsdManager ?: return
             nsdManager = nsd
 
+            val pairingQueue = ArrayDeque<NsdServiceInfo>()
+            val connectQueue = ArrayDeque<NsdServiceInfo>()
+            val queueLock = Any()
+
+            fun resolveNextPairing() {
+                val nextInfo = synchronized(queueLock) {
+                    if (pairingQueue.isEmpty()) {
+                        isResolvingPairingMdns.set(false)
+                        null
+                    } else {
+                        pairingQueue.removeFirst()
+                    }
+                } ?: return
+                try {
+                    @Suppress("DEPRECATION")
+                    nsd.resolveService(nextInfo, object : NsdManager.ResolveListener {
+                        override fun onServiceResolved(resolvedInfo: NsdServiceInfo) {
+                            val port = resolvedInfo.port
+                            Log.i(TAG, "Resolved ADB pairing port: $port")
+                            if (port in 1024..65535) {
+                                _discoveredPort.value = port
+                                persistPort(context, KEY_SAVED_PAIRING_PORT, port)
+
+                                val currentStatus = _status.value
+                                if (currentStatus is PairingStatus.CodeCaptured && currentStatus.port == null) {
+                                    executePairing(context, _savedHost.value.ifBlank { "127.0.0.1" }, port, currentStatus.code)
+                                }
+                            }
+                            resolveNextPairing()
+                        }
+
+                        override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+                            Log.w(TAG, "mDNS pairing resolve failed: $errorCode")
+                            resolveNextPairing()
+                        }
+                    })
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error resolving pairing service", e)
+                    resolveNextPairing()
+                }
+            }
+
+            fun resolveNextConnect() {
+                val nextInfo = synchronized(queueLock) {
+                    if (connectQueue.isEmpty()) {
+                        isResolvingConnectMdns.set(false)
+                        null
+                    } else {
+                        connectQueue.removeFirst()
+                    }
+                } ?: return
+                try {
+                    @Suppress("DEPRECATION")
+                    nsd.resolveService(nextInfo, object : NsdManager.ResolveListener {
+                        override fun onServiceResolved(resolvedInfo: NsdServiceInfo) {
+                            val port = resolvedInfo.port
+                            if (port in 1024..65535) {
+                                Log.i(TAG, "Resolved ADB connect port: $port")
+                                _savedConnectPort.value = port
+                                persistPort(context, KEY_SAVED_CONNECT_PORT, port)
+                            }
+                            resolveNextConnect()
+                        }
+
+                        override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+                            resolveNextConnect()
+                        }
+                    })
+                } catch (_: Exception) {
+                    resolveNextConnect()
+                }
+            }
+
             val pairingListener = object : NsdManager.DiscoveryListener {
                 override fun onDiscoveryStarted(regType: String) {
                     isPairingDiscoveryActive.set(true)
@@ -1139,32 +1217,12 @@ object WirelessPairingManager {
 
                 override fun onServiceFound(serviceInfo: NsdServiceInfo) {
                     Log.d(TAG, "mDNS pairing service found: ${serviceInfo.serviceName}")
-                    if (!isResolvingPairingMdns.compareAndSet(false, true)) return
-                    try {
-                        nsd.resolveService(serviceInfo, object : NsdManager.ResolveListener {
-                            override fun onServiceResolved(resolvedInfo: NsdServiceInfo) {
-                                isResolvingPairingMdns.set(false)
-                                val port = resolvedInfo.port
-                                Log.i(TAG, "Resolved ADB pairing port: $port")
-                                if (port in 1024..65535) {
-                                    _discoveredPort.value = port
-                                    persistPort(context, KEY_SAVED_PAIRING_PORT, port)
-
-                                    val currentStatus = _status.value
-                                    if (currentStatus is PairingStatus.CodeCaptured && currentStatus.port == null) {
-                                        executePairing(context, _savedHost.value.ifBlank { "127.0.0.1" }, port, currentStatus.code)
-                                    }
-                                }
-                            }
-
-                            override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-                                isResolvingPairingMdns.set(false)
-                                Log.w(TAG, "mDNS pairing resolve failed: $errorCode")
-                            }
-                        })
-                    } catch (e: Exception) {
-                        isResolvingPairingMdns.set(false)
-                        Log.e(TAG, "Error resolving pairing service", e)
+                    val shouldStart = synchronized(queueLock) {
+                        pairingQueue.addLast(serviceInfo)
+                        isResolvingPairingMdns.compareAndSet(false, true)
+                    }
+                    if (shouldStart) {
+                        resolveNextPairing()
                     }
                 }
 
@@ -1186,25 +1244,12 @@ object WirelessPairingManager {
                 }
 
                 override fun onServiceFound(serviceInfo: NsdServiceInfo) {
-                    if (!isResolvingConnectMdns.compareAndSet(false, true)) return
-                    try {
-                        nsd.resolveService(serviceInfo, object : NsdManager.ResolveListener {
-                            override fun onServiceResolved(resolvedInfo: NsdServiceInfo) {
-                                isResolvingConnectMdns.set(false)
-                                val port = resolvedInfo.port
-                                if (port in 1024..65535) {
-                                    Log.i(TAG, "Resolved ADB connect port: $port")
-                                    _savedConnectPort.value = port
-                                    persistPort(context, KEY_SAVED_CONNECT_PORT, port)
-                                }
-                            }
-
-                            override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-                                isResolvingConnectMdns.set(false)
-                            }
-                        })
-                    } catch (_: Exception) {
-                        isResolvingConnectMdns.set(false)
+                    val shouldStart = synchronized(queueLock) {
+                        connectQueue.addLast(serviceInfo)
+                        isResolvingConnectMdns.compareAndSet(false, true)
+                    }
+                    if (shouldStart) {
+                        resolveNextConnect()
                     }
                 }
 

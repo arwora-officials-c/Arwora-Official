@@ -3,6 +3,7 @@ package com.arwora
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -33,6 +34,14 @@ class AnimationSettingsActivity : ComponentActivity() {
 
             val isSystemDark = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
             val resolvedDarkTheme = if (isWhite) false else (isDark ?: isSystemDark)
+
+            enableEdgeToEdge()
+            val themeConfig = com.arwora.ui.theme.ThemeManager.getThemeConfig(
+                darkModeState = isDark,
+                whiteThemeState = isWhite,
+                isSystemDark = isSystemDark
+            )
+            com.arwora.ui.theme.ThemeManager.applySystemBarsTheme(window, themeConfig)
 
             setContent {
                 NameGenProTheme(

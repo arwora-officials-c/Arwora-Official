@@ -2,12 +2,12 @@
 <resources>
 
     <style name="Theme.MyApplication" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="android:windowBackground">@color/dark_surface_bg</item>
-        <item name="android:colorBackground">@color/dark_surface_bg</item>
-        <item name="colorSurface">@color/dark_surface_card</item>
-        <item name="android:statusBarColor">@color/dark_surface_bg</item>
-        <item name="android:navigationBarColor">@color/dark_surface_bg</item>
-        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowBackground">@color/light_surface_bg</item>
+        <item name="android:colorBackground">@color/light_surface_bg</item>
+        <item name="colorSurface">@color/light_surface_card</item>
+        <item name="android:statusBarColor">@color/light_surface_bg</item>
+        <item name="android:navigationBarColor">@color/light_surface_bg</item>
+        <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
     </style>
 

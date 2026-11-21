@@ -33,6 +33,11 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         checkNotificationPermissionStatus()
+        com.arwora.utils.NativeAdbManager.refreshConnectionStatus(this)
+        val creds = com.arwora.utils.EncryptedAdbCredentialStore.loadState(this)
+        if (creds.isPaired && !creds.userStopped && !com.arwora.utils.NativeAdbManager.isAdbReady()) {
+            com.arwora.service.AdbConnectionService.startPersistentSession(this)
+        }
     }
 
     override fun onDestroy() {

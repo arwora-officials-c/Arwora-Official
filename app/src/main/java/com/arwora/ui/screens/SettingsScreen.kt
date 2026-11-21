@@ -1,5 +1,6 @@
 package com.arwora.ui.screens
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -7,6 +8,9 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.app.ActivityCompat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
@@ -54,6 +58,7 @@ import com.arwora.ui.MainViewModel
 import com.arwora.ui.components.AppLogo
 import com.arwora.ui.components.ArworaAnimatedSwitch
 import com.arwora.ui.components.ArworaDesignTokens
+import com.arwora.ui.components.ArworaPrimaryPillButton
 import com.arwora.ui.navigation.Screen
 import com.arwora.utils.AppPermissionsHelper
 import com.arwora.utils.ManagedAppPermission
@@ -108,6 +113,68 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
     var isPermissionsExpanded by remember { mutableStateOf(false) }
     var appPermissions by remember { mutableStateOf<List<ManagedAppPermission>>(emptyList()) }
     var permissionsLoaded by remember { mutableStateOf(false) }
+    var pendingPermissionCategory by remember { mutableStateOf<ManagedPermissionCategory?>(null) }
+    var pendingQuickFixNextStep by remember { mutableStateOf(false) }
+
+    val singleCategoryRuntimeLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        val category = pendingPermissionCategory
+        pendingPermissionCategory = null
+        coroutineScope.launch {
+            val loaded = withContext(Dispatchers.IO) {
+                AppPermissionsHelper.inspectPermissions(context)
+            }
+            appPermissions = loaded
+            permissionsLoaded = true
+            val anyGranted = results.values.any { it }
+            if (!anyGranted && category != null && results.isNotEmpty()) {
+                val activity = context as? Activity
+                val canShowRationale = activity != null && results.keys.any { perm ->
+                    ActivityCompat.shouldShowRequestPermissionRationale(activity, perm)
+                }
+                if (!canShowRationale) {
+                    AppPermissionsHelper.openPermissionSettings(context, category)
+                }
+            }
+        }
+    }
+
+    val quickFixRuntimeLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        val continueToSystemSettings = pendingQuickFixNextStep
+        pendingQuickFixNextStep = false
+        coroutineScope.launch {
+            val loaded = withContext(Dispatchers.IO) {
+                AppPermissionsHelper.inspectPermissions(context)
+            }
+            appPermissions = loaded
+            permissionsLoaded = true
+            if (continueToSystemSettings) {
+                val nextCategory = AppPermissionsHelper.findNextMissingSystemCategory(loaded)
+                if (nextCategory != null) {
+                    val runtimeForNext = AppPermissionsHelper.runtimePermissionsForCategory(nextCategory)
+                    if (runtimeForNext.isEmpty()) {
+                        val nextTitle = loaded.firstOrNull { it.category == nextCategory }?.title
+                            ?: "System permission"
+                        Toast.makeText(
+                            context,
+                            "Next: enable $nextTitle in Settings",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        AppPermissionsHelper.openPermissionSettings(context, nextCategory)
+                    }
+                } else {
+                    Toast.makeText(
+                        context,
+                        "All permissions granted",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        }
+    }
 
     LaunchedEffect(context) {
         val loaded = withContext(Dispatchers.IO) {
@@ -219,6 +286,7 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = { Text("Settings", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) },
@@ -234,7 +302,8 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = MaterialTheme.colorScheme.background,
+                    scrolledContainerColor = MaterialTheme.colorScheme.background
                 )
             )
         }
@@ -622,16 +691,26 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
                                 permission = permission,
                                 onOpenSettings = {
                                     com.arwora.utils.SoundEffectManager.playClick()
-                                    val opened = AppPermissionsHelper.openPermissionSettings(
-                                        context,
-                                        permission.category
-                                    )
-                                    if (!opened) {
-                                        Toast.makeText(
+                                    val runtimePerms = if (!permission.isGranted) {
+                                        AppPermissionsHelper.runtimePermissionsForCategory(permission.category)
+                                    } else {
+                                        emptyList()
+                                    }
+                                    if (runtimePerms.isNotEmpty()) {
+                                        pendingPermissionCategory = permission.category
+                                        singleCategoryRuntimeLauncher.launch(runtimePerms.toTypedArray())
+                                    } else {
+                                        val opened = AppPermissionsHelper.openPermissionSettings(
                                             context,
-                                            "Unable to open system settings",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
+                                            permission.category
+                                        )
+                                        if (!opened) {
+                                            Toast.makeText(
+                                                context,
+                                                "Unable to open system settings",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
                                     }
                                 }
                             )
@@ -641,6 +720,50 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
                                     modifier = Modifier.padding(horizontal = 16.dp)
                                 )
                             }
+                        }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+
+                        val missingCount = appPermissions.count { !it.isGranted }
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 14.dp)
+                        ) {
+                            ArworaPrimaryPillButton(
+                                text = if (missingCount > 0) "Grant All Missing" else "All Permissions Granted",
+                                enabled = permissionsLoaded && missingCount > 0,
+                                height = 48.dp,
+                                modifier = Modifier.testTag("settings_grant_all_missing_button"),
+                                onClick = {
+                                    com.arwora.utils.SoundEffectManager.playClick()
+                                    val missingRuntime = AppPermissionsHelper.collectMissingRuntimePermissions(
+                                        context = context,
+                                        permissions = appPermissions
+                                    )
+                                    if (missingRuntime.isNotEmpty()) {
+                                        pendingQuickFixNextStep = true
+                                        quickFixRuntimeLauncher.launch(missingRuntime.toTypedArray())
+                                    } else {
+                                        val nextCategory = AppPermissionsHelper.findNextMissingSystemCategory(
+                                            appPermissions
+                                        )
+                                        if (nextCategory != null) {
+                                            val opened = AppPermissionsHelper.openPermissionSettings(
+                                                context,
+                                                nextCategory
+                                            )
+                                            if (!opened) {
+                                                Toast.makeText(
+                                                    context,
+                                                    "Unable to open system settings",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                        }
+                                    }
+                                }
+                            )
                         }
                     }
                 }
@@ -1052,6 +1175,9 @@ private fun AppPermissionStatusRow(
         ManagedPermissionCategory.NOTIFICATIONS -> Icons.Default.Notifications
         ManagedPermissionCategory.NOTIFICATION_LISTENER -> Icons.Default.NotificationsActive
         ManagedPermissionCategory.OVERLAY -> Icons.Default.Layers
+        ManagedPermissionCategory.CAMERA -> Icons.Default.CameraAlt
+        ManagedPermissionCategory.WIRELESS_ADB -> Icons.Default.DeveloperMode
+        ManagedPermissionCategory.USAGE_STATS -> Icons.Default.QueryStats
     }
 
     Surface(

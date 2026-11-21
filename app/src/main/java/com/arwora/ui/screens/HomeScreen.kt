@@ -120,7 +120,7 @@ val allGlobalTools = listOf(
     GlobalToolItem("Sound Direction Compass", "Sensors", "Acoustic compass detecting incoming sound direction using mics", Icons.Default.Explore, Screen.SoundDirection.route, listOf("sound", "compass", "audio", "sensor", "direction")),
 
     // Storage & Media
-    GlobalToolItem("All-in-One Compressor Hub", "Media", "Compress video, audio, image, PDF, archive, GIF, code & batch files", Icons.Default.Compress, Screen.CompressorTool.createRoute("image"), listOf("compress", "compressor", "zip", "pdf", "video", "audio", "gif", "minify")),
+    GlobalToolItem("All-in-One Compressor Hub", "Media", "Compress video, audio, image, PDF, archive, GIF, code & batch files", Icons.Default.Compress, Screen.CompressorHub.route, listOf("compress", "compressor", "zip", "pdf", "video", "audio", "gif", "minify")),
     GlobalToolItem("Compression Settings", "Media", "Configure default output formats, quality sliders & video bitrate targets", Icons.Default.Tune, Screen.CompressionSettings.route, listOf("compression", "settings", "defaults", "quality", "bitrate", "jpeg", "webp")),
     GlobalToolItem("Storage Space Analyzer", "Storage", "Visual breakdown of internal disk usage and large files", Icons.Default.PieChart, Screen.StorageAnalyzer.route, listOf("storage", "disk", "space", "analyzer", "files")),
     GlobalToolItem("Social Media Downloader", "Social", "Save videos, audio and reels from supported social links", Icons.Default.Download, Screen.Social.route, listOf("social", "download", "video", "reels", "audio", "status")),
