@@ -34,6 +34,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         checkNotificationPermissionStatus()
         com.arwora.utils.NativeAdbManager.refreshConnectionStatus(this)
+        com.arwora.utils.ShizukuBridge.refreshState(this)
         com.arwora.utils.AdbShellExecutor.refreshEngineStatus(this)
         val creds = com.arwora.utils.EncryptedAdbCredentialStore.loadState(this)
         if (creds.isPaired && !creds.userStopped && !com.arwora.utils.NativeAdbManager.isAdbReady()) {
@@ -46,14 +47,11 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        val splashScreen = installSplashScreen()
-        splashScreen.setOnExitAnimationListener { splashScreenViewProvider ->
-            splashScreenViewProvider.remove()
-        }
         super.onCreate(savedInstanceState)
         com.arwora.feature.common.metrics.StartupMetrics.onActivityCreate()
 
         com.arwora.utils.NativeAdbManager.init(this)
+        com.arwora.utils.ShizukuBridge.init(this, autoRequestIfNeeded = true)
         com.arwora.utils.AdbShellExecutor.init(this)
         com.arwora.service.WifiAutoPairMonitor.syncWithPreference(this)
         
@@ -62,7 +60,9 @@ class MainActivity : ComponentActivity() {
 
         val app = application as NameGenApplication
         val viewModel = app.sharedViewModel
-        val skipSplash = (intent?.action == Intent.ACTION_SEND) ||
+        val showComposeSplash = intent?.getBooleanExtra("show_compose_splash", false) == true
+        val skipSplash = !showComposeSplash ||
+            (intent?.action == Intent.ACTION_SEND) ||
             (intent?.getBooleanExtra("skip_splash", false) == true)
 
         val nightMask = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
@@ -72,23 +72,7 @@ class MainActivity : ComponentActivity() {
             whiteThemeState = viewModel.whiteTheme.value,
             isSystemDark = isSystemDarkNow
         )
-        if (!skipSplash) {
-            val splashBgInt = if (isSystemDarkNow) {
-                android.graphics.Color.BLACK
-            } else {
-                android.graphics.Color.WHITE
-            }
-            window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(splashBgInt))
-            @Suppress("DEPRECATION")
-            window.statusBarColor = splashBgInt
-            @Suppress("DEPRECATION")
-            window.navigationBarColor = splashBgInt
-            val insetsController = WindowCompat.getInsetsController(window, window.decorView)
-            insetsController.isAppearanceLightStatusBars = !isSystemDarkNow
-            insetsController.isAppearanceLightNavigationBars = !isSystemDarkNow
-        } else {
-            com.arwora.ui.theme.ThemeManager.applySystemBarsTheme(window, initialThemeConfig)
-        }
+        com.arwora.ui.theme.ThemeManager.applySystemBarsTheme(window, initialThemeConfig)
 
         handleIncomingIntent(intent, viewModel)
 

@@ -1,21 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/splash_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/splash_bg">
+    android:background="?attr/colorSurface">
 
     <ImageView
         android:id="@+id/iv_arwora_wordmark"
-        android:layout_width="266dp"
-        android:layout_height="53dp"
-        android:layout_gravity="center"
+        android:layout_width="240dp"
+        android:layout_height="wrap_content"
+        android:adjustViewBounds="true"
         android:alpha="0"
         android:contentDescription="@string/app_name"
         android:scaleType="fitCenter"
-        android:scaleX="0.82"
-        android:scaleY="0.82"
-        android:translationY="24dp"
-        android:src="@drawable/ic_arwora_wordmark" />
+        android:scaleX="0.90"
+        android:scaleY="0.90"
+        android:src="@drawable/ic_arwora_wordmark"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
 
-</FrameLayout>
+</androidx.constraintlayout.widget.ConstraintLayout>

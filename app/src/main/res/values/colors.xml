@@ -12,6 +12,7 @@
     <color name="light_surface_bg">#FFF8F9FA</color>
     <color name="light_surface_card">#FFFFFFFF</color>
     <color name="splash_bg">#FFFFFFFF</color>
+    <color name="splash_background">#FFFFFFFF</color>
     <color name="purple_accent">#FF8B5CF6</color>
     <color name="card_background">#FFFFFFFF</color>
     <color name="card_text_primary">#FF0F172A</color>

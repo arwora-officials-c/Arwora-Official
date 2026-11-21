@@ -1,37 +1,101 @@
 package com.arwora.feature.system.appops.ui
 
-import android.content.Context
 import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.*
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.Android
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.HourglassTop
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Launch
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SearchOff
+import androidx.compose.material.icons.filled.SecurityUpdateWarning
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material.icons.filled.StopCircle
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -48,13 +112,21 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.arwora.feature.system.appops.data.AppOpsManager
+import com.arwora.feature.system.appops.model.AppOpDescriptor
+import com.arwora.feature.system.appops.model.AppOpsCategory
 import com.arwora.feature.system.appops.model.AppOpsFilter
 import com.arwora.feature.system.appops.model.AppOpsItem
 import com.arwora.feature.system.appops.model.AppOpsSort
 import com.arwora.feature.system.appops.model.StandbyBucketMode
+import com.arwora.ui.components.AdbPairingBottomSheet
+import com.arwora.ui.components.AdbPairingSheetTab
+import com.arwora.ui.components.ArworaDesignTokens
+import com.arwora.ui.components.ArworaPillBadge
+import com.arwora.ui.components.ArworaTonalIconBadge
 import com.arwora.ui.components.GoogleStyleLoadingView
 import com.arwora.utils.AdbShellExecutor
 import com.arwora.utils.NativeAdbManager
+import com.arwora.utils.PrivilegeEngine
 import com.arwora.utils.SoundEffectManager
 
 @Composable
@@ -63,18 +135,10 @@ fun AppOpsContainerCard(
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val isLight = MaterialTheme.colorScheme.background.red > 0.8f
-    val outlineAlpha = if (isLight) 0.25f else 0.4f
-    val cardBgColor = if (isLight) {
-        MaterialTheme.colorScheme.surface
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f)
-    }
-    val elevationDp = if (isLight) 1.dp else 0.dp
-    val cardShape = RoundedCornerShape(22.dp)
-    val cardBorder = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = outlineAlpha))
-    val cardColors = CardDefaults.cardColors(containerColor = cardBgColor)
-    val cardElevation = CardDefaults.cardElevation(defaultElevation = elevationDp)
+    val cardShape = ArworaDesignTokens.CardShape
+    val cardBorder = ArworaDesignTokens.cardBorder()
+    val cardColors = CardDefaults.cardColors(containerColor = ArworaDesignTokens.cardContainerColor())
+    val cardElevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
 
     if (onClick != null) {
         Card(
@@ -105,19 +169,22 @@ fun AppOpsScreen(
     vm: AppOpsViewModel = viewModel()
 ) {
     val context = LocalContext.current
-    val rawApps by vm.rawApps.collectAsStateWithLifecycle()
     val filteredApps by vm.filteredApps.collectAsStateWithLifecycle()
     val isLoading by vm.isLoading.collectAsStateWithLifecycle()
+    val isRefreshingSelectedOps by vm.isRefreshingSelectedOps.collectAsStateWithLifecycle()
     val isAdbConnected by vm.isAdbConnected.collectAsStateWithLifecycle()
     val nativeAdbConnected by NativeAdbManager.isConnected.collectAsStateWithLifecycle()
-    val activePrivilegeEngine by AdbShellExecutor.activeEngine.collectAsStateWithLifecycle()
+    val activePrivilegeEngine by vm.activeEngine.collectAsStateWithLifecycle()
+    val isShizukuRunning by AdbShellExecutor.isShizukuBinderAlive.collectAsStateWithLifecycle()
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
     val selectedFilter by vm.selectedFilter.collectAsStateWithLifecycle()
     val selectedSort by vm.selectedSort.collectAsStateWithLifecycle()
+    val selectedDetailCategory by vm.selectedDetailCategory.collectAsStateWithLifecycle()
     val counts by vm.counts.collectAsStateWithLifecycle()
     val selectedApp by vm.selectedApp.collectAsStateWithLifecycle()
 
     var showSortMenu by remember { mutableStateOf(false) }
+    var showPairingSheet by remember { mutableStateOf(false) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
     LaunchedEffect(nativeAdbConnected, activePrivilegeEngine) {
@@ -143,6 +210,7 @@ fun AppOpsScreen(
     }
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 title = {
@@ -153,11 +221,13 @@ fun AppOpsScreen(
                         Text(
                             text = if (selectedApp != null) "App Details" else "App Ops",
                             style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         if (selectedApp == null && !isLoading) {
                             Surface(
-                                shape = RoundedCornerShape(12.dp),
+                                shape = ArworaDesignTokens.PillShape,
                                 color = MaterialTheme.colorScheme.primaryContainer,
                                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                             ) {
@@ -190,6 +260,17 @@ fun AppOpsScreen(
                     }
                 },
                 actions = {
+                    if (isAdbConnected) {
+                        ArworaPillBadge(
+                            text = if (activePrivilegeEngine == PrivilegeEngine.SHIZUKU) "Shizuku" else "Wireless ADB",
+                            tint = Color(0xFF10B981),
+                            showDot = true,
+                            modifier = Modifier
+                                .padding(end = 6.dp)
+                                .testTag("app_ops_engine_badge")
+                        )
+                    }
+
                     if (selectedApp == null) {
                         Box {
                             IconButton(
@@ -266,90 +347,78 @@ fun AppOpsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .navigationBarsPadding()
         ) {
             if (selectedApp != null) {
+                val activeApp = selectedApp!!
                 AppOpsDetailView(
-                    app = selectedApp!!,
+                    app = activeApp,
                     isAdbConnected = isAdbConnected,
-                    onBack = {
-                        SoundEffectManager.playClick()
-                        vm.clearSelectedApp()
-                    },
+                    isShizukuRunning = isShizukuRunning,
+                    isRefreshingOps = isRefreshingSelectedOps,
+                    selectedCategory = selectedDetailCategory,
+                    onCategorySelect = { vm.setDetailCategory(it) },
+                    onRefreshOps = { vm.refreshOpsForSelectedApp(activeApp.packageName) },
                     onStandbyBucketChange = { newBucket ->
-                        vm.updateStandbyBucketForApp(selectedApp!!.packageName, newBucket)
-                        Toast.makeText(context, "Standby profile set to ${newBucket.title}", Toast.LENGTH_SHORT).show()
+                        vm.updateStandbyBucketForApp(activeApp.packageName, newBucket) { ok ->
+                            val msg = if (ok) {
+                                "Standby bucket set to ${newBucket.title}"
+                            } else {
+                                "ADB or Shizuku permission required for App Ops execution."
+                            }
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        }
                     },
                     onUpdateAppOp = { opName, mode ->
-                        vm.updateAppOpState(selectedApp!!.packageName, opName, mode) { success ->
+                        vm.updateAppOpState(activeApp.packageName, opName, mode) { success ->
                             if (success) {
                                 Toast.makeText(context, "App Op $opName set to $mode", Toast.LENGTH_SHORT).show()
                             } else {
-                                Toast.makeText(context, "Failed (Requires Wireless ADB or Root)", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(
+                                    context,
+                                    "Failed to set $opName (Requires Wireless ADB or Shizuku)",
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             }
                         }
                     },
                     onRevokeAll = {
-                        vm.revokeAllSensitiveOps(selectedApp!!.packageName) { success ->
+                        vm.revokeAllSensitiveOps(activeApp.packageName) { success ->
                             if (success) {
-                                Toast.makeText(context, "Revoked all sensitive ops successfully", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Revoked all sensitive ops", Toast.LENGTH_SHORT).show()
                             } else {
-                                Toast.makeText(context, "Failed to revoke ops (Requires Wireless ADB or Root)", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(
+                                    context,
+                                    "Requires Wireless ADB or Shizuku to revoke ops",
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             }
                         }
                     },
-                    onConnectAdb = {
+                    onOpenPairingWizard = {
                         SoundEffectManager.playClick()
-                        vm.connectAdb()
+                        showPairingSheet = true
+                    },
+                    onAuthorizeShizuku = {
+                        SoundEffectManager.playClick()
+                        vm.requestShizukuAuthorization(onUnavailable = { showPairingSheet = true })
                     }
                 )
             } else {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    // Wireless ADB Connection Banner if not connected
                     if (!isAdbConnected) {
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 4.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.4f))
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Row(
-                                    modifier = Modifier.weight(1f),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                                    Column {
-                                        Text(
-                                            text = "Wireless ADB / Root Inactive",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.error
-                                        )
-                                        Text(
-                                            text = "Direct App Ops modification requires Wireless ADB or Root permissions.",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                                TextButton(
-                                    onClick = {
-                                        SoundEffectManager.playClick()
-                                        vm.connectAdb()
-                                    },
-                                    modifier = Modifier.testTag("app_ops_connect_button")
-                                ) {
-                                    Text("Connect Now", fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
+                        AppOpsPrivilegeWarningCard(
+                            isShizukuRunning = isShizukuRunning,
+                            onOpenPairingWizard = {
+                                SoundEffectManager.playClick()
+                                showPairingSheet = true
+                            },
+                            onAuthorizeShizuku = {
+                                SoundEffectManager.playClick()
+                                vm.requestShizukuAuthorization(onUnavailable = { showPairingSheet = true })
+                            },
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                        )
                     }
 
                     // Search Bar
@@ -390,7 +459,7 @@ fun AppOpsScreen(
                         )
                     )
 
-                    // Horizontal Filter Tabs
+                    // Horizontal Category & Status Filter Chips
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -401,6 +470,10 @@ fun AppOpsScreen(
                         AppOpsFilter.entries.forEach { filter ->
                             val count = when (filter) {
                                 AppOpsFilter.ALL -> counts.all
+                                AppOpsFilter.LOCATION -> counts.location
+                                AppOpsFilter.CAMERA -> counts.camera
+                                AppOpsFilter.AUDIO -> counts.audio
+                                AppOpsFilter.SYSTEM_OPS -> counts.systemOps
                                 AppOpsFilter.USER -> counts.user
                                 AppOpsFilter.SYSTEM -> counts.system
                                 AppOpsFilter.DISABLED -> counts.disabled
@@ -423,10 +496,11 @@ fun AppOpsScreen(
                                     ) {
                                         Text(
                                             text = filter.label,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            maxLines = 1
                                         )
                                         Surface(
-                                            shape = RoundedCornerShape(8.dp),
+                                            shape = ArworaDesignTokens.PillShape,
                                             color = if (isSelected) {
                                                 MaterialTheme.colorScheme.primary
                                             } else {
@@ -447,7 +521,7 @@ fun AppOpsScreen(
                                         }
                                     }
                                 },
-                                shape = RoundedCornerShape(12.dp),
+                                shape = ArworaDesignTokens.PillShape,
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
                                     selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -477,7 +551,7 @@ fun AppOpsScreen(
                             0 -> {
                                 GoogleStyleLoadingView(
                                     title = "Scanning installed applications",
-                                    subtitle = "Inspecting package metadata, standby buckets, and permissions",
+                                    subtitle = "Querying App Ops permissions, standby buckets, and package metadata",
                                     icon = Icons.Default.AdminPanelSettings,
                                     showSkeletonRows = true,
                                     modifier = Modifier.fillMaxSize()
@@ -506,7 +580,7 @@ fun AppOpsScreen(
                                             fontWeight = FontWeight.Bold
                                         )
                                         Text(
-                                            text = "Try adjusting your search query or filter chip.",
+                                            text = "Try adjusting your search query or category filter.",
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -539,8 +613,112 @@ fun AppOpsScreen(
             }
         }
     }
+
+    AdbPairingBottomSheet(
+        visible = showPairingSheet,
+        initialTab = AdbPairingSheetTab.AUTOMATIC,
+        onDismissRequest = {
+            showPairingSheet = false
+            vm.checkAdbStatus()
+        },
+        onPairingComplete = {
+            showPairingSheet = false
+            vm.checkAdbStatus()
+            vm.loadApps()
+        }
+    )
 }
 
+@Composable
+fun AppOpsPrivilegeWarningCard(
+    isShizukuRunning: Boolean,
+    onOpenPairingWizard: () -> Unit,
+    onAuthorizeShizuku: () -> Unit,
+    modifier: Modifier = Modifier,
+    connectButtonTag: String = "app_ops_connect_button"
+) {
+    Surface(
+        onClick = onOpenPairingWizard,
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("app_ops_privilege_warning_card"),
+        shape = ArworaDesignTokens.CardShape,
+        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.28f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.45f))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                ArworaTonalIconBadge(
+                    icon = Icons.Default.Warning,
+                    tint = MaterialTheme.colorScheme.error,
+                    size = 40.dp,
+                    iconSize = 20.dp
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "ADB or Shizuku permission required for App Ops execution. Tap to connect.",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = onOpenPairingWizard,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .testTag(connectButtonTag),
+                    shape = ArworaDesignTokens.PillShape,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    )
+                ) {
+                    Text(
+                        text = "Connect Wireless ADB",
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                if (isShizukuRunning) {
+                    OutlinedButton(
+                        onClick = onAuthorizeShizuku,
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .testTag("app_ops_authorize_shizuku_button"),
+                        shape = ArworaDesignTokens.PillShape
+                    ) {
+                        Text(
+                            text = "Authorize Shizuku",
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AppOpsRowCard(
     app: AppOpsItem,
@@ -563,7 +741,7 @@ fun AppOpsRowCard(
             Box(
                 modifier = Modifier
                     .size(46.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(ArworaDesignTokens.IconBadgeShape)
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
                 contentAlignment = Alignment.Center
             ) {
@@ -571,7 +749,7 @@ fun AppOpsRowCard(
                     Image(
                         bitmap = appBitmap.asImageBitmap(),
                         contentDescription = app.appName,
-                        modifier = Modifier.size(42.dp)
+                        modifier = Modifier.size(40.dp)
                     )
                 } else {
                     Icon(
@@ -614,9 +792,9 @@ fun AppOpsRowCard(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                Row(
+                FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     if (app.isSystem) {
                         StatusTag(
@@ -632,6 +810,22 @@ fun AppOpsRowCard(
                         )
                     }
 
+                    val allowedCount = app.allowedOpsCount
+                    val restrictedCount = app.restrictedOpsCount
+                    if (allowedCount > 0) {
+                        StatusTag(
+                            label = "$allowedCount Allowed",
+                            bgColor = Color(0xFF10B981).copy(alpha = 0.16f),
+                            textColor = Color(0xFF10B981)
+                        )
+                    }
+                    if (restrictedCount > 0) {
+                        StatusTag(
+                            label = "$restrictedCount Restricted",
+                            bgColor = Color(0xFFEF4444).copy(alpha = 0.16f),
+                            textColor = Color(0xFFEF4444)
+                        )
+                    }
                     if (app.isDisabled) {
                         StatusTag(
                             label = "Disabled",
@@ -639,7 +833,6 @@ fun AppOpsRowCard(
                             textColor = Color(0xFFB91C1C)
                         )
                     }
-
                     if (app.isHidden) {
                         StatusTag(
                             label = "Hidden",
@@ -647,7 +840,6 @@ fun AppOpsRowCard(
                             textColor = Color(0xFF6D28D9)
                         )
                     }
-
                     if (app.hasAlertWindowPermission) {
                         StatusTag(
                             label = "Alert Window",
@@ -674,10 +866,12 @@ fun AppOpsRowCard(
 fun StatusTag(
     label: String,
     bgColor: Color,
-    textColor: Color
+    textColor: Color,
+    modifier: Modifier = Modifier
 ) {
     Surface(
-        shape = RoundedCornerShape(6.dp),
+        modifier = modifier,
+        shape = ArworaDesignTokens.PillShape,
         color = bgColor,
         contentColor = textColor
     ) {
@@ -685,24 +879,60 @@ fun StatusTag(
             text = label,
             fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+            maxLines = 1,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
         )
     }
 }
 
 @Composable
+fun OpModeBadge(
+    mode: String,
+    modifier: Modifier = Modifier
+) {
+    val normalized = mode.lowercase()
+    val (label, tint) = when (normalized) {
+        "allow" -> "Allowed" to Color(0xFF10B981)
+        "ignore" -> "Ignored" to Color(0xFFF59E0B)
+        "deny", "errored" -> "Restricted" to Color(0xFFEF4444)
+        else -> "Default" to MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    StatusTag(
+        label = label,
+        bgColor = tint.copy(alpha = 0.14f),
+        textColor = tint,
+        modifier = modifier
+    )
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
 fun AppOpsDetailView(
     app: AppOpsItem,
     isAdbConnected: Boolean,
-    onBack: () -> Unit,
+    isShizukuRunning: Boolean = false,
+    isRefreshingOps: Boolean = false,
+    selectedCategory: AppOpsCategory = AppOpsCategory.ALL,
+    onCategorySelect: (AppOpsCategory) -> Unit = {},
+    onRefreshOps: () -> Unit = {},
     onStandbyBucketChange: (StandbyBucketMode) -> Unit,
     onUpdateAppOp: (String, String) -> Unit,
     onRevokeAll: () -> Unit,
-    onConnectAdb: () -> Unit
+    onOpenPairingWizard: () -> Unit,
+    onAuthorizeShizuku: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     val scrollState = rememberScrollState()
+
+    val groupedCatalog = remember(selectedCategory) {
+        val items = if (selectedCategory == AppOpsCategory.ALL) {
+            AppOpsManager.managedOpsCatalog
+        } else {
+            AppOpsManager.managedOpsCatalog.filter { it.category == selectedCategory }
+        }
+        items.groupBy { it.category }
+    }
 
     Column(
         modifier = Modifier
@@ -712,38 +942,12 @@ fun AppOpsDetailView(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         if (!isAdbConnected) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.4f))
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Wireless ADB / Root Inactive",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                        Text(
-                            text = "App Op toggles require Wireless ADB or Root shell execution.",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    TextButton(
-                        onClick = onConnectAdb,
-                        modifier = Modifier.testTag("app_ops_detail_connect_button")
-                    ) {
-                        Text("Connect Now", fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
+            AppOpsPrivilegeWarningCard(
+                isShizukuRunning = isShizukuRunning,
+                onOpenPairingWizard = onOpenPairingWizard,
+                onAuthorizeShizuku = onAuthorizeShizuku,
+                connectButtonTag = "app_ops_detail_connect_button"
+            )
         }
 
         // App Header Card
@@ -795,9 +999,12 @@ fun AppOpsDetailView(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     if (app.isSystem) {
                         StatusTag("System", Color(0xFFFCE7F3), Color(0xFFBE185D))
                     } else {
@@ -809,12 +1016,26 @@ fun AppOpsDetailView(
                     if (app.isHidden) {
                         StatusTag("Hidden", Color(0xFFEDE9FE), Color(0xFF6D28D9))
                     }
-                    StatusTag("v${app.versionName}", MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant)
+                    StatusTag(
+                        "${app.allowedOpsCount} Allowed",
+                        Color(0xFF10B981).copy(alpha = 0.16f),
+                        Color(0xFF10B981)
+                    )
+                    StatusTag(
+                        "${app.restrictedOpsCount} Restricted",
+                        Color(0xFFEF4444).copy(alpha = 0.16f),
+                        Color(0xFFEF4444)
+                    )
+                    StatusTag(
+                        "v${app.versionName}",
+                        MaterialTheme.colorScheme.surfaceVariant,
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
 
-        // QUICK ACTION BUTTONS ROW
+        // Quick Action Row
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -831,11 +1052,11 @@ fun AppOpsDetailView(
                     .weight(1f)
                     .height(48.dp)
                     .testTag("app_ops_action_open"),
-                shape = RoundedCornerShape(14.dp)
+                shape = ArworaDesignTokens.PillShape
             ) {
                 Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Open", fontWeight = FontWeight.Bold)
+                Text("Open", fontWeight = FontWeight.Bold, maxLines = 1)
             }
 
             OutlinedButton(
@@ -851,14 +1072,14 @@ fun AppOpsDetailView(
                     .weight(1f)
                     .height(48.dp)
                     .testTag("app_ops_action_uninstall"),
-                shape = RoundedCornerShape(14.dp),
+                shape = ArworaDesignTokens.PillShape,
                 colors = ButtonDefaults.outlinedButtonColors(
                     contentColor = if (app.isSystem) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.error
                 )
             ) {
                 Icon(imageVector = Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Uninstall", fontWeight = FontWeight.Bold)
+                Text("Uninstall", fontWeight = FontWeight.Bold, maxLines = 1)
             }
 
             OutlinedButton(
@@ -870,15 +1091,15 @@ fun AppOpsDetailView(
                     .weight(1f)
                     .height(48.dp)
                     .testTag("app_ops_action_force_stop"),
-                shape = RoundedCornerShape(14.dp)
+                shape = ArworaDesignTokens.PillShape
             ) {
                 Icon(imageVector = Icons.Default.StopCircle, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Force Stop", fontWeight = FontWeight.Bold)
+                Text("Details", fontWeight = FontWeight.Bold, maxLines = 1)
             }
         }
 
-        // BATCH REVOKE SENSITIVE OPS BUTTON
+        // Batch Revoke CTA
         Button(
             onClick = {
                 SoundEffectManager.playClick()
@@ -886,8 +1107,9 @@ fun AppOpsDetailView(
             },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(48.dp),
-            shape = RoundedCornerShape(14.dp),
+                .height(48.dp)
+                .testTag("app_ops_revoke_all_button"),
+            shape = ArworaDesignTokens.PillShape,
             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
         ) {
             Icon(imageVector = Icons.Default.SecurityUpdateWarning, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -895,107 +1117,126 @@ fun AppOpsDetailView(
             Text("Revoke All Sensitive Ops", fontWeight = FontWeight.Bold)
         }
 
-        // ADVANCED APP OPS SYSTEM ACCESS CONTROLS CARD
+        // Grouped App Ops Permissions Card
         AppOpsContainerCard {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Tune,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Text(
-                        text = "Advanced App Ops System Toggles",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Tune,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "App Ops Permissions",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    if (isRefreshingOps) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        IconButton(
+                            onClick = {
+                                SoundEffectManager.playClick()
+                                onRefreshOps()
+                            },
+                            modifier = Modifier
+                                .size(48.dp)
+                                .testTag("app_ops_detail_refresh_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Refresh App Ops"
+                            )
+                        }
+                    }
                 }
 
-                Text(
-                    text = "Configure high-level system permissions via direct Wireless ADB / Root shell execution:",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                // Category Filter Bar inside Detail View
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    AppOpsCategory.entries.forEach { category ->
+                        val isSelected = selectedCategory == category
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = {
+                                SoundEffectManager.playClick()
+                                onCategorySelect(category)
+                            },
+                            label = {
+                                Text(
+                                    text = category.label,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                )
+                            },
+                            shape = ArworaDesignTokens.PillShape,
+                            modifier = Modifier.testTag("app_ops_detail_category_${category.name.lowercase()}")
+                        )
+                    }
+                }
 
-                val opsToManage = listOf(
-                    Triple("SYSTEM_ALERT_WINDOW", "Display Over Other Apps", "Allows drawing overlays on top of other windows"),
-                    Triple("WRITE_SETTINGS", "Modify System Settings", "Allows changing system configuration flags"),
-                    Triple("CAMERA", "Camera Access", "Hardware camera sensor access"),
-                    Triple("COARSE_LOCATION", "Location Access", "GPS and Network location services"),
-                    Triple("RUN_IN_BACKGROUND", "Run in Background", "Background execution privileges")
-                )
-
-                opsToManage.forEach { (opName, opTitle, opDesc) ->
-                    val currentState = app.appOpsStates[opName] ?: "default"
-                    Column(
+                groupedCatalog.forEach { (category, ops) ->
+                    val categoryIcon = when (category) {
+                        AppOpsCategory.LOCATION -> Icons.Default.LocationOn
+                        AppOpsCategory.CAMERA -> Icons.Default.CameraAlt
+                        AppOpsCategory.AUDIO -> Icons.Default.Mic
+                        else -> Icons.Default.Tune
+                    }
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f))
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                            .padding(top = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Column {
-                            Text(
-                                text = opTitle,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = opDesc,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 11.sp
-                            )
-                        }
+                        Icon(
+                            imageVector = categoryIcon,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = category.label,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
 
-                        // Mode Selector Buttons (Allow, Ignore, Deny, Default) strictly aligned horizontally
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            val modes = listOf("allow", "ignore", "deny", "default")
-                            modes.forEach { mode ->
-                                val isSelected = currentState.equals(mode, ignoreCase = true)
-                                Surface(
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                                    border = BorderStroke(1.dp, if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
-                                    onClick = {
-                                        SoundEffectManager.playClick()
-                                        onUpdateAppOp(opName, mode)
-                                    }
-                                ) {
-                                    Box(
-                                        modifier = Modifier.padding(vertical = 8.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = mode.replaceFirstChar { it.uppercase() },
-                                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                    ops.forEach { descriptor ->
+                        AppOpControlTile(
+                            descriptor = descriptor,
+                            currentMode = app.appOpsStates[descriptor.opName] ?: "default",
+                            onSelectMode = { mode -> onUpdateAppOp(descriptor.opName, mode) }
+                        )
                     }
                 }
             }
         }
 
-        // STANDBY BUCKET CONTROLS CARD
+        // Standby Bucket Card
         AppOpsContainerCard {
             Column(
                 modifier = Modifier
@@ -1021,24 +1262,23 @@ fun AppOpsDetailView(
                 }
 
                 Text(
-                    text = "Android dynamically throttles background execution based on standby states. Select a bucket to enforce restrictions:",
+                    text = "Applies standby limits via Wireless ADB / Shizuku (am set-standby-bucket):",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-
-                Spacer(modifier = Modifier.height(4.dp))
 
                 StandbyBucketMode.entries.forEach { bucket ->
                     val isSelected = app.standbyBucket == bucket
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(ArworaDesignTokens.InnerTileShape)
                             .clickable {
                                 SoundEffectManager.playClick()
                                 onStandbyBucketChange(bucket)
-                            },
-                        shape = RoundedCornerShape(12.dp),
+                            }
+                            .testTag("app_ops_standby_${bucket.name.lowercase()}"),
+                        shape = ArworaDesignTokens.InnerTileShape,
                         color = if (isSelected) {
                             MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
                         } else {
@@ -1046,7 +1286,7 @@ fun AppOpsDetailView(
                         },
                         border = if (isSelected) {
                             BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
-                        } else null
+                        } else ArworaDesignTokens.innerTileBorder()
                     ) {
                         Row(
                             modifier = Modifier
@@ -1082,7 +1322,7 @@ fun AppOpsDetailView(
             }
         }
 
-        // PACKAGE INFO CARD
+        // Package Information Card
         AppOpsContainerCard {
             Column(
                 modifier = Modifier
@@ -1134,11 +1374,11 @@ fun AppOpsDetailView(
                 .fillMaxWidth()
                 .height(48.dp)
                 .testTag("app_ops_open_system_settings"),
-            shape = RoundedCornerShape(14.dp)
+            shape = ArworaDesignTokens.PillShape
         ) {
             Icon(imageVector = Icons.Default.Launch, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Open System Application Details Settings", fontWeight = FontWeight.Bold)
+            Text("Open System Application Details", fontWeight = FontWeight.Bold)
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -1146,32 +1386,100 @@ fun AppOpsDetailView(
 }
 
 @Composable
-fun FeatureIndicatorChip(
-    title: String,
-    active: Boolean,
-    modifier: Modifier = Modifier
+private fun AppOpControlTile(
+    descriptor: AppOpDescriptor,
+    currentMode: String,
+    onSelectMode: (String) -> Unit
 ) {
     Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(10.dp),
-        color = if (active) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("app_op_tile_${descriptor.opName}"),
+        shape = ArworaDesignTokens.InnerTileShape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f),
+        border = ArworaDesignTokens.innerTileBorder()
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 10.sp
-            )
-            Text(
-                text = if (active) "Active" else "Restricted",
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
-                color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = descriptor.title,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "OP_${descriptor.opName} • ${descriptor.description}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                OpModeBadge(
+                    mode = currentMode,
+                    modifier = Modifier.testTag("app_op_badge_${descriptor.opName}")
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                val modes = listOf("allow", "ignore", "deny", "default")
+                modes.forEach { mode ->
+                    val isSelected = currentMode.equals(mode, ignoreCase = true)
+                    Surface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .testTag("app_op_${descriptor.opName}_$mode"),
+                        shape = ArworaDesignTokens.PillShape,
+                        color = if (isSelected) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                        },
+                        border = BorderStroke(
+                            1.dp,
+                            if (isSelected) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.outline.copy(alpha = 0.24f)
+                            }
+                        ),
+                        onClick = {
+                            SoundEffectManager.playClick()
+                            onSelectMode(mode)
+                        }
+                    ) {
+                        Box(
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 10.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = mode.replaceFirstChar { it.uppercase() },
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) {
+                                    MaterialTheme.colorScheme.onPrimary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                },
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -1209,12 +1517,12 @@ fun InfoItemRow(
             if (isCopyable && onCopy != null) {
                 IconButton(
                     onClick = onCopy,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(48.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.ContentCopy,
                         contentDescription = "Copy $label",
-                        modifier = Modifier.size(14.dp),
+                        modifier = Modifier.size(16.dp),
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }

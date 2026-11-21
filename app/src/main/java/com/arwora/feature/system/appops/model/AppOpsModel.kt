@@ -6,6 +6,10 @@ import androidx.compose.runtime.Immutable
 @Immutable
 enum class AppOpsFilter(val label: String) {
     ALL("All"),
+    LOCATION("Location"),
+    CAMERA("Camera"),
+    AUDIO("Audio"),
+    SYSTEM_OPS("System Ops"),
     USER("User"),
     SYSTEM("System"),
     DISABLED("Disabled"),
@@ -13,6 +17,24 @@ enum class AppOpsFilter(val label: String) {
     ALERT_WINDOW("Alert Window"),
     BACKGROUND_LOCATION("Bg Location")
 }
+
+@Immutable
+enum class AppOpsCategory(val label: String) {
+    ALL("All"),
+    LOCATION("Location"),
+    CAMERA("Camera"),
+    AUDIO("Audio"),
+    SYSTEM("System")
+}
+
+@Immutable
+data class AppOpDescriptor(
+    val opName: String,
+    val title: String,
+    val description: String,
+    val category: AppOpsCategory,
+    val relatedPermissions: List<String> = emptyList()
+)
 
 @Immutable
 enum class AppOpsSort(val label: String) {
@@ -24,12 +46,17 @@ enum class AppOpsSort(val label: String) {
 }
 
 @Immutable
-enum class StandbyBucketMode(val title: String, val description: String, val bucketValue: Int) {
-    UNRESTRICTED("Unrestricted", "No background battery or job execution limits", 10),
-    DEFAULT("Default", "Standard system adaptive battery management", 20),
-    RARE("Rare", "App rarely used; high background restrictions", 40),
-    RESTRICTED("Restricted", "Severely throttled background network and alarms", 45),
-    NEVER("Never", "Strictly dormant; no background operations", 50)
+enum class StandbyBucketMode(
+    val title: String,
+    val description: String,
+    val bucketValue: Int,
+    val shellArgument: String
+) {
+    UNRESTRICTED("Unrestricted", "No background battery or job execution limits", 10, "active"),
+    DEFAULT("Default", "Standard system adaptive battery management", 20, "working_set"),
+    RARE("Rare", "App rarely used; high background restrictions", 40, "rare"),
+    RESTRICTED("Restricted", "Severely throttled background network and alarms", 45, "restricted"),
+    NEVER("Never", "Strictly dormant; no background operations", 50, "never")
 }
 
 @Immutable
@@ -66,6 +93,23 @@ data class AppOpsItem(
     val hasBootPermission: Boolean = false,
     val hasAlertWindowPermission: Boolean = false,
     val hasBackgroundLocationPermission: Boolean = false,
+    val hasLocationPermission: Boolean = false,
+    val hasCameraPermission: Boolean = false,
+    val hasAudioPermission: Boolean = false,
+    val hasSystemOpsPermission: Boolean = false,
     val appOpsStates: Map<String, String> = emptyMap(),
     val icon: Drawable? = null
-)
+) {
+    val allowedOpsCount: Int
+        get() = appOpsStates.values.count { it.equals("allow", ignoreCase = true) }
+
+    val ignoredOpsCount: Int
+        get() = appOpsStates.values.count { it.equals("ignore", ignoreCase = true) }
+
+    val restrictedOpsCount: Int
+        get() = appOpsStates.values.count {
+            it.equals("ignore", ignoreCase = true) ||
+                it.equals("deny", ignoreCase = true) ||
+                it.equals("errored", ignoreCase = true)
+        }
+}

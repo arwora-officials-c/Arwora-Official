@@ -54,6 +54,7 @@ object WifiAutoPairMonitor {
 
     fun updateCurrentWifiState(context: Context) {
         WirelessPairingManager.updateWifiConnectivityState(isWifiCurrentlyConnected(context))
+        NativeAdbManager.refreshWifiTrustState(context)
     }
 
     @Synchronized
@@ -72,6 +73,7 @@ object WifiAutoPairMonitor {
             val callback = object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
                     Log.i(TAG, "TRANSPORT_WIFI available")
+                    NativeAdbManager.refreshWifiTrustState(appContext)
                     WirelessPairingManager.onWifiNetworkConnected(appContext)
                     val creds = EncryptedAdbCredentialStore.loadState(appContext)
                     if (creds.isPaired && !creds.userStopped && !NativeAdbManager.isAdbReady()) {
@@ -82,6 +84,7 @@ object WifiAutoPairMonitor {
                 override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
                     if (networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
                         WirelessPairingManager.updateWifiConnectivityState(true)
+                        NativeAdbManager.refreshWifiTrustState(appContext)
                     }
                 }
 
@@ -133,6 +136,7 @@ class WifiAutoPairReceiver : BroadcastReceiver() {
         WirelessPairingManager.init(appCtx)
         val wifiConnected = WifiAutoPairMonitor.isWifiCurrentlyConnected(appCtx)
         WirelessPairingManager.updateWifiConnectivityState(wifiConnected)
+        NativeAdbManager.refreshWifiTrustState(appCtx)
 
         if (wifiConnected) {
             if (WirelessPairingManager.autoPairOnWifiEnabled.value) {

@@ -1,28 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.MyApplication" parent="Theme.Material3.DayNight.NoActionBar">
+    <style name="Theme.ArworaHyperToolkit" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="android:windowBackground">@color/light_surface_bg</item>
         <item name="android:colorBackground">@color/light_surface_bg</item>
-        <item name="colorSurface">@color/light_surface_card</item>
+        <item name="colorSurface">@color/splash_background</item>
         <item name="android:statusBarColor">@color/light_surface_bg</item>
         <item name="android:navigationBarColor">@color/light_surface_bg</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
     </style>
 
-    <!-- Official Android 12+ SplashScreen theme with backward compatibility.
-         Uses a transparent icon so the app logo is animated once in Compose
-         over a seamless dark background without white-screen flashes. -->
+    <style name="Theme.MyApplication" parent="Theme.ArworaHyperToolkit" />
+
+    <!-- Official Android 12+ SplashScreen theme with backward compatibility. -->
     <style name="Theme.App.Starting" parent="Theme.SplashScreen">
-        <item name="android:windowBackground">@color/splash_bg</item>
-        <item name="windowSplashScreenBackground">@color/splash_bg</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_blank</item>
+        <item name="android:windowBackground">@color/splash_background</item>
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_arwora_wordmark</item>
         <item name="windowSplashScreenAnimationDuration">0</item>
-        <item name="android:statusBarColor">@color/splash_bg</item>
-        <item name="android:navigationBarColor">@color/splash_bg</item>
+        <item name="android:statusBarColor">@color/splash_background</item>
+        <item name="android:navigationBarColor">@color/splash_background</item>
         <item name="android:windowLightStatusBar">true</item>
-        <item name="postSplashScreenTheme">@style/Theme.MyApplication</item>
+        <item name="postSplashScreenTheme">@style/Theme.ArworaHyperToolkit</item>
     </style>
 
     <style name="Theme.Splash" parent="Theme.App.Starting" />

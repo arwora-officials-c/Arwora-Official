@@ -3,6 +3,7 @@
     <color name="dark_surface_bg">#FF0B0B0F</color>
     <color name="dark_surface_card">#FF15151C</color>
     <color name="splash_bg">#FF000000</color>
+    <color name="splash_background">#FF000000</color>
     <color name="purple_accent">#FF8B5CF6</color>
     <color name="card_background">#FF151419</color>
     <color name="card_text_primary">#FFFFFFFF</color>

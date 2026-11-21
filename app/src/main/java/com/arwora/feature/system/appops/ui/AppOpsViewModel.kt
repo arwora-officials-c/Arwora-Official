@@ -4,12 +4,14 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.arwora.feature.system.appops.data.AppOpsManager
+import com.arwora.feature.system.appops.model.AppOpsCategory
 import com.arwora.feature.system.appops.model.AppOpsFilter
 import com.arwora.feature.system.appops.model.AppOpsItem
 import com.arwora.feature.system.appops.model.AppOpsSort
 import com.arwora.feature.system.appops.model.StandbyBucketMode
 import com.arwora.utils.AdbShellExecutor
 import com.arwora.utils.NativeAdbManager
+import com.arwora.utils.PrivilegeEngine
 import com.arwora.utils.WirelessPairingManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,11 +20,16 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 data class AppOpsCounts(
     val all: Int = 0,
+    val location: Int = 0,
+    val camera: Int = 0,
+    val audio: Int = 0,
+    val systemOps: Int = 0,
     val user: Int = 0,
     val system: Int = 0,
     val disabled: Int = 0,
@@ -39,8 +46,13 @@ class AppOpsViewModel(application: Application) : AndroidViewModel(application) 
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _isRefreshingSelectedOps = MutableStateFlow(false)
+    val isRefreshingSelectedOps: StateFlow<Boolean> = _isRefreshingSelectedOps.asStateFlow()
+
     private val _isAdbConnected = MutableStateFlow(false)
     val isAdbConnected: StateFlow<Boolean> = _isAdbConnected.asStateFlow()
+
+    val activeEngine: StateFlow<PrivilegeEngine> = AdbShellExecutor.activeEngine
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
@@ -54,10 +66,17 @@ class AppOpsViewModel(application: Application) : AndroidViewModel(application) 
     private val _selectedApp = MutableStateFlow<AppOpsItem?>(null)
     val selectedApp: StateFlow<AppOpsItem?> = _selectedApp.asStateFlow()
 
+    private val _selectedDetailCategory = MutableStateFlow(AppOpsCategory.ALL)
+    val selectedDetailCategory: StateFlow<AppOpsCategory> = _selectedDetailCategory.asStateFlow()
+
     val counts: StateFlow<AppOpsCounts> = _rawApps.combine(_isLoading) { apps, loading ->
         if (loading) AppOpsCounts()
         else AppOpsCounts(
             all = apps.size,
+            location = apps.count { it.hasLocationPermission },
+            camera = apps.count { it.hasCameraPermission },
+            audio = apps.count { it.hasAudioPermission },
+            systemOps = apps.count { it.hasSystemOpsPermission || it.hasAlertWindowPermission },
             user = apps.count { !it.isSystem },
             system = apps.count { it.isSystem },
             disabled = apps.count { it.isDisabled },
@@ -77,6 +96,10 @@ class AppOpsViewModel(application: Application) : AndroidViewModel(application) 
         val filterFiltered = apps.filter { app ->
             val matchesFilter = when (filter) {
                 AppOpsFilter.ALL -> true
+                AppOpsFilter.LOCATION -> app.hasLocationPermission
+                AppOpsFilter.CAMERA -> app.hasCameraPermission
+                AppOpsFilter.AUDIO -> app.hasAudioPermission
+                AppOpsFilter.SYSTEM_OPS -> app.hasSystemOpsPermission || app.hasAlertWindowPermission
                 AppOpsFilter.USER -> !app.isSystem
                 AppOpsFilter.SYSTEM -> app.isSystem
                 AppOpsFilter.DISABLED -> app.isDisabled
@@ -86,7 +109,7 @@ class AppOpsViewModel(application: Application) : AndroidViewModel(application) 
             }
             val matchesQuery = if (trimmedQuery.isEmpty()) true else {
                 app.appName.lowercase().contains(trimmedQuery) ||
-                app.packageName.lowercase().contains(trimmedQuery)
+                    app.packageName.lowercase().contains(trimmedQuery)
             }
             matchesFilter && matchesQuery
         }
@@ -104,38 +127,51 @@ class AppOpsViewModel(application: Application) : AndroidViewModel(application) 
         checkAdbStatus()
         loadApps()
         viewModelScope.launch {
-            NativeAdbManager.isConnected.collectLatest { connected ->
-                val anyReady = connected || AdbShellExecutor.isPrivilegedShellReady(getApplication())
-                _isAdbConnected.value = anyReady
-                if (anyReady) {
-                    loadApps()
-                }
+            combine(
+                NativeAdbManager.isConnected,
+                AdbShellExecutor.isAnyEngineReady
+            ) { nativeConnected, executorReady ->
+                nativeConnected || executorReady || AdbShellExecutor.isPrivilegedShellReady(getApplication())
             }
-        }
-        viewModelScope.launch {
-            AdbShellExecutor.isAnyEngineReady.collectLatest { ready ->
-                val anyReady = ready || NativeAdbManager.isAdbReady()
-                _isAdbConnected.value = anyReady
-                if (anyReady) {
-                    loadApps()
+                .distinctUntilChanged()
+                .collectLatest { anyReady ->
+                    val previous = _isAdbConnected.value
+                    _isAdbConnected.value = anyReady
+                    if (anyReady && !previous) {
+                        loadApps()
+                        _selectedApp.value?.let { refreshOpsForSelectedApp(it.packageName) }
+                    }
                 }
-            }
         }
     }
 
     fun checkAdbStatus() {
         viewModelScope.launch(Dispatchers.IO) {
             AdbShellExecutor.refreshEngineStatus(getApplication())
-            _isAdbConnected.value = AppOpsManager.isAdbAvailable()
+            _isAdbConnected.value = AppOpsManager.isAdbAvailable(getApplication())
         }
     }
 
-    fun connectAdb() {
+    fun connectAdb(onResult: (Boolean, String) -> Unit = { _, _ -> }) {
         viewModelScope.launch {
-            val (ok, _) = WirelessPairingManager.connectUnifiedWirelessAdb(getApplication())
+            val (ok, msg) = WirelessPairingManager.connectUnifiedWirelessAdb(getApplication())
             checkAdbStatus()
             if (ok) {
                 loadApps()
+                _selectedApp.value?.let { refreshOpsForSelectedApp(it.packageName) }
+            }
+            onResult(ok, msg)
+        }
+    }
+
+    fun requestShizukuAuthorization(onUnavailable: () -> Unit = {}) {
+        viewModelScope.launch {
+            if (AdbShellExecutor.isShizukuRunning()) {
+                val triggered = AdbShellExecutor.requestShizukuPermission()
+                checkAdbStatus()
+                if (!triggered) onUnavailable()
+            } else {
+                onUnavailable()
             }
         }
     }
@@ -143,14 +179,19 @@ class AppOpsViewModel(application: Application) : AndroidViewModel(application) 
     fun loadApps() {
         viewModelScope.launch(Dispatchers.IO) {
             _isLoading.value = true
-            checkAdbStatus()
+            AdbShellExecutor.refreshEngineStatus(getApplication())
+            _isAdbConnected.value = AppOpsManager.isAdbAvailable(getApplication())
             val apps = AppOpsManager.getInstalledApps(getApplication())
             _rawApps.value = apps
             _isLoading.value = false
 
             val currentSelected = _selectedApp.value
             if (currentSelected != null) {
-                _selectedApp.value = apps.find { it.packageName == currentSelected.packageName }
+                val updated = apps.find { it.packageName == currentSelected.packageName }
+                _selectedApp.value = updated
+                if (updated != null && _isAdbConnected.value) {
+                    refreshOpsForSelectedApp(updated.packageName)
+                }
             }
         }
     }
@@ -167,44 +208,87 @@ class AppOpsViewModel(application: Application) : AndroidViewModel(application) 
         _selectedSort.value = sort
     }
 
+    fun setDetailCategory(category: AppOpsCategory) {
+        _selectedDetailCategory.value = category
+    }
+
     fun selectApp(app: AppOpsItem) {
+        _selectedDetailCategory.value = AppOpsCategory.ALL
         _selectedApp.value = app
+        refreshOpsForSelectedApp(app.packageName)
     }
 
     fun clearSelectedApp() {
         _selectedApp.value = null
     }
 
-    fun updateStandbyBucketForApp(packageName: String, bucket: StandbyBucketMode) {
-        _rawApps.value = _rawApps.value.map {
-            if (it.packageName == packageName) {
-                it.copy(standbyBucket = bucket)
-            } else it
-        }
-        if (_selectedApp.value?.packageName == packageName) {
-            _selectedApp.value = _selectedApp.value?.copy(standbyBucket = bucket)
+    fun refreshOpsForSelectedApp(packageName: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _isRefreshingSelectedOps.value = true
+            try {
+                val liveOps = AppOpsManager.queryOpsForPackage(packageName, getApplication())
+                mergePackageOpsIntoState(packageName, liveOps)
+            } finally {
+                _isRefreshingSelectedOps.value = false
+            }
         }
     }
 
-    fun updateAppOpState(packageName: String, opName: String, mode: String, onResult: (Boolean) -> Unit) {
+    private fun mergePackageOpsIntoState(packageName: String, updatedOps: Map<String, String>) {
+        if (updatedOps.isEmpty()) return
+        _rawApps.value = _rawApps.value.map { item ->
+            if (item.packageName == packageName) {
+                val merged = item.appOpsStates.toMutableMap().apply { putAll(updatedOps) }
+                item.copy(appOpsStates = merged)
+            } else {
+                item
+            }
+        }
+        val current = _selectedApp.value
+        if (current?.packageName == packageName) {
+            val merged = current.appOpsStates.toMutableMap().apply { putAll(updatedOps) }
+            _selectedApp.value = current.copy(appOpsStates = merged)
+        }
+    }
+
+    fun updateStandbyBucketForApp(
+        packageName: String,
+        bucket: StandbyBucketMode,
+        onResult: (Boolean) -> Unit = {}
+    ) {
         viewModelScope.launch(Dispatchers.IO) {
-            val success = AppOpsManager.setAppOp(packageName, opName, mode)
+            val success = AppOpsManager.setStandbyBucket(packageName, bucket, getApplication())
             if (success) {
-                // Refresh states
-                val verifiedMode = AppOpsManager.getAppOp(packageName, opName)
-                _rawApps.value = _rawApps.value.map { app ->
-                    if (app.packageName == packageName) {
-                        val newStates = app.appOpsStates.toMutableMap()
-                        newStates[opName] = verifiedMode
-                        app.copy(appOpsStates = newStates)
-                    } else app
+                _rawApps.value = _rawApps.value.map {
+                    if (it.packageName == packageName) it.copy(standbyBucket = bucket) else it
                 }
                 if (_selectedApp.value?.packageName == packageName) {
-                    val app = _selectedApp.value!!
-                    val newStates = app.appOpsStates.toMutableMap()
-                    newStates[opName] = verifiedMode
-                    _selectedApp.value = app.copy(appOpsStates = newStates)
+                    _selectedApp.value = _selectedApp.value?.copy(standbyBucket = bucket)
                 }
+            }
+            viewModelScope.launch(Dispatchers.Main) {
+                onResult(success)
+            }
+        }
+    }
+
+    fun updateAppOpState(
+        packageName: String,
+        opName: String,
+        mode: String,
+        onResult: (Boolean) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val context = getApplication<Application>()
+            val success = AppOpsManager.setAppOp(packageName, opName, mode, context)
+            if (success) {
+                val refreshedOps = AppOpsManager.queryOpsForPackage(packageName, context)
+                val normalizedOp = AppOpsManager.normalizeOpName(opName)
+                val verifiedMode = refreshedOps[normalizedOp] ?: AppOpsManager.getAppOp(packageName, opName, context)
+                val merged = refreshedOps.toMutableMap().apply {
+                    this[normalizedOp] = verifiedMode
+                }
+                mergePackageOpsIntoState(packageName, merged)
             }
             viewModelScope.launch(Dispatchers.Main) {
                 onResult(success)
@@ -214,10 +298,10 @@ class AppOpsViewModel(application: Application) : AndroidViewModel(application) 
 
     fun revokeAllSensitiveOps(packageName: String, onResult: (Boolean) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
-            val success = AppOpsManager.revokeAllSensitiveOps(packageName)
-            if (success) {
-                loadApps()
-            }
+            val context = getApplication<Application>()
+            val success = AppOpsManager.revokeAllSensitiveOps(packageName, context)
+            val refreshedOps = AppOpsManager.queryOpsForPackage(packageName, context)
+            mergePackageOpsIntoState(packageName, refreshedOps)
             viewModelScope.launch(Dispatchers.Main) {
                 onResult(success)
             }

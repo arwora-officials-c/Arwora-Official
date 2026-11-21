@@ -11,14 +11,16 @@ import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
+import com.arwora.feature.system.appops.model.AppOpDescriptor
+import com.arwora.feature.system.appops.model.AppOpsCategory
 import com.arwora.feature.system.appops.model.AppOpsItem
 import com.arwora.feature.system.appops.model.PermissionItem
 import com.arwora.feature.system.appops.model.StandbyBucketMode
 import com.arwora.utils.AdbShellExecutor
+import com.arwora.utils.DualEngineShellResult
+import com.arwora.utils.PrivilegeEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.BufferedReader
-import java.io.InputStreamReader
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -28,62 +30,339 @@ object AppOpsManager {
     private const val TAG = "AppOpsManager"
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
 
-    fun isAdbAvailable(): Boolean {
-        return AdbShellExecutor.isPrivilegedShellReady()
+    private val VALID_MODES = setOf("allow", "ignore", "deny", "default")
+
+    val managedOpsCatalog: List<AppOpDescriptor> = listOf(
+        // Location
+        AppOpDescriptor(
+            opName = "COARSE_LOCATION",
+            title = "Approximate Location",
+            description = "Network and Wi-Fi based coarse location access",
+            category = AppOpsCategory.LOCATION,
+            relatedPermissions = listOf("ACCESS_COARSE_LOCATION")
+        ),
+        AppOpDescriptor(
+            opName = "FINE_LOCATION",
+            title = "Precise Location",
+            description = "GPS and high-accuracy hardware location tracking",
+            category = AppOpsCategory.LOCATION,
+            relatedPermissions = listOf("ACCESS_FINE_LOCATION")
+        ),
+        AppOpDescriptor(
+            opName = "MONITOR_LOCATION",
+            title = "Background / Passive Location",
+            description = "Continuous passive and background location monitoring",
+            category = AppOpsCategory.LOCATION,
+            relatedPermissions = listOf("ACCESS_BACKGROUND_LOCATION")
+        ),
+        // Camera
+        AppOpDescriptor(
+            opName = "CAMERA",
+            title = "Camera Access",
+            description = "Hardware camera sensor photo and video capture",
+            category = AppOpsCategory.CAMERA,
+            relatedPermissions = listOf("CAMERA")
+        ),
+        // Audio
+        AppOpDescriptor(
+            opName = "RECORD_AUDIO",
+            title = "Microphone / Record Audio",
+            description = "Audio recording and live microphone stream access",
+            category = AppOpsCategory.AUDIO,
+            relatedPermissions = listOf("RECORD_AUDIO")
+        ),
+        AppOpDescriptor(
+            opName = "MODIFY_AUDIO_SETTINGS",
+            title = "Modify Audio Settings",
+            description = "Adjust global audio routing, speakerphone, and streams",
+            category = AppOpsCategory.AUDIO,
+            relatedPermissions = listOf("MODIFY_AUDIO_SETTINGS")
+        ),
+        AppOpDescriptor(
+            opName = "TAKE_AUDIO_FOCUS",
+            title = "Audio Focus Control",
+            description = "Request media playback focus over other apps",
+            category = AppOpsCategory.AUDIO
+        ),
+        // System
+        AppOpDescriptor(
+            opName = "SYSTEM_ALERT_WINDOW",
+            title = "Display Over Other Apps",
+            description = "Allows drawing floating overlays above other windows",
+            category = AppOpsCategory.SYSTEM,
+            relatedPermissions = listOf("SYSTEM_ALERT_WINDOW")
+        ),
+        AppOpDescriptor(
+            opName = "WRITE_SETTINGS",
+            title = "Modify System Settings",
+            description = "Allows modifying system settings and configuration flags",
+            category = AppOpsCategory.SYSTEM,
+            relatedPermissions = listOf("WRITE_SETTINGS")
+        ),
+        AppOpDescriptor(
+            opName = "READ_PHONE_STATE",
+            title = "Read Phone State",
+            description = "Access telephony status, carrier state, and device call state",
+            category = AppOpsCategory.SYSTEM,
+            relatedPermissions = listOf("READ_PHONE_STATE")
+        ),
+        AppOpDescriptor(
+            opName = "RUN_IN_BACKGROUND",
+            title = "Run in Background",
+            description = "Execute background services and scheduled work",
+            category = AppOpsCategory.SYSTEM
+        ),
+        AppOpDescriptor(
+            opName = "RUN_ANY_IN_BACKGROUND",
+            title = "Run Any in Background",
+            description = "Unrestricted background execution outside foreground",
+            category = AppOpsCategory.SYSTEM
+        )
+    )
+
+    private val packageHeaderRegex = Regex("""^\s*Package\s+([A-Za-z0-9_.\-]+)(?:\s|\(|:|$)""")
+    private val opLineRegex = Regex("""^\s*(?:Uid mode:\s*)?([A-Z0-9_]+)\s*:\s*([a-zA-Z]+)\b""")
+
+    fun isAdbAvailable(context: Context? = null): Boolean {
+        return AdbShellExecutor.isPrivilegedShellReady(context)
+    }
+
+    fun activePrivilegeEngine(context: Context? = null): PrivilegeEngine {
+        return AdbShellExecutor.resolveActiveEngine(context)
+    }
+
+    suspend fun executePrivilegedShell(
+        command: String,
+        context: Context? = null,
+        timeoutMs: Long = 12_000L
+    ): DualEngineShellResult {
+        return AdbShellExecutor.executeWithEngine(
+            command = command,
+            timeoutMs = timeoutMs,
+            context = context
+        )
     }
 
     fun runShellCommand(command: String): String {
-        if (isAdbAvailable()) {
-            val adbRes = AdbShellExecutor.executeBlocking(command)
-            if (adbRes.success) {
-                return adbRes.output.trim()
-            }
+        if (!isAdbAvailable()) {
+            return ""
         }
-        val result = StringBuilder()
-        var process: Process? = null
-        try {
-            try {
-                process = Runtime.getRuntime().exec(arrayOf("su", "-c", command))
-            } catch (_: Exception) {
-                process = Runtime.getRuntime().exec(command)
-            }
-
-            process?.let { p ->
-                val reader = BufferedReader(InputStreamReader(p.inputStream))
-                var line: String?
-                while (reader.readLine().also { line = it } != null) {
-                    result.append(line).append("\n")
-                }
-                p.waitFor()
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Shell execution failed ($command): ${e.message}")
-        } finally {
-            process?.destroy()
-        }
-        return result.toString().trim()
+        val res = AdbShellExecutor.executeBlocking(command)
+        return if (res.success) res.output.trim() else ""
     }
 
-    fun setAppOp(packageName: String, opName: String, mode: String): Boolean {
-        val cmd = "appops set $packageName $opName $mode"
-        val output = runShellCommand(cmd)
-        val verifiedMode = getAppOp(packageName, opName)
-        return verifiedMode.equals(mode, ignoreCase = true) || output.isEmpty()
+    internal fun normalizeOpName(rawName: String): String {
+        val cleaned = rawName.trim().uppercase(Locale.ROOT)
+        return if (cleaned.startsWith("OP_")) cleaned.removePrefix("OP_") else cleaned
     }
 
-    fun getAppOp(packageName: String, opName: String): String {
-        val output = runShellCommand("appops get $packageName $opName")
-        val lower = output.lowercase(Locale.ROOT)
+    internal fun normalizeOpMode(rawMode: String): String? {
+        val lower = rawMode.trim().lowercase(Locale.ROOT)
         return when {
-            lower.contains("allow") -> "allow"
-            lower.contains("ignore") -> "ignore"
-            lower.contains("deny") -> "deny"
-            lower.contains("default") -> "default"
-            else -> "default"
+            lower == "allow" || lower == "allowed" || lower == "foreground" -> "allow"
+            lower == "ignore" || lower == "ignored" -> "ignore"
+            lower == "deny" || lower == "denied" || lower == "errored" -> "deny"
+            lower == "default" -> "default"
+            else -> null
         }
     }
 
-    fun revokeAllSensitiveOps(packageName: String): Boolean {
+    internal fun parseSinglePackageAppOps(output: String): Map<String, String> {
+        if (output.isBlank()) return emptyMap()
+        val parsed = linkedMapOf<String, String>()
+        output.lineSequence().forEach { line ->
+            val trimmed = line.trim()
+            if (trimmed.isEmpty() || trimmed.equals("No operations.", ignoreCase = true)) {
+                return@forEach
+            }
+            val match = opLineRegex.find(trimmed) ?: return@forEach
+            val op = normalizeOpName(match.groupValues[1])
+            val mode = normalizeOpMode(match.groupValues[2]) ?: return@forEach
+            if (op.isNotBlank() && op != "UID" && op != "PACKAGE") {
+                parsed[op] = mode
+            }
+        }
+        return parsed
+    }
+
+    internal fun parseBatchAppOpsDump(dumpOutput: String): Map<String, Map<String, String>> {
+        if (dumpOutput.isBlank()) return emptyMap()
+        val result = linkedMapOf<String, MutableMap<String, String>>()
+        var currentPackage: String? = null
+
+        dumpOutput.lineSequence().forEach { line ->
+            val trimmed = line.trim()
+            if (trimmed.isEmpty()) return@forEach
+
+            val pkgMatch = packageHeaderRegex.find(line)
+            if (pkgMatch != null) {
+                currentPackage = pkgMatch.groupValues[1].trim()
+                if (!result.containsKey(currentPackage!!)) {
+                    result[currentPackage!!] = linkedMapOf()
+                }
+                return@forEach
+            }
+
+            if (trimmed.startsWith("Uid ", ignoreCase = true) && !trimmed.startsWith("Uid mode:", ignoreCase = true)) {
+                currentPackage = null
+                return@forEach
+            }
+
+            val pkg = currentPackage ?: return@forEach
+            val opMatch = opLineRegex.find(trimmed) ?: return@forEach
+            val op = normalizeOpName(opMatch.groupValues[1])
+            val mode = normalizeOpMode(opMatch.groupValues[2]) ?: return@forEach
+            if (op.isNotBlank()) {
+                result.getOrPut(pkg) { linkedMapOf() }[op] = mode
+            }
+        }
+        return result
+    }
+
+    private fun isShellErrorOutput(output: String): Boolean {
+        val lower = output.lowercase(Locale.ROOT)
+        return lower.contains("securityexception") ||
+            lower.contains("unknown operation") ||
+            lower.contains("unknown package") ||
+            lower.contains("no active privilege engine") ||
+            lower.startsWith("error:") ||
+            lower.contains("\nerror:")
+    }
+
+    suspend fun setAppOp(
+        packageName: String,
+        opName: String,
+        mode: String,
+        context: Context? = null
+    ): Boolean = withContext(Dispatchers.IO) {
+        val safePackage = packageName.trim()
+        val safeOp = normalizeOpName(opName)
+        val safeMode = normalizeOpMode(mode)
+        if (safePackage.isEmpty() || safeOp.isEmpty() || safeMode == null || safeMode !in VALID_MODES) {
+            return@withContext false
+        }
+
+        if (!AdbShellExecutor.isPrivilegedShellReady(context)) {
+            Log.w(TAG, "Refusing appops set for $safePackage/$safeOp: no active privilege engine")
+            return@withContext false
+        }
+
+        val cmd = "appops set $safePackage $safeOp $safeMode"
+        val setResult = executePrivilegedShell(cmd, context = context)
+        if (!setResult.success || setResult.engineUsed == PrivilegeEngine.NONE || isShellErrorOutput(setResult.output)) {
+            Log.w(TAG, "appops set failed ($cmd) via ${setResult.engineUsed}: ${setResult.output}")
+            return@withContext false
+        }
+
+        val verifyResult = executePrivilegedShell("appops get $safePackage $safeOp", context = context)
+        if (!verifyResult.success || verifyResult.engineUsed == PrivilegeEngine.NONE) {
+            return@withContext false
+        }
+
+        val verifiedMap = parseSinglePackageAppOps(verifyResult.output)
+        val verifiedMode = verifiedMap[safeOp]
+        if (verifiedMode != null) {
+            return@withContext verifiedMode.equals(safeMode, ignoreCase = true)
+        }
+
+        val lowerVerify = verifyResult.output.lowercase(Locale.ROOT)
+        when {
+            lowerVerify.contains("no operations") -> safeMode == "default"
+            else -> !isShellErrorOutput(verifyResult.output)
+        }
+    }
+
+    suspend fun getAppOp(
+        packageName: String,
+        opName: String,
+        context: Context? = null
+    ): String = withContext(Dispatchers.IO) {
+        val safePackage = packageName.trim()
+        val safeOp = normalizeOpName(opName)
+        if (safePackage.isEmpty() || safeOp.isEmpty()) return@withContext "default"
+        if (!AdbShellExecutor.isPrivilegedShellReady(context)) return@withContext "default"
+
+        val result = executePrivilegedShell("appops get $safePackage $safeOp", context = context)
+        if (!result.success || result.engineUsed == PrivilegeEngine.NONE) {
+            return@withContext "default"
+        }
+
+        val parsed = parseSinglePackageAppOps(result.output)
+        parsed[safeOp] ?: run {
+            val lower = result.output.lowercase(Locale.ROOT)
+            when {
+                lower.contains("allow") -> "allow"
+                lower.contains("ignore") -> "ignore"
+                lower.contains("deny") || lower.contains("errored") -> "deny"
+                else -> "default"
+            }
+        }
+    }
+
+    suspend fun queryOpsForPackage(
+        packageName: String,
+        context: Context? = null
+    ): Map<String, String> = withContext(Dispatchers.IO) {
+        val defaults = managedOpsCatalog.associate { it.opName to "default" }.toMutableMap()
+        val safePackage = packageName.trim()
+        if (safePackage.isEmpty() || !AdbShellExecutor.isPrivilegedShellReady(context)) {
+            return@withContext defaults
+        }
+
+        val result = executePrivilegedShell("appops get $safePackage", context = context, timeoutMs = 12_000L)
+        if (result.success && result.engineUsed != PrivilegeEngine.NONE) {
+            val parsed = parseSinglePackageAppOps(result.output)
+            parsed.forEach { (op, mode) ->
+                defaults[op] = mode
+            }
+        }
+        defaults
+    }
+
+    suspend fun queryBatchAppOps(context: Context? = null): Map<String, Map<String, String>> = withContext(Dispatchers.IO) {
+        if (!AdbShellExecutor.isPrivilegedShellReady(context)) {
+            return@withContext emptyMap()
+        }
+        val dumpResult = executePrivilegedShell(
+            command = "dumpsys appops",
+            context = context,
+            timeoutMs = 15_000L
+        )
+        if (dumpResult.success && dumpResult.output.isNotBlank()) {
+            val parsed = parseBatchAppOpsDump(dumpResult.output)
+            if (parsed.isNotEmpty()) {
+                return@withContext parsed
+            }
+        }
+        emptyMap()
+    }
+
+    suspend fun setStandbyBucket(
+        packageName: String,
+        bucket: StandbyBucketMode,
+        context: Context? = null
+    ): Boolean = withContext(Dispatchers.IO) {
+        val safePackage = packageName.trim()
+        if (safePackage.isEmpty() || !AdbShellExecutor.isPrivilegedShellReady(context)) {
+            return@withContext false
+        }
+        val primaryCmd = "am set-standby-bucket $safePackage ${bucket.shellArgument}"
+        val res = executePrivilegedShell(primaryCmd, context = context)
+        if (res.success && !isShellErrorOutput(res.output)) {
+            return@withContext true
+        }
+        val fallbackCmd = "am set-standby-bucket $safePackage ${bucket.bucketValue}"
+        val fallbackRes = executePrivilegedShell(fallbackCmd, context = context)
+        fallbackRes.success && !isShellErrorOutput(fallbackRes.output)
+    }
+
+    suspend fun revokeAllSensitiveOps(
+        packageName: String,
+        context: Context? = null
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (!AdbShellExecutor.isPrivilegedShellReady(context)) {
+            return@withContext false
+        }
         val sensitiveOps = listOf(
             "CAMERA",
             "RECORD_AUDIO",
@@ -91,14 +370,15 @@ object AppOpsManager {
             "FINE_LOCATION",
             "SYSTEM_ALERT_WINDOW",
             "WRITE_SETTINGS",
+            "READ_PHONE_STATE",
             "RUN_IN_BACKGROUND"
         )
         var allSuccess = true
         for (op in sensitiveOps) {
-            val success = setAppOp(packageName, op, "deny")
+            val success = setAppOp(packageName, op, "deny", context)
             if (!success) allSuccess = false
         }
-        return allSuccess
+        allSuccess
     }
 
     suspend fun getInstalledApps(context: Context): List<AppOpsItem> = withContext(Dispatchers.IO) {
@@ -108,17 +388,19 @@ object AppOpsManager {
             context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
         } else null
 
+        val batchOpsByPackage = queryBatchAppOps(context)
+
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             PackageManager.PackageInfoFlags.of(
-                (PackageManager.GET_PERMISSIONS or 
-                 PackageManager.MATCH_DISABLED_COMPONENTS or 
-                 PackageManager.MATCH_UNINSTALLED_PACKAGES).toLong()
+                (PackageManager.GET_PERMISSIONS or
+                    PackageManager.MATCH_DISABLED_COMPONENTS or
+                    PackageManager.MATCH_UNINSTALLED_PACKAGES).toLong()
             )
         } else {
             @Suppress("DEPRECATION")
-            PackageManager.GET_PERMISSIONS or 
-            PackageManager.MATCH_DISABLED_COMPONENTS or 
-            PackageManager.MATCH_UNINSTALLED_PACKAGES
+            PackageManager.GET_PERMISSIONS or
+                PackageManager.MATCH_DISABLED_COMPONENTS or
+                PackageManager.MATCH_UNINSTALLED_PACKAGES
         }
 
         val rawPackages: List<PackageInfo> = try {
@@ -128,7 +410,7 @@ object AppOpsManager {
                 @Suppress("DEPRECATION")
                 pm.getInstalledPackages(flags as Int)
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             emptyList()
         }
 
@@ -138,7 +420,7 @@ object AppOpsManager {
                 val packageName = pkgInfo.packageName ?: return@mapNotNull null
                 val appName = try {
                     pm.getApplicationLabel(appInfo).toString()
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     packageName
                 }
 
@@ -146,14 +428,14 @@ object AppOpsManager {
                 val isDisabled = !appInfo.enabled || try {
                     val state = pm.getApplicationEnabledSetting(packageName)
                     state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED ||
-                    state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER
-                } catch (e: Exception) {
+                        state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER
+                } catch (_: Exception) {
                     false
                 }
 
                 val launchIntent = try {
                     pm.getLaunchIntentForPackage(packageName)
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     null
                 }
                 val isHidden = launchIntent == null
@@ -176,6 +458,10 @@ object AppOpsManager {
                 var hasBoot = false
                 var hasAlertWindow = false
                 var hasBgLocation = false
+                var hasLocation = false
+                var hasCamera = false
+                var hasAudio = false
+                var hasSystemOps = false
 
                 val permissionsArray = pkgInfo.requestedPermissions
                 val requestedFlags = pkgInfo.requestedPermissionsFlags
@@ -188,7 +474,7 @@ object AppOpsManager {
                         } else {
                             try {
                                 pm.checkPermission(permName, packageName) == PackageManager.PERMISSION_GRANTED
-                            } catch (e: Exception) {
+                            } catch (_: Exception) {
                                 false
                             }
                         }
@@ -201,9 +487,27 @@ object AppOpsManager {
                         }
                         if (permName.equals(android.Manifest.permission.SYSTEM_ALERT_WINDOW, ignoreCase = true)) {
                             hasAlertWindow = true
+                            hasSystemOps = true
+                        }
+                        if (permName.equals(android.Manifest.permission.WRITE_SETTINGS, ignoreCase = true) ||
+                            permName.equals(android.Manifest.permission.READ_PHONE_STATE, ignoreCase = true)
+                        ) {
+                            hasSystemOps = true
                         }
                         if (permName.equals("android.permission.ACCESS_BACKGROUND_LOCATION", ignoreCase = true)) {
                             hasBgLocation = true
+                            hasLocation = true
+                        }
+                        if (permName.contains("LOCATION", ignoreCase = true)) {
+                            hasLocation = true
+                        }
+                        if (permName.contains("CAMERA", ignoreCase = true)) {
+                            hasCamera = true
+                        }
+                        if (permName.contains("RECORD_AUDIO", ignoreCase = true) ||
+                            permName.contains("AUDIO", ignoreCase = true)
+                        ) {
+                            hasAudio = true
                         }
 
                         val simple = permName.substringAfterLast(".")
@@ -222,6 +526,24 @@ object AppOpsManager {
                     }
                 }
 
+                val batchOps = batchOpsByPackage[packageName].orEmpty()
+                val opsStates = linkedMapOf<String, String>()
+                managedOpsCatalog.forEach { descriptor ->
+                    opsStates[descriptor.opName] = batchOps[descriptor.opName] ?: "default"
+                }
+                batchOps.forEach { (op, mode) ->
+                    if (!opsStates.containsKey(op)) {
+                        opsStates[op] = mode
+                    }
+                }
+
+                if (batchOps.keys.any { it.contains("LOCATION") }) hasLocation = true
+                if (batchOps.containsKey("CAMERA")) hasCamera = true
+                if (batchOps.keys.any { it.contains("AUDIO") }) hasAudio = true
+                if (batchOps.keys.any { it in setOf("SYSTEM_ALERT_WINDOW", "WRITE_SETTINGS", "READ_PHONE_STATE", "RUN_IN_BACKGROUND", "RUN_ANY_IN_BACKGROUND") }) {
+                    hasSystemOps = true
+                }
+
                 val standbyBucket = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && usageStatsManager != null) {
                     try {
                         val bucket = usageStatsManager.getAppStandbyBucket()
@@ -232,7 +554,7 @@ object AppOpsManager {
                             bucket <= 45 -> StandbyBucketMode.RESTRICTED
                             else -> StandbyBucketMode.NEVER
                         }
-                    } catch (e: Exception) {
+                    } catch (_: Exception) {
                         StandbyBucketMode.DEFAULT
                     }
                 } else {
@@ -245,7 +567,7 @@ object AppOpsManager {
 
                 val icon = try {
                     pm.getApplicationIcon(appInfo)
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     null
                 }
 
@@ -255,15 +577,6 @@ object AppOpsManager {
                     @Suppress("DEPRECATION")
                     pkgInfo.versionCode.toLong()
                 }
-
-                // Quick initial App Ops states check for key ops
-                val opsStates = mutableMapOf<String, String>()
-                try {
-                    opsStates["SYSTEM_ALERT_WINDOW"] = getAppOp(packageName, "SYSTEM_ALERT_WINDOW")
-                    opsStates["WRITE_SETTINGS"] = getAppOp(packageName, "WRITE_SETTINGS")
-                    opsStates["CAMERA"] = getAppOp(packageName, "CAMERA")
-                    opsStates["ACCESS_FINE_LOCATION"] = getAppOp(packageName, "COARSE_LOCATION")
-                } catch (_: Exception) {}
 
                 AppOpsItem(
                     appName = appName,
@@ -289,10 +602,14 @@ object AppOpsManager {
                     hasBootPermission = hasBoot,
                     hasAlertWindowPermission = hasAlertWindow,
                     hasBackgroundLocationPermission = hasBgLocation,
+                    hasLocationPermission = hasLocation,
+                    hasCameraPermission = hasCamera,
+                    hasAudioPermission = hasAudio,
+                    hasSystemOpsPermission = hasSystemOps,
                     appOpsStates = opsStates,
                     icon = icon
                 )
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 null
             }
         }.sortedBy { it.appName.lowercase(Locale.ROOT) }
@@ -327,7 +644,7 @@ object AppOpsManager {
             } else {
                 false
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             false
         }
     }
@@ -340,7 +657,7 @@ object AppOpsManager {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             try {
                 val deleteIntent = Intent(Intent.ACTION_DELETE).apply {
                     data = Uri.parse("package:$packageName")
@@ -372,7 +689,7 @@ object AppOpsManager {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             openAppDetails(context, packageName)
         }
     }

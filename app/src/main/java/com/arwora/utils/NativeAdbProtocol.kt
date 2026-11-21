@@ -199,6 +199,18 @@ object NativeAdbProtocol {
     }
 
     /**
+     * Deletes persisted ADB RSA key files (`adbkey`, `adbkey.pub`) and immediately generates
+     * and saves a fresh RSA-2048 keypair so forgotten/revoked pairings can re-pair cleanly.
+     */
+    fun resetKeyPair(keyDir: File): KeyPair {
+        runCatching {
+            File(keyDir, "adbkey").takeIf { it.exists() }?.delete()
+            File(keyDir, "adbkey.pub").takeIf { it.exists() }?.delete()
+        }
+        return loadOrCreateKeyPair(keyDir)
+    }
+
+    /**
      * Serializes an RSA-2048 public key into Android ADB's 524-byte RSAPublicKey struct:
      * - uint32 len = 64
      * - uint32 n0inv = -N^(-1) mod 2^32

@@ -12,6 +12,7 @@ import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
@@ -308,6 +309,7 @@ class AdbPairingNotificationService : Service() {
     private val serviceScope = CoroutineScope(serviceJob + Dispatchers.IO)
 
     private var nsdManager: NsdManager? = null
+    private var multicastLock: WifiManager.MulticastLock? = null
     private var pairingDiscoveryListener: NsdManager.DiscoveryListener? = null
     private val isDiscoveryActive = AtomicBoolean(false)
     private val isResolving = AtomicBoolean(false)
@@ -481,6 +483,13 @@ class AdbPairingNotificationService : Service() {
                 }
 
                 pairingDiscoveryListener = listener
+                runCatching {
+                    val wifiMgr = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                    multicastLock = wifiMgr?.createMulticastLock("arwora_adb_notif_mdns")?.apply {
+                        setReferenceCounted(false)
+                        acquire()
+                    }
+                }
                 nsd.discoverServices(NSD_PAIRING_SERVICE, NsdManager.PROTOCOL_DNS_SD, listener)
             } catch (e: Exception) {
                 Log.w(TAG, "Unable to register NsdManager pairing listener", e)
@@ -552,6 +561,12 @@ class AdbPairingNotificationService : Service() {
         synchronized(queueLock) {
             pendingPairingQueue.clear()
         }
+        runCatching {
+            if (multicastLock?.isHeld == true) {
+                multicastLock?.release()
+            }
+        }
+        multicastLock = null
         isResolving.set(false)
         pairingDiscoveryListener = null
         nsdManager = null

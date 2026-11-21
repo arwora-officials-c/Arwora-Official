@@ -1,11 +1,15 @@
 package com.arwora.utils
 
 import android.content.Context
+import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.LinkProperties
 import android.net.NetworkCapabilities
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
+import android.net.wifi.WifiInfo
+import android.net.wifi.WifiManager
+import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import kotlinx.coroutines.CompletableDeferred
@@ -59,6 +63,13 @@ data class NativeAdbEndpoint(
     val port: Int
 )
 
+data class WifiTrustState(
+    val ssid: String?,
+    val networkKey: String,
+    val isTrusted: Boolean,
+    val requiresPrompt: Boolean = false
+)
+
 /**
  * Built-in native Wireless ADB connection and shell execution engine.
  * Eliminates external privileged helper apps by communicating directly with the
@@ -93,6 +104,7 @@ object NativeAdbManager {
 
     // Test hook allowing unit tests to inject a deterministic mDNS resolver without mocking NsdManager internals
     internal var nsdConnectResolverOverride: (suspend (Context, Long) -> List<NativeAdbEndpoint>)? = null
+    internal var wifiNetworkResolverOverride: ((Context) -> Pair<String?, String?>)? = null
 
     private val _isConnected = MutableStateFlow(false)
     val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
@@ -112,11 +124,29 @@ object NativeAdbManager {
     private val _isPaired = MutableStateFlow(false)
     val isPaired: StateFlow<Boolean> = _isPaired.asStateFlow()
 
+    private val _isSessionForgotten = MutableStateFlow(false)
+    val isSessionForgotten: StateFlow<Boolean> = _isSessionForgotten.asStateFlow()
+
+    private val _isUsbDebuggingEnabled = MutableStateFlow(false)
+    val isUsbDebuggingEnabled: StateFlow<Boolean> = _isUsbDebuggingEnabled.asStateFlow()
+
     private val _isWirelessDebuggingEnabled = MutableStateFlow(false)
     val isWirelessDebuggingEnabled: StateFlow<Boolean> = _isWirelessDebuggingEnabled.asStateFlow()
 
+    private val _isWirelessOnlyEnabled = MutableStateFlow(false)
+    val isWirelessOnlyEnabled: StateFlow<Boolean> = _isWirelessOnlyEnabled.asStateFlow()
+
     private val _requiresDevOptionsGuidance = MutableStateFlow(false)
     val requiresDevOptionsGuidance: StateFlow<Boolean> = _requiresDevOptionsGuidance.asStateFlow()
+
+    private val _activeWifiSsid = MutableStateFlow<String?>(null)
+    val activeWifiSsid: StateFlow<String?> = _activeWifiSsid.asStateFlow()
+
+    private val _isCurrentWifiTrusted = MutableStateFlow(false)
+    val isCurrentWifiTrusted: StateFlow<Boolean> = _isCurrentWifiTrusted.asStateFlow()
+
+    private val _pendingWifiTrustPrompt = MutableStateFlow<WifiTrustState?>(null)
+    val pendingWifiTrustPrompt: StateFlow<WifiTrustState?> = _pendingWifiTrustPrompt.asStateFlow()
 
     private val _statusMessage = MutableStateFlow("Tap Connect Now when Wi-Fi & Wireless Debugging are enabled.")
     val statusMessage: StateFlow<String> = _statusMessage.asStateFlow()
@@ -218,19 +248,34 @@ object NativeAdbManager {
         }
     }
 
-    fun isWirelessDebuggingSettingEnabled(context: Context): Boolean {
+    fun isUsbDebuggingSettingEnabled(context: Context): Boolean {
         return try {
-            val adbEnabled = Settings.Global.getInt(context.contentResolver, Settings.Global.ADB_ENABLED, 0) == 1
-            val adbWifiEnabled = Settings.Global.getInt(context.contentResolver, "adb_wifi_enabled", 0) == 1
-            val sysPort = getSystemWirelessDebugPort(context) != null
-            adbEnabled || adbWifiEnabled || sysPort
+            Settings.Global.getInt(context.contentResolver, Settings.Global.ADB_ENABLED, 0) == 1
         } catch (_: Exception) {
             false
         }
     }
 
+    fun isWirelessOnlyDebuggingSettingEnabled(context: Context): Boolean {
+        return try {
+            val adbWifiEnabled = Settings.Global.getInt(context.contentResolver, "adb_wifi_enabled", 0) == 1
+            val sysPort = getSystemWirelessDebugPort(context) != null
+            adbWifiEnabled || sysPort || _isConnected.value
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun isWirelessDebuggingSettingEnabled(context: Context): Boolean {
+        return isUsbDebuggingSettingEnabled(context) || isWirelessOnlyDebuggingSettingEnabled(context)
+    }
+
     fun checkWirelessDebuggingState(context: Context): Boolean {
-        val enabled = isWirelessDebuggingSettingEnabled(context)
+        val usbEnabled = isUsbDebuggingSettingEnabled(context)
+        val wirelessOnlyEnabled = isWirelessOnlyDebuggingSettingEnabled(context)
+        val enabled = usbEnabled || wirelessOnlyEnabled
+        _isUsbDebuggingEnabled.value = usbEnabled
+        _isWirelessOnlyEnabled.value = wirelessOnlyEnabled
         _isWirelessDebuggingEnabled.value = enabled
         val creds = runCatching { EncryptedAdbCredentialStore.loadState(context) }.getOrNull()
         if (creds != null) {
@@ -245,6 +290,162 @@ object NativeAdbManager {
         return enabled
     }
 
+    fun openDeveloperOptions(context: Context): Boolean {
+        return try {
+            val devIntent = Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).apply {
+                if (context !is android.app.Activity) {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            }
+            context.startActivity(devIntent)
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    suspend fun toggleUsbDebugging(
+        context: Context,
+        targetEnabled: Boolean? = null
+    ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        val appCtx = context.applicationContext
+        val desired = targetEnabled ?: !isUsbDebuggingSettingEnabled(appCtx)
+        val targetInt = if (desired) 1 else 0
+
+        val shellRes = if (AdbShellExecutor.isPrivilegedShellReady(appCtx)) {
+            AdbShellExecutor.execute("settings put global adb_enabled $targetInt", context = appCtx)
+        } else {
+            NativeShellResult(false, "Privilege engine inactive", -1)
+        }
+
+        val secureSettingsOk = if (shellRes.success) {
+            true
+        } else {
+            runCatching {
+                Settings.Global.putInt(appCtx.contentResolver, Settings.Global.ADB_ENABLED, targetInt)
+            }.getOrDefault(false)
+        }
+
+        checkWirelessDebuggingState(appCtx)
+        if (secureSettingsOk) {
+            val label = if (desired) "USB Debugging enabled" else "USB Debugging disabled"
+            _statusMessage.value = label
+            Pair(true, label)
+        } else {
+            val msg = "Connect Shizuku or Wireless ADB to toggle USB Debugging directly, or switch it in Developer Options."
+            Pair(false, msg)
+        }
+    }
+
+    suspend fun toggleWirelessDebugging(
+        context: Context,
+        targetEnabled: Boolean? = null
+    ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        val appCtx = context.applicationContext
+        val desired = targetEnabled ?: !isWirelessOnlyDebuggingSettingEnabled(appCtx)
+        val targetInt = if (desired) 1 else 0
+
+        val shellRes = if (AdbShellExecutor.isPrivilegedShellReady(appCtx)) {
+            AdbShellExecutor.execute("settings put global adb_wifi_enabled $targetInt", context = appCtx)
+        } else {
+            NativeShellResult(false, "Privilege engine inactive", -1)
+        }
+
+        val secureSettingsOk = if (shellRes.success) {
+            true
+        } else {
+            runCatching {
+                Settings.Global.putInt(appCtx.contentResolver, "adb_wifi_enabled", targetInt)
+            }.getOrDefault(false)
+        }
+
+        checkWirelessDebuggingState(appCtx)
+        if (secureSettingsOk) {
+            val label = if (desired) "Wireless Debugging enabled" else "Wireless Debugging disabled"
+            _statusMessage.value = label
+            Pair(true, label)
+        } else {
+            val msg = "Connect Shizuku or Wireless ADB to toggle Wireless Debugging directly, or open Wireless Debugging settings."
+            Pair(false, msg)
+        }
+    }
+
+    internal fun isAuthRejectionError(detail: String?): Boolean {
+        if (detail.isNullOrBlank()) return false
+        val lower = detail.lowercase()
+        return lower.contains("authentication rejected") ||
+            lower.contains("bad_certificate") ||
+            lower.contains("certificate_unknown") ||
+            lower.contains("certificate_revoked") ||
+            lower.contains("peer not authenticated") ||
+            lower.contains("sslhandshake") ||
+            lower.contains("untrusted")
+    }
+
+    private fun handleForgottenSessionDetected(context: Context, reason: String) {
+        val appCtx = context.applicationContext
+        appContext = appCtx
+        Log.w(TAG, "ADB pairing rejected or forgotten by system ($reason); clearing stale pairing caches.")
+        cachedKeyPair = null
+        EncryptedAdbCredentialStore.clearPairingCredentials(appCtx)
+        appCtx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .remove(KEY_LAST_HOST)
+            .remove(KEY_LAST_PORT)
+            .putBoolean(KEY_USER_STOPPED, false)
+            .apply()
+        com.arwora.service.AdbConnectionService.stop(appCtx)
+        WirelessPairingManager.clearCachedPairingState(appCtx)
+        _isConnected.value = false
+        _isPaired.value = false
+        _isSessionForgotten.value = true
+        _connectedHost.value = null
+        _connectedPort.value = null
+        _discoveredPort.value = null
+        _requiresDevOptionsGuidance.value = false
+        _connectionState.value = resolveConnectionState(
+            isWifiConnected = isWifiConnected(appCtx),
+            isConnecting = false,
+            isConnected = false
+        )
+        _statusMessage.value = "Device pairing was removed or rejected. Tap Pair New Device to generate a fresh pairing keypair."
+    }
+
+    /**
+     * Explicitly clears stale ADB credentials, stops background reconnect loops,
+     * deletes & regenerates the RSA-2048 pairing keypair (`arwora`), and resets state
+     * so users can immediately re-pair after forgetting the device in Developer Options.
+     */
+    fun forgetPairedDeviceAndReset(context: Context): KeyPair {
+        val appCtx = context.applicationContext
+        appContext = appCtx
+        com.arwora.service.AdbConnectionService.stop(appCtx)
+        cachedKeyPair = null
+        val freshKeyPair = NativeAdbProtocol.resetKeyPair(File(appCtx.filesDir, "adb_keys"))
+        cachedKeyPair = freshKeyPair
+        EncryptedAdbCredentialStore.clearPairingCredentials(appCtx)
+        appCtx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .remove(KEY_LAST_HOST)
+            .remove(KEY_LAST_PORT)
+            .remove(KEY_USER_STOPPED)
+            .apply()
+        WirelessPairingManager.clearCachedPairingState(appCtx)
+
+        _isConnected.value = false
+        _isPaired.value = false
+        _isSessionForgotten.value = false
+        _connectedHost.value = null
+        _connectedPort.value = null
+        _discoveredPort.value = null
+        _requiresDevOptionsGuidance.value = false
+        _connectionState.value = resolveConnectionState(
+            isWifiConnected = isWifiConnected(appCtx),
+            isConnecting = false,
+            isConnected = false
+        )
+        _statusMessage.value = "Pairing keys regenerated — ready to pair new device."
+        return freshKeyPair
+    }
+
     fun markPairedState(context: Context, host: String? = null, pairingPort: Int? = null) {
         val appCtx = context.applicationContext
         appContext = appCtx
@@ -257,6 +458,134 @@ object NativeAdbManager {
             rsaFingerprint = fingerprint
         )
         _isPaired.value = true
+        _isSessionForgotten.value = false
+    }
+
+    fun resolveActiveWifiIdentity(context: Context): Pair<String?, String?> {
+        wifiNetworkResolverOverride?.let { overrideFn ->
+            val (rawSsid, rawKey) = overrideFn(context)
+            val cleanSsid = EncryptedAdbCredentialStore.normalizeWifiNetworkKey(rawSsid)
+            val cleanKey = EncryptedAdbCredentialStore.normalizeWifiNetworkKey(rawKey)
+                ?: cleanSsid?.let { "ssid:$it" }
+            return Pair(cleanSsid, cleanKey)
+        }
+
+        if (!isWifiConnected(context)) {
+            return Pair(null, null)
+        }
+
+        var rawSsid: String? = null
+        try {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            val network = cm?.activeNetwork
+            val caps = if (network != null) cm.getNetworkCapabilities(network) else null
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val wifiInfo = caps?.transportInfo as? WifiInfo
+                rawSsid = wifiInfo?.ssid
+            }
+        } catch (_: Throwable) {
+        }
+
+        if (EncryptedAdbCredentialStore.normalizeWifiNetworkKey(rawSsid) == null) {
+            try {
+                @Suppress("DEPRECATION")
+                val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                @Suppress("DEPRECATION")
+                rawSsid = wm?.connectionInfo?.ssid
+            } catch (_: Throwable) {
+            }
+        }
+
+        val cleanSsid = EncryptedAdbCredentialStore.normalizeWifiNetworkKey(rawSsid)
+        val wifiIp = getLocalWifiIpAddress(context)
+        val networkKey = when {
+            cleanSsid != null -> "ssid:$cleanSsid"
+            !wifiIp.isNullOrBlank() && wifiIp != "127.0.0.1" -> {
+                val prefix = wifiIp.substringBeforeLast('.')
+                "subnet:$prefix.0/24"
+            }
+            else -> "wifi_active_network"
+        }
+        return Pair(cleanSsid, networkKey)
+    }
+
+    fun refreshWifiTrustState(context: Context): WifiTrustState? {
+        val appCtx = context.applicationContext
+        val (ssid, networkKey) = resolveActiveWifiIdentity(appCtx)
+        _activeWifiSsid.value = ssid
+        if (networkKey == null) {
+            _isCurrentWifiTrusted.value = false
+            _pendingWifiTrustPrompt.value = null
+            return null
+        }
+        val trusted = EncryptedAdbCredentialStore.isWifiNetworkTrusted(appCtx, networkKey)
+        _isCurrentWifiTrusted.value = trusted
+        if (trusted && _pendingWifiTrustPrompt.value?.networkKey == networkKey) {
+            _pendingWifiTrustPrompt.value = null
+        }
+        return WifiTrustState(
+            ssid = ssid,
+            networkKey = networkKey,
+            isTrusted = trusted,
+            requiresPrompt = _pendingWifiTrustPrompt.value?.requiresPrompt == true && !trusted
+        )
+    }
+
+    fun trustCurrentWifiNetwork(context: Context, alwaysAllow: Boolean = true): WifiTrustState? {
+        val appCtx = context.applicationContext
+        val (ssid, networkKey) = resolveActiveWifiIdentity(appCtx)
+        if (networkKey != null && alwaysAllow) {
+            EncryptedAdbCredentialStore.markWifiNetworkTrusted(appCtx, networkKey, ssid)
+            _isCurrentWifiTrusted.value = true
+        }
+        _pendingWifiTrustPrompt.value = null
+        return networkKey?.let {
+            WifiTrustState(ssid = ssid, networkKey = it, isTrusted = alwaysAllow, requiresPrompt = false)
+        }
+    }
+
+    fun requestWifiTrustPromptIfNeeded(context: Context): WifiTrustState? {
+        val appCtx = context.applicationContext
+        val (ssid, networkKey) = resolveActiveWifiIdentity(appCtx)
+        if (networkKey == null) return null
+        val alreadyTrusted = EncryptedAdbCredentialStore.isWifiNetworkTrusted(appCtx, networkKey)
+        _activeWifiSsid.value = ssid
+        _isCurrentWifiTrusted.value = alreadyTrusted
+        if (alreadyTrusted) {
+            _pendingWifiTrustPrompt.value = null
+            return WifiTrustState(ssid = ssid, networkKey = networkKey, isTrusted = true, requiresPrompt = false)
+        }
+        val prompt = WifiTrustState(ssid = ssid, networkKey = networkKey, isTrusted = false, requiresPrompt = true)
+        _pendingWifiTrustPrompt.value = prompt
+        return prompt
+    }
+
+    fun dismissWifiTrustPrompt() {
+        _pendingWifiTrustPrompt.value = null
+    }
+
+    fun openWirelessDebuggingSettings(context: Context): Boolean {
+        return try {
+            val wirelessDebugIntent = Intent("android.settings.WIRELESS_DEBUGGING_SETTINGS").apply {
+                if (context !is android.app.Activity) {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            }
+            context.startActivity(wirelessDebugIntent)
+            true
+        } catch (_: Throwable) {
+            try {
+                val devIntent = Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).apply {
+                    if (context !is android.app.Activity) {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                }
+                context.startActivity(devIntent)
+                true
+            } catch (_: Throwable) {
+                false
+            }
+        }
     }
 
     fun refreshConnectionStatus(context: Context) {
@@ -264,6 +593,7 @@ object NativeAdbManager {
         appContext = appCtx
         val wifiOk = isWifiConnected(appCtx)
         checkWirelessDebuggingState(appCtx)
+        refreshWifiTrustState(appCtx)
         if (!wifiOk && _isConnected.value && _connectedHost.value != "127.0.0.1") {
             _isConnected.value = false
         }
@@ -365,13 +695,14 @@ object NativeAdbManager {
                 _discoveredPort.value = null
                 _connectedPort.value = null
                 _requiresDevOptionsGuidance.value = !debugSettingOn
+                requestWifiTrustPromptIfNeeded(context)
                 _connectionState.value = resolveConnectionState(
                     isWifiConnected = isWifiConnected(context),
                     isConnecting = false,
                     isConnected = false
                 )
                 val timeoutMsg = if (debugSettingOn) {
-                    "Wireless Debugging is active, but the connection port timed out. Tap Retry Connect."
+                    "Wireless Debugging is active, but the connection port timed out. Verify Wi-Fi network trust and tap Retry Connect."
                 } else {
                     "Timed out resolving Wireless Debugging connection port after pairing."
                 }
@@ -455,13 +786,15 @@ object NativeAdbManager {
                 _discoveredPort.value = null
                 _connectedPort.value = null
                 _requiresDevOptionsGuidance.value = !debugSettingOn
+                requestWifiTrustPromptIfNeeded(context)
                 _connectionState.value = resolveConnectionState(
                     isWifiConnected = isWifiConnected(context),
                     isConnecting = false,
                     isConnected = false
                 )
                 val errMsg = if (debugSettingOn) {
-                    "Wireless Debugging is Active / Ready — waiting for local ADB connect port discovery."
+                    val ssidLabel = _activeWifiSsid.value?.let { " on $it" } ?: ""
+                    "Wireless Debugging is Active / Ready — allow Wireless Debugging$ssidLabel to expose the ADB connect port."
                 } else {
                     ERROR_WIRELESS_DEBUGGING_OFF
                 }
@@ -492,7 +825,12 @@ object NativeAdbManager {
             _isConnected.value = false
             _discoveredPort.value = null
             _connectedPort.value = null
+            if (isAuthRejectionError(lastFailureDetail)) {
+                handleForgottenSessionDetected(context, lastFailureDetail ?: "authentication rejected")
+                return@withLock Pair(false, _statusMessage.value)
+            }
             _requiresDevOptionsGuidance.value = !debugSettingOn
+            requestWifiTrustPromptIfNeeded(context)
             _connectionState.value = resolveConnectionState(
                 isWifiConnected = isWifiConnected(context),
                 isConnecting = false,
@@ -544,19 +882,28 @@ object NativeAdbManager {
                 }.distinct()
 
                 val keyPair = getOrInitKeyPair(appCtx)
+                var rejectedError: String? = null
                 for (candidateHost in candidateHosts) {
-                    val (ok, _) = performVerifiedHandshake(candidateHost, savedPort, keyPair)
+                    val (ok, detail) = performVerifiedHandshake(candidateHost, savedPort, keyPair)
                     if (ok) {
                         markConnected(appCtx, candidateHost, savedPort)
                         val msg = "Active / Connected ($candidateHost:$savedPort)"
                         _statusMessage.value = msg
                         return@withLock Pair(true, msg)
                     }
+                    if (isAuthRejectionError(detail)) {
+                        rejectedError = detail
+                        break
+                    }
+                }
+                if (rejectedError != null) {
+                    handleForgottenSessionDetected(appCtx, rejectedError)
+                    return@withLock Pair(false, _statusMessage.value)
                 }
             }
             null
         }
-        if (directOk != null && directOk.first) {
+        if (directOk != null) {
             return@withContext directOk
         }
 
@@ -675,10 +1022,20 @@ object NativeAdbManager {
             try {
                 executeOverSocket(host, port, command, keyPair, useTls = true, timeoutMs = timeoutMs)
             } catch (tlsError: Exception) {
+                val errMsg = tlsError.message ?: primaryError.message ?: "ADB command failed"
+                if (ctx != null && isAuthRejectionError(errMsg)) {
+                    handleForgottenSessionDetected(ctx, errMsg)
+                    return@withContext NativeShellResult(
+                        success = false,
+                        output = _statusMessage.value,
+                        exitCode = -1
+                    )
+                }
+
                 // Socket dropped -> attempt one silent reconnect via saved session / mDNS if paired
                 if (ctx != null) {
                     val creds = EncryptedAdbCredentialStore.loadState(ctx)
-                    if (creds.isPaired && !creds.userStopped && reconnectSavedSession(ctx).first) {
+                    if (creds.isPaired && !creds.userStopped && !isSessionForgotten.value && reconnectSavedSession(ctx).first) {
                         val newHost = _connectedHost.value ?: host
                         val newPort = _connectedPort.value ?: port
                         val retryResult = runCatching {
@@ -704,7 +1061,7 @@ object NativeAdbManager {
                 }
                 NativeShellResult(
                     success = false,
-                    output = tlsError.message ?: primaryError.message ?: "ADB command failed",
+                    output = errMsg,
                     exitCode = -1
                 )
             }
@@ -896,6 +1253,14 @@ object NativeAdbManager {
             override fun onStopDiscoveryFailed(serviceType: String?, errorCode: Int) {}
         }
 
+        val wifiMgr = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+        val multicastLock = runCatching {
+            wifiMgr?.createMulticastLock("arwora_adb_mdns_connect")?.apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+        }.getOrNull()
+
         return try {
             nsdManager.discoverServices(NSD_CONNECT_SERVICE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
             val hit = withTimeoutOrNull(timeoutMs) { deferred.await() }
@@ -907,6 +1272,11 @@ object NativeAdbManager {
             try {
                 nsdManager.stopServiceDiscovery(discoveryListener)
             } catch (_: Exception) {
+            }
+            runCatching {
+                if (multicastLock?.isHeld == true) {
+                    multicastLock.release()
+                }
             }
         }
     }
@@ -952,11 +1322,20 @@ object NativeAdbManager {
         val appCtx = context.applicationContext
         _isConnected.value = true
         _isPaired.value = true
+        _isSessionForgotten.value = false
         _requiresDevOptionsGuidance.value = false
         _connectedHost.value = host
         _connectedPort.value = port
         _discoveredPort.value = port
         _connectionState.value = NativeAdbConnectionState.CONNECTED
+
+        val (ssid, networkKey) = resolveActiveWifiIdentity(appCtx)
+        if (networkKey != null) {
+            EncryptedAdbCredentialStore.markWifiNetworkTrusted(appCtx, networkKey, ssid)
+            _activeWifiSsid.value = ssid
+            _isCurrentWifiTrusted.value = true
+        }
+        _pendingWifiTrustPrompt.value = null
 
         val keyPair = runCatching { getOrInitKeyPair(appCtx) }.getOrNull()
         val fingerprint = keyPair?.let { EncryptedAdbCredentialStore.computeKeyFingerprint(it) }

@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
@@ -121,6 +122,7 @@ object WirelessPairingManager {
     val lastWifiEventSummary: StateFlow<String?> = _lastWifiEventSummary.asStateFlow()
 
     private var nsdManager: NsdManager? = null
+    private var multicastLock: WifiManager.MulticastLock? = null
     private var pairingDiscoveryListener: NsdManager.DiscoveryListener? = null
     private var connectDiscoveryListener: NsdManager.DiscoveryListener? = null
     private val isPairingDiscoveryActive = AtomicBoolean(false)
@@ -664,6 +666,23 @@ object WirelessPairingManager {
         _status.value = PairingStatus.Idle
         _discoveredPort.value = null
         _lastCapturedCode.value = null
+    }
+
+    fun clearCachedPairingState(context: Context) {
+        resetStatus()
+        lastPairingPort = null
+        _savedConnectPort.value = null
+        _savedHost.value = "127.0.0.1"
+        _lastWifiEventSummary.value = null
+        runCatching {
+            context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .remove(KEY_SAVED_HOST)
+                .remove(KEY_SAVED_PAIRING_PORT)
+                .remove(KEY_SAVED_CONNECT_PORT)
+                .remove(KEY_LATEST_CODE)
+                .apply()
+        }
     }
 
     fun onPairingNotificationCaptured(context: Context, code: String, port: Int? = null) {
@@ -1267,6 +1286,13 @@ object WirelessPairingManager {
 
             pairingDiscoveryListener = pairingListener
             connectDiscoveryListener = connectListener
+            runCatching {
+                val wifiMgr = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                multicastLock = wifiMgr?.createMulticastLock("arwora_adb_wizard_mdns")?.apply {
+                    setReferenceCounted(false)
+                    acquire()
+                }
+            }
             nsd.discoverServices("_adb-tls-pairing._tcp", NsdManager.PROTOCOL_DNS_SD, pairingListener)
             nsd.discoverServices("_adb-tls-connect._tcp", NsdManager.PROTOCOL_DNS_SD, connectListener)
         } catch (e: Exception) {
@@ -1294,6 +1320,12 @@ object WirelessPairingManager {
             isConnectDiscoveryActive.set(false)
         }
 
+        runCatching {
+            if (multicastLock?.isHeld == true) {
+                multicastLock?.release()
+            }
+        }
+        multicastLock = null
         isResolvingPairingMdns.set(false)
         isResolvingConnectMdns.set(false)
         pairingDiscoveryListener = null

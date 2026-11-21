@@ -44,10 +44,10 @@ object AdbShellExecutor {
 
     private const val TAG = "AdbShellExecutor"
     const val SHIZUKU_PACKAGE_NAME = "moe.shizuku.privileged.api"
-    const val SHIZUKU_PERMISSION_REQUEST_CODE = 4201
+    const val SHIZUKU_PERMISSION_REQUEST_CODE = ShizukuBridge.REQUEST_CODE
     private const val SHIZUKU_GITHUB_RELEASES_URL = "https://github.com/RikkaApps/Shizuku/releases"
 
-    private val listenersRegistered = AtomicBoolean(false)
+    private val initialized = AtomicBoolean(false)
 
     // Test hooks for deterministic Robolectric unit testing
     internal var shizukuBinderProbeOverride: (() -> Boolean)? = null
@@ -68,32 +68,9 @@ object AdbShellExecutor {
     private val _isAnyEngineReady = MutableStateFlow(false)
     val isAnyEngineReady: StateFlow<Boolean> = _isAnyEngineReady.asStateFlow()
 
-    private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
-        refreshEngineStatus(null)
-    }
-
-    private val binderDeadListener = Shizuku.OnBinderDeadListener {
-        refreshEngineStatus(null)
-    }
-
-    private val permissionResultListener =
-        Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
-            if (requestCode == SHIZUKU_PERMISSION_REQUEST_CODE) {
-                Log.i(TAG, "Shizuku permission result: grantResult=$grantResult")
-                refreshEngineStatus(null)
-            }
-        }
-
     fun init(context: Context? = null) {
-        if (listenersRegistered.compareAndSet(false, true)) {
-            runCatching {
-                Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
-                Shizuku.addBinderDeadListener(binderDeadListener)
-                Shizuku.addRequestPermissionResultListener(permissionResultListener)
-            }.onFailure { err ->
-                Log.d(TAG, "Shizuku binder listeners unavailable in current environment: ${err.message}")
-            }
-        }
+        initialized.set(true)
+        ShizukuBridge.init(context, autoRequestIfNeeded = false)
         if (context != null) {
             runCatching { NativeAdbManager.init(context.applicationContext) }
         }
@@ -106,29 +83,18 @@ object AdbShellExecutor {
         shizukuCommandRunnerOverride = null
         adbReadyProbeOverride = null
         adbCommandRunnerOverride = null
+        ShizukuBridge.resetTestOverrides()
     }
 
     fun isShizukuRunning(): Boolean {
         shizukuBinderProbeOverride?.let { return it() }
-        return try {
-            Shizuku.pingBinder()
-        } catch (_: Throwable) {
-            false
-        }
+        return ShizukuBridge.isRunning()
     }
 
     fun hasShizukuPermission(): Boolean {
         if (!isShizukuRunning()) return false
         shizukuPermissionProbeOverride?.let { return it() }
-        return try {
-            if (Shizuku.isPreV11()) {
-                false
-            } else {
-                Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-            }
-        } catch (_: Throwable) {
-            false
-        }
+        return ShizukuBridge.isPermissionGrantedNow()
     }
 
     fun isWirelessAdbActive(context: Context? = null): Boolean {
@@ -141,6 +107,20 @@ object AdbShellExecutor {
         } catch (_: Throwable) {
             false
         }
+    }
+
+    internal fun onShizukuPermissionResolved(granted: Boolean, context: Context? = null) {
+        val binderAlive = granted || isShizukuRunning()
+        _isShizukuBinderAlive.value = binderAlive
+        _isShizukuPermissionGranted.value = granted
+        val adbReady = isWirelessAdbActive(context)
+        val engine = when {
+            binderAlive && granted -> PrivilegeEngine.SHIZUKU
+            adbReady -> PrivilegeEngine.WIRELESS_ADB
+            else -> PrivilegeEngine.NONE
+        }
+        _activeEngine.value = engine
+        _isAnyEngineReady.value = engine != PrivilegeEngine.NONE
     }
 
     fun resolveActiveEngine(context: Context? = null): PrivilegeEngine {
@@ -162,6 +142,7 @@ object AdbShellExecutor {
     }
 
     fun refreshEngineStatus(context: Context? = null): PrivilegeEngine {
+        ShizukuBridge.refreshState(context)
         return resolveActiveEngine(context)
     }
 
@@ -174,38 +155,11 @@ object AdbShellExecutor {
     }
 
     fun isShizukuInstalled(context: Context): Boolean {
-        return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                context.packageManager.getPackageInfo(
-                    SHIZUKU_PACKAGE_NAME,
-                    PackageManager.PackageInfoFlags.of(0L)
-                )
-            } else {
-                @Suppress("DEPRECATION")
-                context.packageManager.getPackageInfo(SHIZUKU_PACKAGE_NAME, 0)
-            }
-            true
-        } catch (_: Throwable) {
-            false
-        }
+        return ShizukuBridge.isShizukuInstalled(context)
     }
 
-    fun requestShizukuPermission(requestCode: Int = SHIZUKU_PERMISSION_REQUEST_CODE): Boolean {
-        if (!isShizukuRunning()) return false
-        return try {
-            if (Shizuku.isPreV11()) {
-                false
-            } else if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
-                refreshEngineStatus(null)
-                true
-            } else {
-                Shizuku.requestPermission(requestCode)
-                true
-            }
-        } catch (t: Throwable) {
-            Log.w(TAG, "Failed requesting Shizuku permission: ${t.message}")
-            false
-        }
+    fun requestShizukuPermission(requestCode: Int = ShizukuBridge.REQUEST_CODE): Boolean {
+        return ShizukuBridge.requestPermission(requestCode)
     }
 
     fun openOrInstallShizuku(context: Context): Boolean {

@@ -78,6 +78,8 @@ fun WirelessPairingWizard(
     val adbConnectionState by NativeAdbManager.connectionState.collectAsStateWithLifecycle()
     val requiresDevOptionsGuidance by NativeAdbManager.requiresDevOptionsGuidance.collectAsStateWithLifecycle()
     val adbStatusMessage by NativeAdbManager.statusMessage.collectAsStateWithLifecycle()
+    val activeWifiSsid by NativeAdbManager.activeWifiSsid.collectAsStateWithLifecycle()
+    val isCurrentWifiTrusted by NativeAdbManager.isCurrentWifiTrusted.collectAsStateWithLifecycle()
 
     var manualHostInput by remember { mutableStateOf(savedHost) }
     var manualCodeInput by remember { mutableStateOf("") }
@@ -256,6 +258,8 @@ fun WirelessPairingWizard(
                     AutoPairOnWifiCard(
                         enabled = autoPairOnWifiEnabled,
                         isWifiConnected = isWifiConnected,
+                        activeWifiSsid = activeWifiSsid,
+                        isWifiTrusted = isCurrentWifiTrusted,
                         isAdbConnected = isNativeAdbConnected,
                         isWirelessDebuggingEnabled = isWirelessDebuggingEnabled,
                         lastEventSummary = lastWifiEventSummary ?: adbStatusMessage,
@@ -867,6 +871,8 @@ private fun AutomaticWizardPairingCard(
 private fun AutoPairOnWifiCard(
     enabled: Boolean,
     isWifiConnected: Boolean,
+    activeWifiSsid: String?,
+    isWifiTrusted: Boolean,
     isAdbConnected: Boolean,
     isWirelessDebuggingEnabled: Boolean,
     lastEventSummary: String?,
@@ -950,10 +956,17 @@ private fun AutoPairOnWifiCard(
                             modifier = Modifier.size(14.dp)
                         )
                         Text(
-                            text = if (isWifiConnected) "Wi-Fi Online" else "Wi-Fi Offline",
+                            text = if (isWifiConnected) {
+                                activeWifiSsid?.let { "$it${if (isWifiTrusted) " • Trusted" else ""}" }
+                                    ?: if (isWifiTrusted) "Wi-Fi Trusted" else "Wi-Fi Online"
+                            } else {
+                                "Wi-Fi Offline"
+                            },
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            color = if (isWifiConnected) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant
+                            color = if (isWifiConnected) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -1087,11 +1100,7 @@ private fun AutoPairOnWifiCard(
 }
 
 private fun openDeveloperOptions(context: Context) {
-    try {
-        context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        })
-    } catch (_: Exception) {
+    if (!NativeAdbManager.openWirelessDebuggingSettings(context)) {
         Toast.makeText(context, "Could not open Developer Options", Toast.LENGTH_SHORT).show()
     }
 }

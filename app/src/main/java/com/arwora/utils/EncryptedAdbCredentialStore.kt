@@ -16,7 +16,9 @@ data class AdbPersistedCredentials(
     val clientIdentity: String = NativeAdbProtocol.DEFAULT_CLIENT_IDENTITY,
     val rsaFingerprint: String? = null,
     val userStopped: Boolean = false,
-    val lastConnectedAtMs: Long = 0L
+    val lastConnectedAtMs: Long = 0L,
+    val trustedWifiNetworks: Set<String> = emptySet(),
+    val lastTrustedSsid: String? = null
 )
 
 /**
@@ -37,6 +39,8 @@ object EncryptedAdbCredentialStore {
     private const val KEY_RSA_FINGERPRINT = "rsa_fingerprint"
     private const val KEY_USER_STOPPED = "user_stopped"
     private const val KEY_LAST_CONNECTED_AT_MS = "last_connected_at_ms"
+    private const val KEY_TRUSTED_WIFI_NETWORKS = "trusted_wifi_networks"
+    private const val KEY_LAST_TRUSTED_SSID = "last_trusted_wifi_ssid"
 
     @Volatile
     private var cachedPrefs: SharedPreferences? = null
@@ -85,6 +89,57 @@ object EncryptedAdbCredentialStore {
         }
     }
 
+    fun normalizeWifiNetworkKey(rawKey: String?): String? {
+        if (rawKey.isNullOrBlank()) return null
+        val cleaned = rawKey.trim()
+            .removePrefix("\"")
+            .removeSuffix("\"")
+            .trim()
+        if (cleaned.isEmpty() ||
+            cleaned.equals("<unknown ssid>", ignoreCase = true) ||
+            cleaned.equals("0x", ignoreCase = true)
+        ) {
+            return null
+        }
+        return cleaned
+    }
+
+    fun getTrustedWifiNetworks(context: Context): Set<String> {
+        val stored = getPrefs(context).getStringSet(KEY_TRUSTED_WIFI_NETWORKS, null) ?: return emptySet()
+        return stored.mapNotNull { normalizeWifiNetworkKey(it) }.toSet()
+    }
+
+    fun isWifiNetworkTrusted(context: Context, networkKey: String?): Boolean {
+        val normalized = normalizeWifiNetworkKey(networkKey) ?: return false
+        return getTrustedWifiNetworks(context).contains(normalized)
+    }
+
+    fun markWifiNetworkTrusted(
+        context: Context,
+        networkKey: String?,
+        displaySsid: String? = null
+    ) {
+        val normalizedKey = normalizeWifiNetworkKey(networkKey) ?: return
+        val prefs = getPrefs(context)
+        val updated = getTrustedWifiNetworks(context).toMutableSet().apply {
+            add(normalizedKey)
+            normalizeWifiNetworkKey(displaySsid)?.let { add("ssid:$it") }
+        }
+        prefs.edit().apply {
+            putStringSet(KEY_TRUSTED_WIFI_NETWORKS, updated)
+            normalizeWifiNetworkKey(displaySsid)?.let { putString(KEY_LAST_TRUSTED_SSID, it) }
+        }.apply()
+    }
+
+    fun revokeWifiNetworkTrust(context: Context, networkKey: String?) {
+        val normalizedKey = normalizeWifiNetworkKey(networkKey) ?: return
+        val prefs = getPrefs(context)
+        val updated = getTrustedWifiNetworks(context).toMutableSet().apply {
+            remove(normalizedKey)
+        }
+        prefs.edit().putStringSet(KEY_TRUSTED_WIFI_NETWORKS, updated).apply()
+    }
+
     fun loadState(context: Context): AdbPersistedCredentials {
         val prefs = getPrefs(context)
         val rawHost = prefs.getString(KEY_HOST, "127.0.0.1")?.trim()?.takeIf { it.isNotEmpty() } ?: "127.0.0.1"
@@ -101,7 +156,9 @@ object EncryptedAdbCredentialStore {
             clientIdentity = identity,
             rsaFingerprint = prefs.getString(KEY_RSA_FINGERPRINT, null),
             userStopped = prefs.getBoolean(KEY_USER_STOPPED, false),
-            lastConnectedAtMs = prefs.getLong(KEY_LAST_CONNECTED_AT_MS, 0L)
+            lastConnectedAtMs = prefs.getLong(KEY_LAST_CONNECTED_AT_MS, 0L),
+            trustedWifiNetworks = getTrustedWifiNetworks(context),
+            lastTrustedSsid = prefs.getString(KEY_LAST_TRUSTED_SSID, null)
         )
     }
 
@@ -150,6 +207,18 @@ object EncryptedAdbCredentialStore {
         getPrefs(context).edit()
             .putBoolean(KEY_USER_STOPPED, stopped)
             .apply()
+    }
+
+    fun clearPairingCredentials(context: Context) {
+        getPrefs(context).edit().apply {
+            putBoolean(KEY_IS_PAIRED, false)
+            putString(KEY_HOST, "127.0.0.1")
+            putBoolean(KEY_USER_STOPPED, false)
+            remove(KEY_CONNECT_PORT)
+            remove(KEY_PAIRING_PORT)
+            remove(KEY_RSA_FINGERPRINT)
+            remove(KEY_LAST_CONNECTED_AT_MS)
+        }.apply()
     }
 
     fun clearSession(context: Context) {

@@ -17,8 +17,8 @@ android {
     applicationId = "com.arworahyper.toolkit"
     minSdk = 24
     targetSdk = 35
-    versionCode = 212
-    versionName = "1.49.51"
+    versionCode = 216
+    versionName = "1.49.55"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -97,6 +97,7 @@ dependencies {
   implementation(libs.androidx.compose.ui.tooling.preview)
   implementation(libs.androidx.core.ktx)
   implementation(libs.androidx.core.splashscreen)
+  implementation(libs.androidx.constraintlayout)
   implementation(libs.material)
   implementation(libs.androidx.lifecycle.process)
   implementation(libs.androidx.profileinstaller)

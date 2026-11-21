@@ -143,7 +143,7 @@ class AdbShellExecutorBridgeTest {
             }
         }
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag("system_privilege_engine_badge").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("system_privilege_engine_badge", useUnmergedTree = true).assertIsDisplayed()
         composeTestRule.onNodeWithText("Active via Shizuku").assertIsDisplayed()
     }
 

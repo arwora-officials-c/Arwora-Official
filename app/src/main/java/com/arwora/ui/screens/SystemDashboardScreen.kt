@@ -65,6 +65,8 @@ import kotlinx.coroutines.launch
 import com.arwora.service.MockLocationService
 import com.arwora.ui.AppManagerViewModel
 import com.arwora.ui.navigation.Screen
+import com.arwora.ui.components.AdbPairingBottomSheet
+import com.arwora.ui.components.AdbPairingSheetTab
 import com.arwora.ui.components.ArworaDesignTokens
 import com.arwora.ui.components.ArworaTonalIconBadge
 import com.arwora.ui.components.ExpressiveCompactLoadingIndicator
@@ -79,6 +81,7 @@ import com.arwora.feature.system.linkshortener.LinkShortenerCard
 import com.arwora.feature.system.linkshortener.LinkShortenerViewModel
 import com.arwora.feature.system.htmltoapk.HtmlToApkBottomSheet
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.text.style.TextAlign
 import com.arwora.utils.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -96,6 +99,7 @@ fun SystemDashboardScreen(
     val coroutineScope = rememberCoroutineScope()
     LaunchedEffect(Unit) {
         NativeAdbManager.init(context)
+        ShizukuBridge.init(context, autoRequestIfNeeded = false)
         AdbShellExecutor.init(context)
         com.arwora.utils.AppLockerManager.init(context)
     }
@@ -126,6 +130,8 @@ fun SystemDashboardScreen(
     var isAppManagerExpanded by remember { mutableStateOf(false) }
     var isIpLookupExpanded by remember { mutableStateOf(false) }
     var showHtmlToApkSheet by rememberSaveable { mutableStateOf(false) }
+    var showAdbPairingSheet by rememberSaveable { mutableStateOf(false) }
+    var adbPairingSheetTab by remember { mutableStateOf(AdbPairingSheetTab.AUTOMATIC) }
 
     var ipDetails by remember { mutableStateOf<com.arwora.utils.IpLookupManager.IpDetails?>(null) }
     var isLoadingIp by remember { mutableStateOf(false) }
@@ -228,9 +234,21 @@ fun SystemDashboardScreen(
     // Animation & Refresh state
     var animScale by remember { mutableStateOf(AnimationTweakManager.getCurrentAnimationScale(context)) }
     val isAdbConnected by NativeAdbManager.isConnected.collectAsStateWithLifecycle()
+    val isUsbDebuggingEnabled by NativeAdbManager.isUsbDebuggingEnabled.collectAsStateWithLifecycle()
+    val isWirelessOnlyEnabled by NativeAdbManager.isWirelessOnlyEnabled.collectAsStateWithLifecycle()
+    val isSessionForgotten by NativeAdbManager.isSessionForgotten.collectAsStateWithLifecycle()
     val activePrivilegeEngine by AdbShellExecutor.activeEngine.collectAsStateWithLifecycle()
-    val isPrivilegeReady = isAdbConnected || activePrivilegeEngine != PrivilegeEngine.NONE
+    val shizukuBinderAlive by ShizukuBridge.isBinderAlive.collectAsStateWithLifecycle()
+    val shizukuPermissionGranted by ShizukuBridge.isPermissionGranted.collectAsStateWithLifecycle()
+    val shizukuShouldShowRationale by ShizukuBridge.shouldShowRationale.collectAsStateWithLifecycle()
+    val isPrivilegeReady = isAdbConnected ||
+        (shizukuBinderAlive && shizukuPermissionGranted) ||
+        activePrivilegeEngine != PrivilegeEngine.NONE
     var showPrivilegeEngineDialog by remember { mutableStateOf(false) }
+    val pendingWifiTrustPrompt by NativeAdbManager.pendingWifiTrustPrompt.collectAsStateWithLifecycle()
+    val activeWifiSsid by NativeAdbManager.activeWifiSsid.collectAsStateWithLifecycle()
+    val isCurrentWifiTrusted by NativeAdbManager.isCurrentWifiTrusted.collectAsStateWithLifecycle()
+    var showManualWifiTrustDialog by remember { mutableStateOf(false) }
     val hasNotificationAccess by WirelessPairingManager.notificationAccessGranted.collectAsStateWithLifecycle()
 
     // Fake Device State
@@ -267,6 +285,7 @@ fun SystemDashboardScreen(
         coroutineScope.launch {
             checkNotificationPermissionStatus()
             NativeAdbManager.refreshConnectionStatus(context)
+            ShizukuBridge.refreshState(context)
             AdbShellExecutor.refreshEngineStatus(context)
             val (scale, dns) = withContext(Dispatchers.IO) {
                 AnimationTweakManager.getCurrentAnimationScale(context) to
@@ -464,6 +483,58 @@ fun SystemDashboardScreen(
                         onClick = {
                             SoundEffectManager.playClick()
                             showPrivilegeEngineDialog = true
+                        }
+                    )
+                }
+            }
+
+            // 2C. SHIZUKU-STYLE DEBUGGING STATUS TOGGLES & QUICK PAIR CARD
+            item {
+                AnimatedListItem(index = 4) {
+                    ShizukuDebuggingTogglesCard(
+                        isUsbDebuggingEnabled = isUsbDebuggingEnabled,
+                        isWirelessDebuggingEnabled = isWirelessOnlyEnabled || isAdbConnected,
+                        isSessionForgotten = isSessionForgotten,
+                        onOpenDeveloperOptions = {
+                            SoundEffectManager.playClick()
+                            if (!NativeAdbManager.openDeveloperOptions(context)) {
+                                Toast.makeText(context, "Unable to open Developer Options.", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        onToggleUsbDebugging = {
+                            SoundEffectManager.playClick()
+                            coroutineScope.launch {
+                                val (ok, msg) = NativeAdbManager.toggleUsbDebugging(context)
+                                refreshDashboardStatuses()
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                if (!ok) {
+                                    NativeAdbManager.openDeveloperOptions(context)
+                                }
+                            }
+                        },
+                        onToggleWirelessDebugging = {
+                            SoundEffectManager.playClick()
+                            coroutineScope.launch {
+                                val (ok, msg) = NativeAdbManager.toggleWirelessDebugging(context)
+                                refreshDashboardStatuses()
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                if (!ok) {
+                                    NativeAdbManager.openWirelessDebuggingSettings(context)
+                                }
+                            }
+                        },
+                        onOpenPairDialog = {
+                            SoundEffectManager.playClick()
+                            adbPairingSheetTab = AdbPairingSheetTab.AUTOMATIC
+                            showAdbPairingSheet = true
+                        },
+                        onResetAndPairNewDevice = {
+                            SoundEffectManager.playClick()
+                            NativeAdbManager.forgetPairedDeviceAndReset(context)
+                            refreshDashboardStatuses()
+                            adbPairingSheetTab = AdbPairingSheetTab.AUTOMATIC
+                            showAdbPairingSheet = true
+                            Toast.makeText(context, "Generated fresh pairing keypair for new device.", Toast.LENGTH_SHORT).show()
                         }
                     )
                 }
@@ -1926,6 +1997,35 @@ fun SystemDashboardScreen(
                                         )
                                     }
                                 }
+                                if (adbConnectionState != NativeAdbConnectionState.WIFI_REQUIRED) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                SoundEffectManager.playClick()
+                                                if (!isCurrentWifiTrusted) {
+                                                    showManualWifiTrustDialog = true
+                                                } else {
+                                                    Toast.makeText(
+                                                        context,
+                                                        "${activeWifiSsid ?: "Active Wi-Fi"} is trusted for Wireless ADB",
+                                                        Toast.LENGTH_SHORT
+                                                    ).show()
+                                                }
+                                            },
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("Wi-Fi Trust (${activeWifiSsid ?: "Current Wi-Fi"}):", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(
+                                            text = if (isCurrentWifiTrusted) "Trusted Network" else "Trust Required",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isCurrentWifiTrusted) Color(0xFF10B981) else Color(0xFFF59E0B),
+                                            modifier = Modifier.testTag("wireless_wifi_trust_status_text")
+                                        )
+                                    }
+                                }
                             }
                         }
 
@@ -2104,6 +2204,45 @@ fun SystemDashboardScreen(
                                     )
                                 }
                             }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = {
+                                        SoundEffectManager.playClick()
+                                        adbPairingSheetTab = AdbPairingSheetTab.AUTOMATIC
+                                        showAdbPairingSheet = true
+                                    },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp)
+                                        .testTag("wireless_card_pair_dialog_button"),
+                                    shape = ArworaDesignTokens.PillShape
+                                ) {
+                                    Text("Pair with device", fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        SoundEffectManager.playClick()
+                                        NativeAdbManager.forgetPairedDeviceAndReset(context)
+                                        updateAdbStatus()
+                                        refreshDashboardStatuses()
+                                        adbPairingSheetTab = AdbPairingSheetTab.AUTOMATIC
+                                        showAdbPairingSheet = true
+                                        Toast.makeText(context, "Old keys cleared. Ready to pair new device.", Toast.LENGTH_SHORT).show()
+                                    },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp)
+                                        .testTag("wireless_adb_pair_new_device_button"),
+                                    shape = ArworaDesignTokens.PillShape
+                                ) {
+                                    Text("Pair New Device", fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
                         }
 
                         Spacer(modifier = Modifier.height(14.dp))
@@ -2194,7 +2333,7 @@ fun SystemDashboardScreen(
                                             if (ok) {
                                                 animScale = scale
                                             } else {
-                                                Toast.makeText(context, "Connect Wireless ADB first", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, "Connect Shizuku or Wireless ADB first", Toast.LENGTH_SHORT).show()
                                             }
                                         }
                                     },
@@ -2350,9 +2489,122 @@ fun SystemDashboardScreen(
         onDismissRequest = { showHtmlToApkSheet = false }
     )
 
+    AdbPairingBottomSheet(
+        visible = showAdbPairingSheet,
+        initialTab = adbPairingSheetTab,
+        onDismissRequest = { showAdbPairingSheet = false },
+        onPairingComplete = {
+            showAdbPairingSheet = false
+            refreshDashboardStatuses()
+        }
+    )
+
+    val activeWifiTrustPrompt = pendingWifiTrustPrompt
+        ?: if (showManualWifiTrustDialog) {
+            val (ssid, netKey) = NativeAdbManager.resolveActiveWifiIdentity(context)
+            WifiTrustState(
+                ssid = ssid ?: activeWifiSsid,
+                networkKey = netKey ?: "wifi_active_network",
+                isTrusted = isCurrentWifiTrusted,
+                requiresPrompt = true
+            )
+        } else {
+            null
+        }
+
+    if (activeWifiTrustPrompt != null) {
+        var alwaysAllowOnNetwork by remember(activeWifiTrustPrompt.networkKey) { mutableStateOf(true) }
+        AlertDialog(
+            onDismissRequest = {
+                showManualWifiTrustDialog = false
+                NativeAdbManager.dismissWifiTrustPrompt()
+            },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.WifiLock,
+                    contentDescription = "Allow Wireless Debugging on Wi-Fi Network",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            },
+            title = {
+                Text(
+                    text = "Allow wireless debugging on this network?",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Network: ${activeWifiTrustPrompt.ssid ?: "Active Wi-Fi Network"}",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "Android requires confirming Wi-Fi trust before exposing the local Wireless Debugging service (_adb-tls-connect._tcp). Open Wireless Debugging to accept Android's system dialog on this network.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { alwaysAllowOnNetwork = !alwaysAllowOnNetwork }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = alwaysAllowOnNetwork,
+                            onCheckedChange = { alwaysAllowOnNetwork = it },
+                            modifier = Modifier.testTag("wifi_trust_always_allow_checkbox")
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Always allow on this network",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        SoundEffectManager.playClick()
+                        showManualWifiTrustDialog = false
+                        NativeAdbManager.trustCurrentWifiNetwork(context, alwaysAllow = alwaysAllowOnNetwork)
+                        coroutineScope.launch {
+                            val (ok, msg) = WirelessPairingManager.connectUnifiedWirelessAdb(context)
+                            refreshDashboardStatuses()
+                            if (!ok) {
+                                NativeAdbManager.openWirelessDebuggingSettings(context)
+                            }
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.testTag("wifi_trust_allow_connect_button")
+                ) {
+                    Text("Allow & Connect")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        SoundEffectManager.playClick()
+                        showManualWifiTrustDialog = false
+                        NativeAdbManager.openWirelessDebuggingSettings(context)
+                    },
+                    modifier = Modifier.testTag("wifi_trust_open_settings_button")
+                ) {
+                    Text("Wireless Settings")
+                }
+            }
+        )
+    }
+
     if (showPrivilegeEngineDialog) {
-        val shizukuRunning = AdbShellExecutor.isShizukuRunning()
-        val shizukuPermitted = AdbShellExecutor.hasShizukuPermission()
+        val shizukuRunning = shizukuBinderAlive || AdbShellExecutor.isShizukuRunning()
+        val shizukuPermitted = shizukuPermissionGranted || AdbShellExecutor.hasShizukuPermission()
         val shizukuInstalled = AdbShellExecutor.isShizukuInstalled(context)
         AlertDialog(
             onDismissRequest = { showPrivilegeEngineDialog = false },
@@ -2386,13 +2638,15 @@ fun SystemDashboardScreen(
                                 Text("Shizuku Daemon:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text(
                                     text = when {
-                                        shizukuPermitted -> "Authorized"
+                                        shizukuPermitted -> "Authorized & Active"
+                                        shizukuRunning && shizukuShouldShowRationale -> "Permission Denied (Tap Grant)"
                                         shizukuRunning -> "Running (Tap Authorize)"
                                         shizukuInstalled -> "Installed (Service Stopped)"
                                         else -> "Not Installed"
                                     },
                                     style = MaterialTheme.typography.bodySmall,
-                                    fontWeight = FontWeight.SemiBold
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (shizukuPermitted) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurface
                                 )
                             }
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -2412,10 +2666,13 @@ fun SystemDashboardScreen(
                         OutlinedButton(
                             onClick = {
                                 SoundEffectManager.playClick()
-                                showPrivilegeEngineDialog = false
-                                if (shizukuRunning && !shizukuPermitted) {
-                                    AdbShellExecutor.requestShizukuPermission()
+                                if (shizukuPermitted) {
+                                    refreshDashboardStatuses()
+                                    Toast.makeText(context, "Shizuku permission is active", Toast.LENGTH_SHORT).show()
+                                } else if (shizukuRunning) {
+                                    ShizukuBridge.requestPermission(ShizukuBridge.REQUEST_CODE)
                                 } else {
+                                    showPrivilegeEngineDialog = false
                                     AdbShellExecutor.openOrInstallShizuku(context)
                                 }
                             },
@@ -2424,7 +2681,8 @@ fun SystemDashboardScreen(
                         ) {
                             Text(
                                 text = when {
-                                    shizukuRunning && !shizukuPermitted -> "Authorize Shizuku"
+                                    shizukuPermitted -> "Shizuku Active"
+                                    shizukuRunning -> "Authorize Shizuku"
                                     shizukuInstalled -> "Open Shizuku"
                                     else -> "Get Shizuku"
                                 },
@@ -3349,4 +3607,207 @@ internal fun PrivilegeEngineBridgeCard(
         }
     }
 }
+
+@Composable
+internal fun ShizukuDebuggingTogglesCard(
+    isUsbDebuggingEnabled: Boolean,
+    isWirelessDebuggingEnabled: Boolean,
+    isSessionForgotten: Boolean = false,
+    onOpenDeveloperOptions: () -> Unit,
+    onToggleUsbDebugging: () -> Unit,
+    onToggleWirelessDebugging: () -> Unit,
+    onOpenPairDialog: () -> Unit,
+    onResetAndPairNewDevice: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    SystemCard(modifier = modifier.testTag("shizuku_debugging_toggles_card")) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                    Text(
+                        text = "Debugging Quick Controls",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = (-0.2).sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = if (isSessionForgotten) {
+                            "Device pairing forgotten or rejected — tap Pair New Device"
+                        } else {
+                            "Toggle USB/Wireless Debugging or pair directly"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isSessionForgotten) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
+                        },
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                val overallActive = isUsbDebuggingEnabled || isWirelessDebuggingEnabled
+                val pillColor = if (overallActive) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant
+                Surface(
+                    shape = ArworaDesignTokens.PillShape,
+                    color = pillColor.copy(alpha = 0.12f),
+                    border = BorderStroke(1.dp, pillColor.copy(alpha = 0.3f))
+                ) {
+                    Text(
+                        text = if (isWirelessDebuggingEnabled) "Wireless ON" else if (isUsbDebuggingEnabled) "USB ON" else "Standby",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = pillColor,
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            // 3 sleek Shizuku-style pill toggle buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = onOpenDeveloperOptions,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .testTag("toggle_pill_developer_options"),
+                    shape = ArworaDesignTokens.PillShape,
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    ),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = "Developer Options",
+                        fontSize = 11.sp,
+                        lineHeight = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Button(
+                    onClick = onToggleUsbDebugging,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .testTag("toggle_pill_usb_debugging"),
+                    shape = ArworaDesignTokens.PillShape,
+                    colors = if (isUsbDebuggingEnabled) {
+                        ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF10B981),
+                            contentColor = Color.White
+                        )
+                    } else {
+                        ButtonDefaults.filledTonalButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = "USB Debugging",
+                        fontSize = 11.sp,
+                        lineHeight = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Button(
+                    onClick = onToggleWirelessDebugging,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .testTag("toggle_pill_wireless_debugging"),
+                    shape = ArworaDesignTokens.PillShape,
+                    colors = if (isWirelessDebuggingEnabled) {
+                        ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    } else {
+                        ButtonDefaults.filledTonalButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = "Wireless Debugging",
+                        fontSize = 11.sp,
+                        lineHeight = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = onOpenPairDialog,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                        .testTag("open_adb_pairing_sheet_button"),
+                    shape = ArworaDesignTokens.PillShape
+                ) {
+                    Text(
+                        text = "Pair with device",
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = onResetAndPairNewDevice,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                        .testTag("quick_controls_pair_new_device_button"),
+                    shape = ArworaDesignTokens.PillShape
+                ) {
+                    Text(
+                        text = "Pair New Device",
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+    }
+}
+
 

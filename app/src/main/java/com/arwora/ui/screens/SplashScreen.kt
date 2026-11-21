@@ -44,11 +44,11 @@ import com.arwora.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-internal const val SPLASH_LOGO_ANIM_DURATION_MS = 700
-internal const val SPLASH_POST_ANIM_HOLD_MS = 500L
+internal const val SPLASH_LOGO_ANIM_DURATION_MS = 500
+internal const val SPLASH_POST_ANIM_HOLD_MS = 1000L
 internal const val SPLASH_TOTAL_DURATION_MS = SPLASH_LOGO_ANIM_DURATION_MS.toLong() + SPLASH_POST_ANIM_HOLD_MS
-internal const val SPLASH_INITIAL_SCALE = 0.82f
-internal const val SPLASH_INITIAL_TRANSLATION_Y_DP = 24f
+internal const val SPLASH_INITIAL_SCALE = 0.90f
+internal const val SPLASH_INITIAL_TRANSLATION_Y_DP = 0f
 
 internal data class SplashPalette(
     val backgroundColor: Color,

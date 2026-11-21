@@ -54,6 +54,7 @@ class AdbConnectionService : Service() {
         const val NOTIFICATION_ID = 4206
         const val ACTION_RECONNECT = "com.arwora.service.ACTION_PERSISTENT_ADB_RECONNECT"
         const val ACTION_STOP = "com.arwora.service.ACTION_PERSISTENT_ADB_STOP"
+        const val ACTION_FORGET_RESET = "com.arwora.service.ACTION_FORGET_RESET"
         private const val KEEPALIVE_INTERVAL_MS = 45_000L
         private const val UNIQUE_RECONNECT_WORK = "arwora_adb_silent_reconnect"
 
@@ -176,8 +177,15 @@ class AdbConnectionService : Service() {
             }
         }
 
+        fun cancelPendingWork(context: Context) {
+            runCatching {
+                WorkManager.getInstance(context.applicationContext).cancelUniqueWork(UNIQUE_RECONNECT_WORK)
+            }
+        }
+
         fun stop(context: Context) {
             val appCtx = context.applicationContext
+            cancelPendingWork(appCtx)
             runCatching {
                 appCtx.stopService(Intent(appCtx, AdbConnectionService::class.java))
             }
@@ -216,9 +224,14 @@ class AdbConnectionService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        if (intent?.action == ACTION_FORGET_RESET) {
+            NativeAdbManager.forgetPairedDeviceAndReset(this)
+            stopSelf()
+            return START_NOT_STICKY
+        }
 
         val creds = EncryptedAdbCredentialStore.loadState(this)
-        if (!creds.isPaired || creds.userStopped) {
+        if (!creds.isPaired || creds.userStopped || NativeAdbManager.isSessionForgotten.value) {
             stopSelf()
             return START_NOT_STICKY
         }
@@ -246,7 +259,7 @@ class AdbConnectionService : Service() {
         monitorJob = serviceScope.launch {
             while (isActive) {
                 val creds = EncryptedAdbCredentialStore.loadState(this@AdbConnectionService)
-                if (!creds.isPaired || creds.userStopped) {
+                if (!creds.isPaired || creds.userStopped || NativeAdbManager.isSessionForgotten.value) {
                     stopSelf()
                     break
                 }
@@ -335,11 +348,16 @@ class AdbReconnectWorker(
 
     override suspend fun doWork(): Result {
         val creds = EncryptedAdbCredentialStore.loadState(applicationContext)
-        if (!creds.isPaired || creds.userStopped) {
+        if (!creds.isPaired || creds.userStopped || NativeAdbManager.isSessionForgotten.value) {
             return Result.success()
         }
         val (ok, _) = NativeAdbManager.reconnectSavedSession(applicationContext)
         if (ok) {
+            return Result.success()
+        }
+        if (NativeAdbManager.isSessionForgotten.value ||
+            !EncryptedAdbCredentialStore.loadState(applicationContext).isPaired
+        ) {
             return Result.success()
         }
         return if (runAttemptCount < 2) Result.retry() else Result.success()

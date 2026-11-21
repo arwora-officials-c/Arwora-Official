@@ -64,6 +64,7 @@ import com.arwora.utils.AppPermissionsHelper
 import com.arwora.utils.ManagedAppPermission
 import com.arwora.utils.ManagedPermissionCategory
 import com.arwora.utils.PrivilegeEngine
+import com.arwora.utils.ShizukuBridge
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -120,6 +121,8 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
     var showRevokeAllConfirmDialog by remember { mutableStateOf(false) }
     var remainingSpecialPermissionsDialogList by remember { mutableStateOf<List<ManagedAppPermission>>(emptyList()) }
     val activePrivilegeEngine by AdbShellExecutor.activeEngine.collectAsStateWithLifecycle()
+    val shizukuBinderAlive by ShizukuBridge.isBinderAlive.collectAsStateWithLifecycle()
+    val shizukuPermissionGranted by ShizukuBridge.isPermissionGranted.collectAsStateWithLifecycle()
 
     val singleCategoryRuntimeLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -802,9 +805,18 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
                                 .testTag("settings_privilege_engine_row")
                                 .clickable {
                                     com.arwora.utils.SoundEffectManager.playClick()
-                                    if (AdbShellExecutor.isShizukuRunning() && !AdbShellExecutor.hasShizukuPermission()) {
-                                        AdbShellExecutor.requestShizukuPermission()
-                                    } else if (AdbShellExecutor.isShizukuInstalled(context) && !AdbShellExecutor.isShizukuRunning()) {
+                                    val binderAlive = shizukuBinderAlive || AdbShellExecutor.isShizukuRunning()
+                                    val permGranted = shizukuPermissionGranted || AdbShellExecutor.hasShizukuPermission()
+                                    if (binderAlive && permGranted) {
+                                        AdbShellExecutor.refreshEngineStatus(context)
+                                        Toast.makeText(
+                                            context,
+                                            "Shizuku RISH is active and authorized",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    } else if (binderAlive) {
+                                        ShizukuBridge.requestPermission(ShizukuBridge.REQUEST_CODE)
+                                    } else if (ShizukuBridge.isShizukuInstalled(context)) {
                                         AdbShellExecutor.openOrInstallShizuku(context)
                                     } else {
                                         AppPermissionsHelper.openPermissionSettings(
