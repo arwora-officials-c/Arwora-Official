@@ -84,17 +84,17 @@ class NameGenApplication : Application() {
         notificationRepository = com.arwora.data.repository.NotificationRepository(database.notificationDao())
         sharedViewModel = com.arwora.ui.MainViewModel(historyRepository, favoriteRepository, settingsRepository, savedTextRepository)
 
-        // Initialize Robust Extraction Engine (yt-dlp wrapper & App ID tracking)
-        try {
-            com.arwora.utils.MediaDownloadUtils.saveAppId(this)
-            com.yausername.youtubedl_android.YoutubeDL.getInstance().init(this)
-            com.yausername.ffmpeg.FFmpeg.getInstance().init(this)
-        } catch (e: Exception) {
-            android.util.Log.e("NameGenApplication", "Failed to initialize YoutubeDL engine", e)
-        }
-
-        // Defer audio engine synthesis, hardware AudioTrack allocations, and Wi-Fi auto-pair monitor to run post-first-frame
+        // Defer heavy extraction engines (yt-dlp/FFmpeg), audio synthesis, and Wi-Fi monitor off cold-start main thread
         StartupDefer.schedulePostFirstFrame(this) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    com.arwora.utils.MediaDownloadUtils.saveAppId(this@NameGenApplication)
+                    com.yausername.youtubedl_android.YoutubeDL.getInstance().init(this@NameGenApplication)
+                    com.yausername.ffmpeg.FFmpeg.getInstance().init(this@NameGenApplication)
+                } catch (e: Exception) {
+                    android.util.Log.e("NameGenApplication", "Failed to initialize YoutubeDL engine", e)
+                }
+            }
             com.arwora.utils.SoundEffectManager.init(this@NameGenApplication)
             com.arwora.feature.system.battery.service.BatteryMonitorManager.init(this@NameGenApplication)
             com.arwora.utils.NativeAdbManager.init(this@NameGenApplication)

@@ -49,17 +49,21 @@ class PrivacyPolicyAndSplashTest {
 
     @Test
     fun splashAnimationDurationFitsSmoothTargetRange() {
-        assertEquals(500, SPLASH_LOGO_ANIM_DURATION_MS)
-        assertEquals(1000L, SPLASH_POST_ANIM_HOLD_MS)
-        assertEquals(1500L, SPLASH_TOTAL_DURATION_MS)
-        assertEquals(0.90f, SPLASH_INITIAL_SCALE, 0.001f)
+        assertEquals(0, SPLASH_LOGO_ANIM_DURATION_MS)
+        assertEquals(400L, SPLASH_POST_ANIM_HOLD_MS)
+        assertEquals(300, com.arwora.ui.screens.SPLASH_FADE_OUT_DURATION_MS)
+        assertEquals(700L, SPLASH_TOTAL_DURATION_MS)
+        assertTrue("Total splash hold must be within 600ms..800ms", SPLASH_TOTAL_DURATION_MS in 600L..800L)
+        assertEquals(1.0f, SPLASH_INITIAL_SCALE, 0.001f)
         assertEquals(0f, SPLASH_INITIAL_TRANSLATION_Y_DP, 0.001f)
         assertEquals("splash", Screen.Splash.route)
 
-        assertEquals(500L, SplashActivity.ANIM_DURATION_MS)
-        assertEquals(1000L, SplashActivity.HOLD_DURATION_MS)
-        assertEquals(1500L, SplashActivity.TOTAL_DURATION_MS)
-        assertEquals(0.90f, SplashActivity.INITIAL_SCALE, 0.001f)
+        assertEquals(0L, SplashActivity.ANIM_DURATION_MS)
+        assertEquals(400L, SplashActivity.HOLD_DURATION_MS)
+        assertEquals(300L, SplashActivity.FADE_OUT_DURATION_MS)
+        assertEquals(700L, SplashActivity.TOTAL_DURATION_MS)
+        assertTrue("SplashActivity duration must be within 600ms..800ms", SplashActivity.TOTAL_DURATION_MS in 600L..800L)
+        assertEquals(1.0f, SplashActivity.INITIAL_SCALE, 0.001f)
         assertEquals(0f, SplashActivity.INITIAL_TRANSLATION_Y_DP, 0.001f)
     }
 
@@ -103,19 +107,24 @@ class PrivacyPolicyAndSplashTest {
         assertEquals(android.graphics.Color.BLACK, (root.background as ColorDrawable).color)
         assertNotNull(wordmark.drawable)
         assertNotNull(wordmark.colorFilter)
+        assertEquals(1.0f, wordmark.alpha, 0.001f)
+        assertEquals(1.0f, wordmark.scaleX, 0.001f)
+        assertEquals(1.0f, wordmark.scaleY, 0.001f)
 
         val lp = wordmark.layoutParams as ConstraintLayout.LayoutParams
-        val widthDp = lp.width / activity.resources.displayMetrics.density
-        assertTrue("Width $widthDp dp must be within 220dp..260dp", widthDp in 220f..260f)
-        assertEquals(ViewGroup.LayoutParams.WRAP_CONTENT, lp.height)
+        val density = activity.resources.displayMetrics.density
+        val widthDp = lp.width / density
+        val heightDp = lp.height / density
+        assertEquals(240f, widthDp, 0.5f)
+        assertEquals(60f, heightDp, 0.5f)
         assertEquals(ConstraintLayout.LayoutParams.PARENT_ID, lp.startToStart)
         assertEquals(ConstraintLayout.LayoutParams.PARENT_ID, lp.endToEnd)
         assertEquals(ConstraintLayout.LayoutParams.PARENT_ID, lp.topToTop)
         assertEquals(ConstraintLayout.LayoutParams.PARENT_ID, lp.bottomToBottom)
 
-        Shadows.shadowOf(Looper.getMainLooper()).idleFor(1600, TimeUnit.MILLISECONDS)
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(800, TimeUnit.MILLISECONDS)
         val nextIntent = Shadows.shadowOf(activity).nextStartedActivity
-        assertNotNull("SplashActivity must launch MainActivity after hold", nextIntent)
+        assertNotNull("SplashActivity must launch MainActivity within 800ms", nextIntent)
         assertEquals(MainActivity::class.java.name, nextIntent.component?.className)
         assertTrue(activity.isFinishing)
 
@@ -132,10 +141,9 @@ class PrivacyPolicyAndSplashTest {
             }
         }
 
-        // Step one frame so LaunchedEffect(Unit) starts the 500ms Animatable fade+scale,
-        // then advance 650ms before the 1500ms auto-dismiss completes.
+        // Step one frame so instant wordmark displays immediately, then advance 300ms during hold
         composeTestRule.mainClock.advanceTimeByFrame()
-        composeTestRule.mainClock.advanceTimeBy(650L)
+        composeTestRule.mainClock.advanceTimeBy(300L)
         composeTestRule.waitForIdle()
         assertFalse(finished)
         composeTestRule.onNodeWithTag("splash_screen_root").assertIsDisplayed()
@@ -144,8 +152,8 @@ class PrivacyPolicyAndSplashTest {
         composeTestRule.onNodeWithTag("splash_app_logo", useUnmergedTree = true).assertDoesNotExist()
         composeTestRule.onNodeWithText("HYPER TOOLKIT", useUnmergedTree = true).assertDoesNotExist()
 
-        // Advance past 500ms animation + 1000ms hold (1500ms total) to verify completion callback triggers smoothly.
-        composeTestRule.mainClock.advanceTimeBy(950L)
+        // Advance past 400ms hold + 300ms alpha fade-out (700ms total)
+        composeTestRule.mainClock.advanceTimeBy(450L)
         composeTestRule.waitForIdle()
         assertTrue(finished)
     }

@@ -108,9 +108,9 @@ object ArworaMotionTokens {
     const val TAB_TRANSITION_DURATION_MS = 240
     const val SCREEN_TRANSITION_DURATION_MS = 250
     const val CARD_TOGGLE_DURATION_MS = 220
-    const val LIST_ENTRY_DURATION_MS = 200
-    const val LIST_STAGGER_STEP_MS = 20L
-    const val MAX_LIST_STAGGER_ITEMS = 6
+    const val LIST_ENTRY_DURATION_MS = 220
+    const val LIST_STAGGER_STEP_MS = 35L
+    const val MAX_LIST_STAGGER_ITEMS = 12
 
     val StandardEasing: Easing = FastOutSlowInEasing
 

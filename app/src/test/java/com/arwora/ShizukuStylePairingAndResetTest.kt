@@ -31,7 +31,7 @@ import org.robolectric.annotation.Config
 import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [36], qualifiers = "w380dp-h800dp")
+@Config(sdk = [35], qualifiers = "w380dp-h800dp")
 class ShizukuStylePairingAndResetTest {
 
     @get:Rule

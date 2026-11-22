@@ -558,7 +558,12 @@ fun NameGenNavHost(
                         2 -> SocialScreen(navController = navController, viewModel = viewModel)
                         3 -> {
                             val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as com.arwora.NameGenApplication
-                            SystemDashboardScreen(navController = navController, appManagerViewModel = app.appManagerViewModel)
+                            val isSystemDashboardVisible = pagerState.currentPage == 3 || pagerState.targetPage == 3
+                            SystemDashboardScreen(
+                                navController = navController,
+                                appManagerViewModel = app.appManagerViewModel,
+                                isVisible = isSystemDashboardVisible
+                            )
                         }
                         4 -> SettingsScreen(navController = navController, viewModel = viewModel)
                     }

@@ -31,7 +31,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [36], qualifiers = "w380dp-h800dp")
+@Config(sdk = [35], qualifiers = "w380dp-h800dp")
 class AppOpsEngineBridgeTest {
 
     @get:Rule
@@ -245,8 +245,41 @@ class AppOpsEngineBridgeTest {
 
         composeTestRule.onNodeWithTag("app_op_CAMERA_ignore").performScrollTo().performClick()
         assertEquals("CAMERA" to "ignore", lastOpUpdate)
+    }
 
-        // Verify row card also surfaces Allowed & Restricted badges cleanly
+    @Test
+    fun rowCardDisplaysExpressiveAllowedAndRestrictedBadges() {
+        val sampleApp = AppOpsItem(
+            appName = "Arwora Demo App",
+            packageName = "com.example.demo",
+            versionName = "2.4.0",
+            versionCode = 24,
+            uid = 10240,
+            minSdk = 24,
+            targetSdk = 35,
+            dataDir = "/data/data/com.example.demo",
+            sourceDir = "/data/app/com.example.demo/base.apk",
+            firstInstallTime = 1_700_000_000_000L,
+            lastUpdateTime = 1_700_000_100_000L,
+            firstInstallFormatted = "2024-01-01 12:00",
+            lastUpdateFormatted = "2024-01-02 12:00",
+            isSystem = false,
+            isDisabled = false,
+            isHidden = false,
+            hasLocationPermission = true,
+            hasCameraPermission = true,
+            hasAudioPermission = true,
+            hasSystemOpsPermission = true,
+            appOpsStates = mapOf(
+                "CAMERA" to "allow",
+                "COARSE_LOCATION" to "allow",
+                "RECORD_AUDIO" to "ignore",
+                "WRITE_SETTINGS" to "deny",
+                "READ_PHONE_STATE" to "default",
+                "SYSTEM_ALERT_WINDOW" to "allow"
+            )
+        )
+
         composeTestRule.setContent {
             NameGenProTheme {
                 AppOpsRowCard(app = sampleApp, onClick = {})

@@ -68,6 +68,7 @@ import com.arwora.ui.navigation.Screen
 import com.arwora.ui.components.AdbPairingBottomSheet
 import com.arwora.ui.components.AdbPairingSheetTab
 import com.arwora.ui.components.ArworaDesignTokens
+import com.arwora.ui.components.ArworaMotionTokens
 import com.arwora.ui.components.ArworaTonalIconBadge
 import com.arwora.ui.components.ExpressiveCompactLoadingIndicator
 import com.arwora.ui.components.ExpressiveWavyLinearProgressIndicator
@@ -88,12 +89,28 @@ import com.arwora.utils.*
 @Composable
 fun SystemDashboardScreen(
     navController: NavController,
-    appManagerViewModel: AppManagerViewModel
+    @Suppress("UNUSED_PARAMETER") appManagerViewModel: AppManagerViewModel,
+    isVisible: Boolean = true
 ) {
     val t0 = remember { SystemClock.uptimeMillis() }
     SideEffect {
         Log.d("Tabs", "SystemDashboardScreen switched in ${SystemClock.uptimeMillis() - t0}ms")
     }
+
+    var hasDashboardLoadedOnce by rememberSaveable { mutableStateOf(false) }
+    var isInitialStaggerWindowActive by rememberSaveable { mutableStateOf(true) }
+    LaunchedEffect(isVisible) {
+        if (isVisible && !hasDashboardLoadedOnce) {
+            hasDashboardLoadedOnce = true
+            isInitialStaggerWindowActive = true
+            kotlinx.coroutines.delay(
+                (ArworaMotionTokens.MAX_LIST_STAGGER_ITEMS * ArworaMotionTokens.LIST_STAGGER_STEP_MS) +
+                    ArworaMotionTokens.LIST_ENTRY_DURATION_MS + 100L
+            )
+            isInitialStaggerWindowActive = false
+        }
+    }
+    val canPlayCardEntrance = isVisible || hasDashboardLoadedOnce
 
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -122,12 +139,9 @@ fun SystemDashboardScreen(
 
     // Expanded section states
     var isDnsExpanded by remember { mutableStateOf(false) }
-
-    var isWirelessDebuggingExpanded by remember { mutableStateOf(false) }
     var isAnimationExpanded by remember { mutableStateOf(false) }
     var isFakeGpsExpanded by rememberSaveable { mutableStateOf(false) }
     var isFakeDeviceExpanded by remember { mutableStateOf(false) }
-    var isAppManagerExpanded by remember { mutableStateOf(false) }
     var isIpLookupExpanded by remember { mutableStateOf(false) }
     var showHtmlToApkSheet by rememberSaveable { mutableStateOf(false) }
     var showAdbPairingSheet by rememberSaveable { mutableStateOf(false) }
@@ -246,9 +260,6 @@ fun SystemDashboardScreen(
         activePrivilegeEngine != PrivilegeEngine.NONE
     var showPrivilegeEngineDialog by remember { mutableStateOf(false) }
     val pendingWifiTrustPrompt by NativeAdbManager.pendingWifiTrustPrompt.collectAsStateWithLifecycle()
-    val activeWifiSsid by NativeAdbManager.activeWifiSsid.collectAsStateWithLifecycle()
-    val isCurrentWifiTrusted by NativeAdbManager.isCurrentWifiTrusted.collectAsStateWithLifecycle()
-    var showManualWifiTrustDialog by remember { mutableStateOf(false) }
     val hasNotificationAccess by WirelessPairingManager.notificationAccessGranted.collectAsStateWithLifecycle()
 
     // Fake Device State
@@ -311,7 +322,6 @@ fun SystemDashboardScreen(
 
     LaunchedEffect(Unit) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            appManagerViewModel.onVisible()
             withContext(Dispatchers.IO) {
                 FakeGpsManager.init(context)
                 val dns = DnsManager.getSelectedDns(context)
@@ -361,13 +371,18 @@ fun SystemDashboardScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
                 .background(MaterialTheme.colorScheme.background)
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = 16.dp)
+                .testTag("system_dashboard_lazy_column"),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             // 0. ACTIVE ALARM / NOTIFICATION BANNER
             if (!activeAlarmMessage.isNullOrBlank()) {
                 item {
-                    AnimatedListItem(index = 0) {
+                    DashboardStaggeredItem(
+                        index = 0,
+                        triggerAnimation = canPlayCardEntrance,
+                        isInitialLoadBurst = isInitialStaggerWindowActive
+                    ) {
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -445,7 +460,11 @@ fun SystemDashboardScreen(
 
             // 1. TOP HEADER SECTION
             item {
-                AnimatedListItem(index = 1) {
+                DashboardStaggeredItem(
+                    index = 1,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
                     Column {
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
@@ -470,14 +489,22 @@ fun SystemDashboardScreen(
 
             // 2. HERO / SUMMARY CARD
             item {
-                AnimatedListItem(index = 2) {
+                DashboardStaggeredItem(
+                    index = 2,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
                     CentralizedControlPanelHeroCard()
                 }
             }
 
             // 2B. UNIVERSAL DUAL-ENGINE PRIVILEGE BRIDGE STATUS CARD
             item {
-                AnimatedListItem(index = 3) {
+                DashboardStaggeredItem(
+                    index = 3,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
                     PrivilegeEngineBridgeCard(
                         engine = activePrivilegeEngine,
                         onClick = {
@@ -490,7 +517,11 @@ fun SystemDashboardScreen(
 
             // 2C. SHIZUKU-STYLE DEBUGGING STATUS TOGGLES & QUICK PAIR CARD
             item {
-                AnimatedListItem(index = 4) {
+                DashboardStaggeredItem(
+                    index = 4,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
                     ShizukuDebuggingTogglesCard(
                         isUsbDebuggingEnabled = isUsbDebuggingEnabled,
                         isWirelessDebuggingEnabled = isWirelessOnlyEnabled || isAdbConnected,
@@ -542,12 +573,23 @@ fun SystemDashboardScreen(
 
         // SECTION 1: CORE CONTROLS & SPOOFERS
         item {
-            SectionHeader(title = "Core Controls & Spoofers")
+            DashboardStaggeredItem(
+                index = 5,
+                triggerAnimation = canPlayCardEntrance,
+                isInitialLoadBurst = isInitialStaggerWindowActive
+            ) {
+                SectionHeader(title = "Core Controls & Spoofers")
+            }
         }
 
             // FAKE GPS / LOCATION SPOOFER CARD (collapsed by default)
             item {
-                FakeGpsLocationSpooferCard(
+                DashboardStaggeredItem(
+                    index = 6,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
+                    FakeGpsLocationSpooferCard(
                     isExpanded = isFakeGpsExpanded,
                     onToggleExpand = {
                         SoundEffectManager.playClick()
@@ -622,13 +664,19 @@ fun SystemDashboardScreen(
                         FakeGpsManager.openDeveloperSettings(context)
                     }
                 )
+                }
             }
 
 
             // FAKE DEVICE SWITCHER CARD
             val isActualDevice = currentSpoof == defaultDeviceName || currentSpoof.contains(android.os.Build.MODEL, ignoreCase = true)
             item {
-                SystemFeatureCard(
+                DashboardStaggeredItem(
+                    index = 7,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
+                    SystemFeatureCard(
                     title = "Device Model",
                     subtitle = if (isActualDevice) "Actual Hardware: $currentSpoof" else "Active Spoof: $currentSpoof",
                     icon = Icons.Default.PhoneAndroid,
@@ -728,16 +776,28 @@ fun SystemDashboardScreen(
                         }
                     }
                 }
+                }
             }
 
             // SECTION 2: NETWORK & SYSTEM SETTINGS
             item {
-                SectionHeader(title = "Network & System Settings")
+                DashboardStaggeredItem(
+                    index = 8,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
+                    SectionHeader(title = "Network & System Settings")
+                }
             }
 
             // DNS CHANGER CARD
             item {
-                SystemFeatureCard(
+                DashboardStaggeredItem(
+                    index = 9,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
+                    SystemFeatureCard(
                     title = "DNS Changer",
                     subtitle = "Current: ${selectedDnsProvider.name}",
                     icon = Icons.Default.Security,
@@ -822,6 +882,7 @@ fun SystemDashboardScreen(
                         }
                     }
                 }
+                }
             }
 
             // APP LOCKER CARD
@@ -831,209 +892,280 @@ fun SystemDashboardScreen(
                 val lockedApps by com.arwora.utils.AppLockerManager.lockedPackages.collectAsStateWithLifecycle()
                 val totalSecured = lockedTools.size + lockedApps.size
 
-                SystemActionRowCard(
-                    title = "App Locker",
-                    subtitle = if (isLockerEnabled) "$totalSecured items secured with PIN & Biometrics" else "Lock apps & system features with PIN / Biometrics",
-                    icon = Icons.Default.Lock,
-                    iconColor = if (isLockerEnabled) Color(0xFF10B981) else MaterialTheme.colorScheme.primary,
-                    badge = if (isLockerEnabled) "Active" else "Security",
-                    badgeColor = if (isLockerEnabled) Color(0xFF10B981) else MaterialTheme.colorScheme.primary,
-                    onClick = {
-                        SoundEffectManager.playClick()
-                        navController.navigate(Screen.AppLocker.route)
-                    },
-                    modifier = Modifier.testTag("system_app_locker_card")
-                )
+                DashboardStaggeredItem(
+                    index = 10,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
+                    SystemActionRowCard(
+                        title = "App Locker",
+                        subtitle = if (isLockerEnabled) "$totalSecured items secured with PIN & Biometrics" else "Lock apps & system features with PIN / Biometrics",
+                        icon = Icons.Default.Lock,
+                        iconColor = if (isLockerEnabled) Color(0xFF10B981) else MaterialTheme.colorScheme.primary,
+                        badge = if (isLockerEnabled) "Active" else "Security",
+                        badgeColor = if (isLockerEnabled) Color(0xFF10B981) else MaterialTheme.colorScheme.primary,
+                        onClick = {
+                            SoundEffectManager.playClick()
+                            navController.navigate(Screen.AppLocker.route)
+                        },
+                        modifier = Modifier.testTag("system_app_locker_card")
+                    )
+                }
             }
 
             // AUTO CLICKER CARD
             item {
-                SystemActionRowCard(
-                    title = "Auto Clicker",
-                    subtitle = "Automated taps, multi-target & swipe floating overlay",
-                    icon = Icons.Default.TouchApp,
-                    iconColor = MaterialTheme.colorScheme.primary,
-                    badge = "Automation",
-                    badgeColor = MaterialTheme.colorScheme.primary,
-                    onClick = {
-                        SoundEffectManager.playClick()
-                        navigateGuarded(Screen.AutoClicker.route) {
-                            navController.navigate(Screen.AutoClicker.route)
-                        }
-                    },
-                    modifier = Modifier.testTag("system_auto_clicker_card")
-                )
+                DashboardStaggeredItem(
+                    index = 11,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
+                    SystemActionRowCard(
+                        title = "Auto Clicker",
+                        subtitle = "Automated taps, multi-target & swipe floating overlay",
+                        icon = Icons.Default.TouchApp,
+                        iconColor = MaterialTheme.colorScheme.primary,
+                        badge = "Automation",
+                        badgeColor = MaterialTheme.colorScheme.primary,
+                        onClick = {
+                            SoundEffectManager.playClick()
+                            navigateGuarded(Screen.AutoClicker.route) {
+                                navController.navigate(Screen.AutoClicker.route)
+                            }
+                        },
+                        modifier = Modifier.testTag("system_auto_clicker_card")
+                    )
+                }
             }
 
             // WI-FI CONTROLLER CARD
             item {
-                SystemActionRowCard(
-                    title = "Wi-Fi Controller",
-                    subtitle = "Network diagnostics & connected devices",
-                    icon = Icons.Default.Wifi,
-                    iconColor = MaterialTheme.colorScheme.primary,
-                    badge = "Network",
-                    badgeColor = MaterialTheme.colorScheme.primary,
-                    onClick = {
-                        SoundEffectManager.playClick()
-                        navigateGuarded(Screen.WifiController.route) {
-                            navController.navigate(Screen.WifiController.route)
+                DashboardStaggeredItem(
+                    index = 12,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
+                    SystemActionRowCard(
+                        title = "Wi-Fi Controller",
+                        subtitle = "Network diagnostics & connected devices",
+                        icon = Icons.Default.Wifi,
+                        iconColor = MaterialTheme.colorScheme.primary,
+                        badge = "Network",
+                        badgeColor = MaterialTheme.colorScheme.primary,
+                        onClick = {
+                            SoundEffectManager.playClick()
+                            navigateGuarded(Screen.WifiController.route) {
+                                navController.navigate(Screen.WifiController.route)
+                            }
                         }
-                    }
-                )
+                    )
+                }
             }
 
             // WI-FI PASSWORD CARD
             item {
-                SystemActionRowCard(
-                    title = "Wi-Fi Password",
-                    subtitle = "Saved Wi-Fi networks, reveal passwords & quick connect",
-                    icon = Icons.Default.Password,
-                    iconColor = MaterialTheme.colorScheme.primary,
-                    badge = if (isPrivilegeReady) "ADB Ready" else "ADB Required",
-                    badgeColor = if (isPrivilegeReady) Color(0xFF10B981) else MaterialTheme.colorScheme.error,
-                    onClick = {
-                        SoundEffectManager.playClick()
-                        navigateGuarded(Screen.WifiPassword.route) {
-                            navController.navigate(Screen.WifiPassword.route)
-                        }
-                    },
-                    modifier = Modifier.testTag("system_wifi_password_card")
-                )
+                DashboardStaggeredItem(
+                    index = 13,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
+                    SystemActionRowCard(
+                        title = "Wi-Fi Password",
+                        subtitle = "Saved Wi-Fi networks, reveal passwords & quick connect",
+                        icon = Icons.Default.Password,
+                        iconColor = MaterialTheme.colorScheme.primary,
+                        badge = if (isPrivilegeReady) "ADB Ready" else "ADB Required",
+                        badgeColor = if (isPrivilegeReady) Color(0xFF10B981) else MaterialTheme.colorScheme.error,
+                        onClick = {
+                            SoundEffectManager.playClick()
+                            navigateGuarded(Screen.WifiPassword.route) {
+                                navController.navigate(Screen.WifiPassword.route)
+                            }
+                        },
+                        modifier = Modifier.testTag("system_wifi_password_card")
+                    )
+                }
             }
 
             // HIDE PRIVATE DNS CARD
             item {
-                SystemActionRowCard(
-                    title = "Hide Private DNS",
-                    subtitle = "Restrict system Private DNS for selected apps & games",
-                    icon = Icons.Default.VpnLock,
-                    iconColor = MaterialTheme.colorScheme.primary,
-                    badge = "DNS",
-                    badgeColor = MaterialTheme.colorScheme.primary,
-                    onClick = {
-                        SoundEffectManager.playClick()
-                        navigateGuarded(Screen.HidePrivateDns.route) {
-                            navController.navigate(Screen.HidePrivateDns.route)
-                        }
-                    },
-                    modifier = Modifier.testTag("system_hide_private_dns_card")
-                )
+                DashboardStaggeredItem(
+                    index = 14,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
+                    SystemActionRowCard(
+                        title = "Hide Private DNS",
+                        subtitle = "Restrict system Private DNS for selected apps & games",
+                        icon = Icons.Default.VpnLock,
+                        iconColor = MaterialTheme.colorScheme.primary,
+                        badge = "DNS",
+                        badgeColor = MaterialTheme.colorScheme.primary,
+                        onClick = {
+                            SoundEffectManager.playClick()
+                            navigateGuarded(Screen.HidePrivateDns.route) {
+                                navController.navigate(Screen.HidePrivateDns.route)
+                            }
+                        },
+                        modifier = Modifier.testTag("system_hide_private_dns_card")
+                    )
+                }
             }
 
             // SMART SCREEN-OFF OPTIMIZER CARD
             item {
-                SystemActionRowCard(
-                    title = "Smart Screen-Off Optimizer",
-                    subtitle = "Automated background cleanup routines on device screen-off events",
-                    icon = Icons.Default.Bedtime,
-                    iconColor = MaterialTheme.colorScheme.primary,
-                    badge = "Automation",
-                    badgeColor = MaterialTheme.colorScheme.primary,
-                    onClick = {
-                        SoundEffectManager.playClick()
-                        navigateGuarded(Screen.ScreenOffOptimizer.route) {
-                            navController.navigate(Screen.ScreenOffOptimizer.route)
-                        }
-                    },
-                    modifier = Modifier.testTag("system_screen_off_optimizer_card")
-                )
+                DashboardStaggeredItem(
+                    index = 15,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
+                    SystemActionRowCard(
+                        title = "Smart Screen-Off Optimizer",
+                        subtitle = "Automated background cleanup routines on device screen-off events",
+                        icon = Icons.Default.Bedtime,
+                        iconColor = MaterialTheme.colorScheme.primary,
+                        badge = "Automation",
+                        badgeColor = MaterialTheme.colorScheme.primary,
+                        onClick = {
+                            SoundEffectManager.playClick()
+                            navigateGuarded(Screen.ScreenOffOptimizer.route) {
+                                navController.navigate(Screen.ScreenOffOptimizer.route)
+                            }
+                        },
+                        modifier = Modifier.testTag("system_screen_off_optimizer_card")
+                    )
+                }
             }
 
             // BATTERY USAGE & DEEP SLEEP MONITOR CARD
             item {
-                SystemActionRowCard(
-                    title = "Battery Monitor & Deep Sleep",
-                    subtitle = "Real-time app consumption stats & CPU wake lock diagnostics",
-                    icon = Icons.Default.BatteryChargingFull,
-                    iconColor = MaterialTheme.colorScheme.primary,
-                    badge = "Power",
-                    badgeColor = MaterialTheme.colorScheme.primary,
-                    onClick = {
-                        SoundEffectManager.playClick()
-                        navigateGuarded(Screen.BatteryMonitor.route) {
-                            navController.navigate(Screen.BatteryMonitor.route)
-                        }
-                    },
-                    modifier = Modifier.testTag("system_battery_monitor_card")
-                )
+                DashboardStaggeredItem(
+                    index = 16,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
+                    SystemActionRowCard(
+                        title = "Battery Monitor & Deep Sleep",
+                        subtitle = "Real-time app consumption stats & CPU wake lock diagnostics",
+                        icon = Icons.Default.BatteryChargingFull,
+                        iconColor = MaterialTheme.colorScheme.primary,
+                        badge = "Power",
+                        badgeColor = MaterialTheme.colorScheme.primary,
+                        onClick = {
+                            SoundEffectManager.playClick()
+                            navigateGuarded(Screen.BatteryMonitor.route) {
+                                navController.navigate(Screen.BatteryMonitor.route)
+                            }
+                        },
+                        modifier = Modifier.testTag("system_battery_monitor_card")
+                    )
+                }
             }
 
             // NOTIFICATION HISTORY LOG CARD
             item {
-                SystemActionRowCard(
-                    title = "Notification History Log",
-                    subtitle = if (hasNotificationAccess) {
-                        "Notification Access Active • View captured logs"
-                    } else {
-                        "Notification Access Required • Tap to configure"
-                    },
-                    icon = if (hasNotificationAccess) Icons.Default.NotificationsActive else Icons.Default.Notifications,
-                    iconColor = if (hasNotificationAccess) Color(0xFF10B981) else MaterialTheme.colorScheme.primary,
-                    badge = if (hasNotificationAccess) "Active" else "Grant",
-                    badgeColor = if (hasNotificationAccess) Color(0xFF10B981) else Color(0xFFF59E0B),
-                    onClick = {
-                        SoundEffectManager.playClick()
-                        navigateGuarded(Screen.NotificationHistory.route) {
-                            navController.navigate(Screen.NotificationHistory.route)
-                        }
-                    },
-                    modifier = Modifier.testTag("system_notification_history_card")
-                )
+                DashboardStaggeredItem(
+                    index = 17,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
+                    SystemActionRowCard(
+                        title = "Notification History Log",
+                        subtitle = if (hasNotificationAccess) {
+                            "Notification Access Active • View captured logs"
+                        } else {
+                            "Notification Access Required • Tap to configure"
+                        },
+                        icon = if (hasNotificationAccess) Icons.Default.NotificationsActive else Icons.Default.Notifications,
+                        iconColor = if (hasNotificationAccess) Color(0xFF10B981) else MaterialTheme.colorScheme.primary,
+                        badge = if (hasNotificationAccess) "Active" else "Grant",
+                        badgeColor = if (hasNotificationAccess) Color(0xFF10B981) else Color(0xFFF59E0B),
+                        onClick = {
+                            SoundEffectManager.playClick()
+                            navigateGuarded(Screen.NotificationHistory.route) {
+                                navController.navigate(Screen.NotificationHistory.route)
+                            }
+                        },
+                        modifier = Modifier.testTag("system_notification_history_card")
+                    )
+                }
             }
 
             // BATTERY ALARM CARD
             item {
-                SystemActionRowCard(
-                    title = "Battery Charging Alarm",
-                    subtitle = "Alert at target charge level",
-                    icon = Icons.Default.BatteryChargingFull,
-                    iconColor = MaterialTheme.colorScheme.primary,
-                    onClick = {
-                        SoundEffectManager.playClick()
-                        navigateGuarded(Screen.BatteryAlarm.route) {
-                            navController.navigate(Screen.BatteryAlarm.route)
+                DashboardStaggeredItem(
+                    index = 18,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
+                    SystemActionRowCard(
+                        title = "Battery Charging Alarm",
+                        subtitle = "Alert at target charge level",
+                        icon = Icons.Default.BatteryChargingFull,
+                        iconColor = MaterialTheme.colorScheme.primary,
+                        onClick = {
+                            SoundEffectManager.playClick()
+                            navigateGuarded(Screen.BatteryAlarm.route) {
+                                navController.navigate(Screen.BatteryAlarm.route)
+                            }
                         }
-                    }
-                )
+                    )
+                }
             }
 
             // SOUND DIRECTION DETECTOR CARD
             item {
-                SystemActionRowCard(
-                    title = "Sound Direction Detector",
-                    subtitle = "Detect sound source direction",
-                    icon = Icons.Default.Mic,
-                    iconColor = MaterialTheme.colorScheme.primary,
-                    onClick = {
-                        SoundEffectManager.playClick()
-                        navigateGuarded(Screen.SoundDirection.route) {
-                            navController.navigate(Screen.SoundDirection.route)
+                DashboardStaggeredItem(
+                    index = 19,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
+                    SystemActionRowCard(
+                        title = "Sound Direction Detector",
+                        subtitle = "Detect sound source direction",
+                        icon = Icons.Default.Mic,
+                        iconColor = MaterialTheme.colorScheme.primary,
+                        onClick = {
+                            SoundEffectManager.playClick()
+                            navigateGuarded(Screen.SoundDirection.route) {
+                                navController.navigate(Screen.SoundDirection.route)
+                            }
                         }
-                    }
-                )
+                    )
+                }
             }
 
             // PERMISSION INSPECTOR CARD
             item {
-                SystemActionRowCard(
-                    title = "Permission Inspector",
-                    subtitle = "Manage app permissions",
-                    icon = Icons.Default.Security,
-                    iconColor = MaterialTheme.colorScheme.primary,
-                    onClick = {
-                        SoundEffectManager.playClick()
-                        navigateGuarded(Screen.PermissionInspector.route) {
-                            navController.navigate(Screen.PermissionInspector.route)
+                DashboardStaggeredItem(
+                    index = 20,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
+                    SystemActionRowCard(
+                        title = "Permission Inspector",
+                        subtitle = "Manage app permissions",
+                        icon = Icons.Default.Security,
+                        iconColor = MaterialTheme.colorScheme.primary,
+                        onClick = {
+                            SoundEffectManager.playClick()
+                            navigateGuarded(Screen.PermissionInspector.route) {
+                                navController.navigate(Screen.PermissionInspector.route)
+                            }
                         }
-                    }
-                )
+                    )
+                }
             }
 
             // IP ADDRESS LOOKUP CARD
             item {
                 val scope = rememberCoroutineScope()
-                SystemFeatureCard(
+                DashboardStaggeredItem(
+                    index = 21,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
+                    SystemFeatureCard(
                     title = "IP Address Lookup",
                     subtitle = "Polished network diagnostics & utilities toolkit",
                     icon = Icons.Default.Language,
@@ -1843,460 +1975,17 @@ fun SystemDashboardScreen(
                         }
                     }
                 }
-            }
-
-            // WIRELESS DEBUGGING & NATIVE ADB MANAGER CARD
-            item {
-                val adbPrefs = remember { context.getSharedPreferences("adb_access_prefs", Context.MODE_PRIVATE) }
-                var isUserStopped by remember { mutableStateOf(adbPrefs.getBoolean("is_user_stopped", false)) }
-                var showAdbHelpDialog by remember { mutableStateOf(false) }
-
-                val wifiIp = remember(isWirelessDebuggingExpanded, isAdbConnected) {
-                    com.arwora.service.AdbPairingReceiver.parseCleanHost(
-                        NativeAdbManager.getLocalWifiIpAddress(context)
-                    ) ?: "127.0.0.1"
-                }
-
-                val adbConnectionState by NativeAdbManager.connectionState.collectAsStateWithLifecycle()
-                val connectedHostState by NativeAdbManager.connectedHost.collectAsStateWithLifecycle()
-                val connectedPortState by NativeAdbManager.connectedPort.collectAsStateWithLifecycle()
-                val discoveredPortState by NativeAdbManager.discoveredPort.collectAsStateWithLifecycle()
-                val isWirelessDebuggingState by NativeAdbManager.isWirelessDebuggingEnabled.collectAsStateWithLifecycle()
-                val isPairedState by NativeAdbManager.isPaired.collectAsStateWithLifecycle()
-                val requiresDevOptionsGuidance by NativeAdbManager.requiresDevOptionsGuidance.collectAsStateWithLifecycle()
-                val adbStatusMessage by NativeAdbManager.statusMessage.collectAsStateWithLifecycle()
-
-                var adbPort by remember { mutableIntStateOf(-1) }
-                var isWirelessAdbEnabled by remember { mutableStateOf(false) }
-
-                val cardLifecycleOwner = LocalLifecycleOwner.current
-                val updateAdbStatus = {
-                    val sysPort = NativeAdbManager.getSystemWirelessDebugPort(context)
-                    adbPort = sysPort
-                        ?: NativeAdbManager.connectedPort.value
-                        ?: NativeAdbManager.discoveredPort.value
-                        ?: -1
-                    isWirelessAdbEnabled = NativeAdbManager.checkWirelessDebuggingState(context)
-                    val creds = com.arwora.utils.EncryptedAdbCredentialStore.loadState(context)
-                    isUserStopped = creds.userStopped || adbPrefs.getBoolean("is_user_stopped", false)
-                    NativeAdbManager.refreshConnectionStatus(context)
-                    if (creds.isPaired && !isUserStopped && !NativeAdbManager.isAdbReady()) {
-                        coroutineScope.launch {
-                            NativeAdbManager.reconnectSavedSession(context)
-                        }
-                    }
-                    checkNotificationPermissionStatus()
-                }
-
-                val effectiveHost = com.arwora.service.AdbPairingReceiver.parseCleanHost(connectedHostState)
-                    ?: wifiIp
-                val effectivePort = (connectedPortState ?: discoveredPortState ?: adbPort)
-                    .takeIf { it in 1024..65535 } ?: -1
-                val isAdbConnecting = adbConnectionState == NativeAdbConnectionState.CONNECTING
-                val isWirelessReady = isWirelessAdbEnabled || isWirelessDebuggingState || effectivePort > 0
-
-                DisposableEffect(cardLifecycleOwner) {
-                    updateAdbStatus()
-                    val lifecycleObserver = androidx.lifecycle.LifecycleEventObserver { _, event ->
-                        if (event == Lifecycle.Event.ON_RESUME) {
-                            updateAdbStatus()
-                        }
-                    }
-                    cardLifecycleOwner.lifecycle.addObserver(lifecycleObserver)
-                    onDispose {
-                        cardLifecycleOwner.lifecycle.removeObserver(lifecycleObserver)
-                    }
-                }
-
-                val badgeColor = when {
-                    isAdbConnected -> Color(0xFF10B981)
-                    isAdbConnecting -> MaterialTheme.colorScheme.primary
-                    isWirelessReady && !isUserStopped -> Color(0xFF10B981)
-                    isUserStopped && !isAdbConnected -> MaterialTheme.colorScheme.error
-                    else -> Color(0xFFFF9800)
-                }
-
-                val connectionStatusText = when {
-                    isAdbConnected -> "Active / Connected"
-                    isAdbConnecting -> "Connecting..."
-                    isWirelessReady && !isUserStopped -> "Active / Ready"
-                    else -> "Inactive / Disconnected"
-                }
-
-                val badgeLabel = when {
-                    isAdbConnected -> "Active / Connected"
-                    isAdbConnecting -> "Connecting"
-                    isWirelessReady && !isUserStopped -> "Active / Ready"
-                    else -> "Inactive"
-                }
-
-                SystemFeatureCard(
-                    title = "Wireless Debugging",
-                    subtitle = "IP: $effectiveHost${if (effectivePort > 0) ":$effectivePort" else ""} • Status: $connectionStatusText",
-                    icon = Icons.Default.Wifi,
-                    badge = badgeLabel,
-                    badgeColor = badgeColor,
-                    statusDotColor = badgeColor,
-                    isExpanded = isWirelessDebuggingExpanded,
-                    onToggleExpand = {
-                        SoundEffectManager.playClick()
-                        isWirelessDebuggingExpanded = !isWirelessDebuggingExpanded
-                    }
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "Connection & Network Details",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text("Local IP Address:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text(effectiveHost, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
-                                }
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text("Wireless Debug Port:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text(
-                                        text = if (effectivePort > 0) "$effectivePort" else "Auto Detection",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.testTag("wireless_debug_port_value")
-                                    )
-                                }
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text("Developer ADB:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text(
-                                        text = when {
-                                            isAdbConnected -> "Active / Connected"
-                                            isWirelessReady -> "Active / Ready"
-                                            else -> "Disabled / Check Settings"
-                                        },
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isAdbConnected || isWirelessReady) Color(0xFF10B981) else MaterialTheme.colorScheme.error,
-                                        modifier = Modifier.testTag("wireless_adb_developer_state_text")
-                                    )
-                                }
-                                if (isPairedState) {
-                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        Text("Persistent Auto-Reconnect:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        Text(
-                                            text = if (isUserStopped) "Paused by User" else "Enabled",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (isUserStopped) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xFF10B981)
-                                        )
-                                    }
-                                }
-                                if (adbConnectionState != NativeAdbConnectionState.WIFI_REQUIRED) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable {
-                                                SoundEffectManager.playClick()
-                                                if (!isCurrentWifiTrusted) {
-                                                    showManualWifiTrustDialog = true
-                                                } else {
-                                                    Toast.makeText(
-                                                        context,
-                                                        "${activeWifiSsid ?: "Active Wi-Fi"} is trusted for Wireless ADB",
-                                                        Toast.LENGTH_SHORT
-                                                    ).show()
-                                                }
-                                            },
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text("Wi-Fi Trust (${activeWifiSsid ?: "Current Wi-Fi"}):", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        Text(
-                                            text = if (isCurrentWifiTrusted) "Trusted Network" else "Trust Required",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (isCurrentWifiTrusted) Color(0xFF10B981) else Color(0xFFF59E0B),
-                                            modifier = Modifier.testTag("wireless_wifi_trust_status_text")
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        if (isAdbConnecting) {
-                            Spacer(modifier = Modifier.height(10.dp))
-                            ExpressiveWavyLinearProgressIndicator(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("wireless_adb_connect_wavy_progress"),
-                                height = 10.dp,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = adbStatusMessage,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        } else if (!isAdbConnected && !isWirelessReady && requiresDevOptionsGuidance) {
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Surface(
-                                shape = ArworaDesignTokens.InnerTileShape,
-                                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.45f)),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("wireless_adb_error_guidance_banner")
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(12.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.Top,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.WarningAmber,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.error,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Text(
-                                            text = adbStatusMessage,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onErrorContainer,
-                                            fontWeight = FontWeight.Medium
-                                        )
-                                    }
-                                    OutlinedButton(
-                                        onClick = {
-                                            SoundEffectManager.playClick()
-                                            try {
-                                                context.startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
-                                            } catch (_: Exception) {
-                                                Toast.makeText(context, "Unable to open Developer Options.", Toast.LENGTH_LONG).show()
-                                            }
-                                        },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(48.dp)
-                                            .testTag("wireless_adb_error_open_dev_options_button"),
-                                        shape = ArworaDesignTokens.PillShape
-                                    ) {
-                                        Icon(Icons.Default.DeveloperMode, contentDescription = null, modifier = Modifier.size(18.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Open Developer Options", fontWeight = FontWeight.SemiBold)
-                                    }
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        OutlinedButton(
-                            onClick = {
-                                SoundEffectManager.playClick()
-                                val endpoint = "$effectiveHost${if (effectivePort > 0) ":$effectivePort" else ""}"
-                                clipboardManager.setText(AnnotatedString(endpoint))
-                                Toast.makeText(context, "ADB address copied to clipboard", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(48.dp),
-                            shape = ArworaDesignTokens.PillShape
-                        ) {
-                            Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Copy IP & Port", fontWeight = FontWeight.Bold)
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Text(
-                            text = "Actions & Developer Options",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.tertiary
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(
-                                onClick = {
-                                    SoundEffectManager.playClick()
-                                    try {
-                                        context.startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
-                                    } catch (_: Exception) {
-                                        Toast.makeText(context, "Unable to open Developer Options. Please enable them in system settings.", Toast.LENGTH_LONG).show()
-                                    }
-                                },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(48.dp),
-                                shape = ArworaDesignTokens.PillShape,
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                            ) {
-                                Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Open Developer Options", fontWeight = FontWeight.Bold)
-                            }
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                OutlinedButton(
-                                    onClick = {
-                                        SoundEffectManager.playClick()
-                                        showAdbHelpDialog = true
-                                    },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(48.dp),
-                                    shape = ArworaDesignTokens.PillShape
-                                ) {
-                                    Text("Pairing Help", fontWeight = FontWeight.SemiBold)
-                                }
-
-                                Button(
-                                    onClick = {
-                                        SoundEffectManager.playClick()
-                                        if (isAdbConnected) {
-                                            NativeAdbManager.disconnect(userInitiated = true)
-                                            updateAdbStatus()
-                                            refreshDashboardStatuses()
-                                            Toast.makeText(context, "Wireless ADB disconnected", Toast.LENGTH_SHORT).show()
-                                        } else {
-                                            coroutineScope.launch {
-                                                val (_, msg) = WirelessPairingManager.connectUnifiedWirelessAdb(context)
-                                                updateAdbStatus()
-                                                refreshDashboardStatuses()
-                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    },
-                                    enabled = !isAdbConnecting,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(48.dp)
-                                        .testTag("wireless_adb_top_connect_button"),
-                                    shape = ArworaDesignTokens.PillShape,
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = if (isAdbConnected) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary
-                                    )
-                                ) {
-                                    Text(
-                                        text = when {
-                                            isAdbConnected -> "Disconnect"
-                                            isAdbConnecting -> "Connecting..."
-                                            else -> "Connect Now"
-                                        },
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                OutlinedButton(
-                                    onClick = {
-                                        SoundEffectManager.playClick()
-                                        adbPairingSheetTab = AdbPairingSheetTab.AUTOMATIC
-                                        showAdbPairingSheet = true
-                                    },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(48.dp)
-                                        .testTag("wireless_card_pair_dialog_button"),
-                                    shape = ArworaDesignTokens.PillShape
-                                ) {
-                                    Text("Pair with device", fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                }
-
-                                OutlinedButton(
-                                    onClick = {
-                                        SoundEffectManager.playClick()
-                                        NativeAdbManager.forgetPairedDeviceAndReset(context)
-                                        updateAdbStatus()
-                                        refreshDashboardStatuses()
-                                        adbPairingSheetTab = AdbPairingSheetTab.AUTOMATIC
-                                        showAdbPairingSheet = true
-                                        Toast.makeText(context, "Old keys cleared. Ready to pair new device.", Toast.LENGTH_SHORT).show()
-                                    },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(48.dp)
-                                        .testTag("wireless_adb_pair_new_device_button"),
-                                    shape = ArworaDesignTokens.PillShape
-                                ) {
-                                    Text("Pair New Device", fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        // Native Automated Wireless Debugging Pairing System
-                        com.arwora.ui.components.WirelessPairingWizard(
-                            onPairingSuccess = {
-                                Toast.makeText(context, "Active / Connected!", Toast.LENGTH_SHORT).show()
-                                updateAdbStatus()
-                                refreshDashboardStatuses()
-                            }
-                        )
-
-                        if (showAdbHelpDialog) {
-                            AlertDialog(
-                                onDismissRequest = { showAdbHelpDialog = false },
-                                title = { Text("Wireless Debugging & Pairing Guide") },
-                                text = {
-                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Text("How to connect built-in Wireless ADB:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                                        Text("1. Open System Settings > Developer Options.", style = MaterialTheme.typography.bodySmall)
-                                        Text("2. Connect to Wi-Fi and enable 'Wireless Debugging'.", style = MaterialTheme.typography.bodySmall)
-                                        Text("3. If pairing for the first time, tap 'Pair device with pairing code' and enter the code in Mode 1 or use Mode 2.", style = MaterialTheme.typography.bodySmall)
-                                        Text("4. Tap 'Connect Now' to bind directly to the local ADB daemon.", style = MaterialTheme.typography.bodySmall)
-                                    }
-                                },
-                                confirmButton = {
-                                    Button(
-                                        onClick = {
-                                            showAdbHelpDialog = false
-                                            try {
-                                                context.startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
-                                            } catch (_: Exception) {}
-                                        }
-                                    ) {
-                                        Text("Open Developer Options")
-                                    }
-                                },
-                                dismissButton = {
-                                    TextButton(onClick = { showAdbHelpDialog = false }) {
-                                        Text("Dismiss")
-                                    }
-                                }
-                            )
-                        }
-                    }
                 }
             }
 
             // ANIMATION SPEED CARD
             item {
-                SystemFeatureCard(
+                DashboardStaggeredItem(
+                    index = 22,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
+                    SystemFeatureCard(
                     title = "Animation Speed",
                     subtitle = "Window/Transition/Animator scales: ${animScale}x",
                     icon = Icons.Default.Speed,
@@ -2361,72 +2050,97 @@ fun SystemDashboardScreen(
                         }
                     }
                 }
+                }
             }
 
             // SECTION 3: PACKAGES & TOOLS
             item {
-                SectionHeader(title = "Packages & Tools")
+                DashboardStaggeredItem(
+                    index = 23,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
+                    SectionHeader(title = "Packages & Tools")
+                }
             }
 
             // APP OPS MANAGER CARD
             item {
-                SystemActionRowCard(
-                    title = "App Ops",
-                    subtitle = "Filter packages, permission controls & standby ops",
-                    icon = Icons.Default.AdminPanelSettings,
-                    iconColor = Color(0xFF10B981),
-                    badge = if (isPrivilegeReady) "ADB Ready" else "ADB Required",
-                    badgeColor = if (isPrivilegeReady) Color(0xFF10B981) else MaterialTheme.colorScheme.error,
-                    onClick = {
-                        SoundEffectManager.playClick()
-                        navController.navigate(Screen.AppOps.route)
-                    }
-                )
-            }
-
-            // ADVANCED APP MANAGER & APK EXTRACTOR CARD
-            item {
-                com.arwora.feature.system.apps.AppManagerCard(
-                    isExpanded = isAppManagerExpanded,
-                    onToggleExpand = {
-                        SoundEffectManager.playClick()
-                        isAppManagerExpanded = !isAppManagerExpanded
-                    },
-                    navController = navController
-                )
+                DashboardStaggeredItem(
+                    index = 24,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
+                    SystemActionRowCard(
+                        title = "App Ops",
+                        subtitle = "Filter packages, permission controls & standby ops",
+                        icon = Icons.Default.AdminPanelSettings,
+                        iconColor = Color(0xFF10B981),
+                        badge = if (isPrivilegeReady) "ADB Ready" else "ADB Required",
+                        badgeColor = if (isPrivilegeReady) Color(0xFF10B981) else MaterialTheme.colorScheme.error,
+                        onClick = {
+                            SoundEffectManager.playClick()
+                            navController.navigate(Screen.AppOps.route)
+                        }
+                    )
+                }
             }
 
             // BACKGROUND PROCESS & WAKELOCK DETECTOR CARD
             item {
-                com.arwora.feature.system.process.WakelockDetectorCard(
-                    navController = navController
-                )
+                DashboardStaggeredItem(
+                    index = 25,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
+                    com.arwora.feature.system.process.WakelockDetectorCard(
+                        navController = navController
+                    )
+                }
             }
 
             // SHELL COMMAND CARD
             item {
-                ShellCommandCard(viewModel = shellViewModel)
+                DashboardStaggeredItem(
+                    index = 26,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
+                    ShellCommandCard(viewModel = shellViewModel)
+                }
             }
 
             // LINK SHORTENER CARD
             item {
-                LinkShortenerCard(viewModel = linkShortenerViewModel)
+                DashboardStaggeredItem(
+                    index = 27,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
+                    LinkShortenerCard(viewModel = linkShortenerViewModel)
+                }
             }
 
             // HTML TO APK CARD
             item {
-                SystemActionRowCard(
-                    title = "Html To Apk",
-                    subtitle = "Convert local HTML project to Android APK",
-                    icon = Icons.Default.Code,
-                    iconColor = MaterialTheme.colorScheme.primary,
-                    badge = "Converter",
-                    badgeColor = MaterialTheme.colorScheme.primary,
-                    onClick = {
-                        SoundEffectManager.playClick()
-                        showHtmlToApkSheet = true
-                    }
-                )
+                DashboardStaggeredItem(
+                    index = 28,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
+                    SystemActionRowCard(
+                        title = "Html To Apk",
+                        subtitle = "Convert local HTML project to Android APK",
+                        icon = Icons.Default.Code,
+                        iconColor = MaterialTheme.colorScheme.primary,
+                        badge = "Converter",
+                        badgeColor = MaterialTheme.colorScheme.primary,
+                        onClick = {
+                            SoundEffectManager.playClick()
+                            showHtmlToApkSheet = true
+                        }
+                    )
+                }
             }
 
             item {
@@ -2500,23 +2214,11 @@ fun SystemDashboardScreen(
     )
 
     val activeWifiTrustPrompt = pendingWifiTrustPrompt
-        ?: if (showManualWifiTrustDialog) {
-            val (ssid, netKey) = NativeAdbManager.resolveActiveWifiIdentity(context)
-            WifiTrustState(
-                ssid = ssid ?: activeWifiSsid,
-                networkKey = netKey ?: "wifi_active_network",
-                isTrusted = isCurrentWifiTrusted,
-                requiresPrompt = true
-            )
-        } else {
-            null
-        }
 
     if (activeWifiTrustPrompt != null) {
         var alwaysAllowOnNetwork by remember(activeWifiTrustPrompt.networkKey) { mutableStateOf(true) }
         AlertDialog(
             onDismissRequest = {
-                showManualWifiTrustDialog = false
                 NativeAdbManager.dismissWifiTrustPrompt()
             },
             icon = {
@@ -2571,7 +2273,6 @@ fun SystemDashboardScreen(
                 Button(
                     onClick = {
                         SoundEffectManager.playClick()
-                        showManualWifiTrustDialog = false
                         NativeAdbManager.trustCurrentWifiNetwork(context, alwaysAllow = alwaysAllowOnNetwork)
                         coroutineScope.launch {
                             val (ok, msg) = WirelessPairingManager.connectUnifiedWirelessAdb(context)
@@ -2591,7 +2292,6 @@ fun SystemDashboardScreen(
                 TextButton(
                     onClick = {
                         SoundEffectManager.playClick()
-                        showManualWifiTrustDialog = false
                         NativeAdbManager.openWirelessDebuggingSettings(context)
                     },
                     modifier = Modifier.testTag("wifi_trust_open_settings_button")
@@ -2694,10 +2394,13 @@ fun SystemDashboardScreen(
                             onClick = {
                                 SoundEffectManager.playClick()
                                 showPrivilegeEngineDialog = false
-                                isWirelessDebuggingExpanded = true
                                 coroutineScope.launch {
-                                    val (_, msg) = WirelessPairingManager.connectUnifiedWirelessAdb(context)
+                                    val (ok, msg) = WirelessPairingManager.connectUnifiedWirelessAdb(context)
                                     refreshDashboardStatuses()
+                                    if (!ok) {
+                                        adbPairingSheetTab = AdbPairingSheetTab.AUTOMATIC
+                                        showAdbPairingSheet = true
+                                    }
                                     Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                                 }
                             },
@@ -3808,6 +3511,26 @@ internal fun ShizukuDebuggingTogglesCard(
             }
         }
     }
+}
+
+@Composable
+private fun DashboardStaggeredItem(
+    index: Int,
+    triggerAnimation: Boolean,
+    isInitialLoadBurst: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    AnimatedListItem(
+        index = index,
+        triggerAnimation = triggerAnimation,
+        staggerStepMs = if (isInitialLoadBurst) ArworaMotionTokens.LIST_STAGGER_STEP_MS else 0L,
+        maxStaggerItems = ArworaMotionTokens.MAX_LIST_STAGGER_ITEMS,
+        durationMillis = if (isInitialLoadBurst) ArworaMotionTokens.LIST_ENTRY_DURATION_MS else 160,
+        initialOffsetDp = if (isInitialLoadBurst) 22.dp else 14.dp,
+        modifier = modifier.testTag("dashboard_staggered_item_$index"),
+        content = content
+    )
 }
 
 

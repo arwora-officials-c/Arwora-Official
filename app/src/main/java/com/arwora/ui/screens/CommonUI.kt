@@ -31,7 +31,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.SemanticsPropertyKey
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -438,40 +441,61 @@ fun StandardContainerCard(
 }
 
 
+internal val AnimatedListItemProgressKey = SemanticsPropertyKey<Float>("AnimatedListItemProgress")
+
 /**
- * A wrapper for list items that adds a snappy, hardware-friendly 200ms FastOutSlowInEasing
- * entry animation without replaying needlessly when switching cached tabs.
+ * A wrapper for list and card items that performs a GPU-composited staggered fade + upward slide
+ * entrance animation on first load without causing LazyColumn layout reflow or replaying on tab switches.
  */
 @Composable
 fun AnimatedListItem(
     index: Int = 0,
+    triggerAnimation: Boolean = true,
+    staggerStepMs: Long = com.arwora.ui.components.ArworaMotionTokens.LIST_STAGGER_STEP_MS,
+    maxStaggerItems: Int = com.arwora.ui.components.ArworaMotionTokens.MAX_LIST_STAGGER_ITEMS,
+    durationMillis: Int = com.arwora.ui.components.ArworaMotionTokens.LIST_ENTRY_DURATION_MS,
+    initialOffsetDp: androidx.compose.ui.unit.Dp = 22.dp,
+    modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
-    var visible by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        if (!visible) {
-            val staggerMs = index.coerceIn(0, com.arwora.ui.components.ArworaMotionTokens.MAX_LIST_STAGGER_ITEMS) *
-                com.arwora.ui.components.ArworaMotionTokens.LIST_STAGGER_STEP_MS
-            if (staggerMs > 0L) {
-                kotlinx.coroutines.delay(staggerMs)
-            }
-            visible = true
+    val animatorsEnabled = remember {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            android.animation.ValueAnimator.areAnimatorsEnabled()
+        } else {
+            true
         }
     }
-    AnimatedVisibility(
-        visible = visible,
-        enter = slideInVertically(
-            initialOffsetY = { 24 },
-            animationSpec = tween(
-                durationMillis = com.arwora.ui.components.ArworaMotionTokens.LIST_ENTRY_DURATION_MS,
-                easing = com.arwora.ui.components.ArworaMotionTokens.StandardEasing
+    var hasAnimated by androidx.compose.runtime.saveable.rememberSaveable {
+        mutableStateOf(!animatorsEnabled)
+    }
+    val progress = remember { Animatable(if (hasAnimated) 1f else 0f) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val initialOffsetPx = with(density) { initialOffsetDp.toPx() }
+
+    LaunchedEffect(triggerAnimation) {
+        if (triggerAnimation && !hasAnimated) {
+            val staggerMs = (index.coerceIn(0, maxStaggerItems) * staggerStepMs).toInt()
+            progress.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(
+                    durationMillis = durationMillis,
+                    delayMillis = staggerMs,
+                    easing = com.arwora.ui.components.ArworaMotionTokens.StandardEasing
+                )
             )
-        ) + fadeIn(
-            animationSpec = tween(
-                durationMillis = com.arwora.ui.components.ArworaMotionTokens.LIST_ENTRY_DURATION_MS,
-                easing = com.arwora.ui.components.ArworaMotionTokens.StandardEasing
-            )
-        ),
-        content = { content() }
-    )
+            hasAnimated = true
+        }
+    }
+
+    val currentProgress = if (hasAnimated) 1f else progress.value
+    Box(
+        modifier = modifier
+            .semantics { this[AnimatedListItemProgressKey] = currentProgress }
+            .graphicsLayer {
+                alpha = currentProgress
+                translationY = (1f - currentProgress) * initialOffsetPx
+            }
+    ) {
+        content()
+    }
 }

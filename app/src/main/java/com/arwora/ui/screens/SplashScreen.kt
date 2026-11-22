@@ -44,10 +44,11 @@ import com.arwora.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-internal const val SPLASH_LOGO_ANIM_DURATION_MS = 500
-internal const val SPLASH_POST_ANIM_HOLD_MS = 1000L
-internal const val SPLASH_TOTAL_DURATION_MS = SPLASH_LOGO_ANIM_DURATION_MS.toLong() + SPLASH_POST_ANIM_HOLD_MS
-internal const val SPLASH_INITIAL_SCALE = 0.90f
+internal const val SPLASH_LOGO_ANIM_DURATION_MS = 0
+internal const val SPLASH_POST_ANIM_HOLD_MS = 400L
+internal const val SPLASH_FADE_OUT_DURATION_MS = 300
+internal const val SPLASH_TOTAL_DURATION_MS = SPLASH_POST_ANIM_HOLD_MS + SPLASH_FADE_OUT_DURATION_MS.toLong()
+internal const val SPLASH_INITIAL_SCALE = 1.0f
 internal const val SPLASH_INITIAL_TRANSLATION_Y_DP = 0f
 
 internal data class SplashPalette(
@@ -79,14 +80,11 @@ fun SplashScreen(
     }
     val palette = remember(isSystemDark) { resolveSplashPalette(isSystemDark) }
 
-    val logoAlpha = remember { Animatable(0f) }
-    val logoScale = remember { Animatable(SPLASH_INITIAL_SCALE) }
-    val logoTranslationYDp = remember { Animatable(SPLASH_INITIAL_TRANSLATION_Y_DP) }
+    val logoAlpha = remember { Animatable(1f) }
     var hasFinished by remember { mutableStateOf(false) }
 
     val view = LocalView.current
     val context = LocalContext.current
-    val density = LocalDensity.current
 
     fun finishOnce() {
         if (!hasFinished) {
@@ -141,17 +139,14 @@ fun SplashScreen(
     }
 
     LaunchedEffect(Unit) {
-        val animSpec = tween<Float>(
-            durationMillis = SPLASH_LOGO_ANIM_DURATION_MS,
-            easing = FastOutSlowInEasing
-        )
-        val alphaJob = launch { logoAlpha.animateTo(targetValue = 1.0f, animationSpec = animSpec) }
-        val scaleJob = launch { logoScale.animateTo(targetValue = 1.0f, animationSpec = animSpec) }
-        val slideJob = launch { logoTranslationYDp.animateTo(targetValue = 0f, animationSpec = animSpec) }
-        alphaJob.join()
-        scaleJob.join()
-        slideJob.join()
         delay(SPLASH_POST_ANIM_HOLD_MS)
+        logoAlpha.animateTo(
+            targetValue = 0f,
+            animationSpec = tween(
+                durationMillis = SPLASH_FADE_OUT_DURATION_MS,
+                easing = FastOutSlowInEasing
+            )
+        )
         finishOnce()
     }
 
@@ -175,13 +170,9 @@ fun SplashScreen(
             colorFilter = ColorFilter.tint(palette.foregroundColor),
             contentScale = ContentScale.Fit,
             modifier = Modifier
-                .padding(horizontal = 24.dp)
-                .width(266.dp)
-                .height(53.dp)
+                .width(240.dp)
+                .height(60.dp)
                 .graphicsLayer {
-                    scaleX = logoScale.value
-                    scaleY = logoScale.value
-                    translationY = with(density) { logoTranslationYDp.value.dp.toPx() }
                     alpha = logoAlpha.value
                 }
                 .testTag("splash_arwora_wordmark")

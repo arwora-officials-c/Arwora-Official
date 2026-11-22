@@ -24,6 +24,10 @@ import com.arwora.ui.MainViewModelFactory
 import com.arwora.ui.theme.NameGenProTheme
 import androidx.core.view.WindowCompat
 
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+
 class MainActivity : ComponentActivity() {
 
     fun checkNotificationPermissionStatus() {
@@ -33,12 +37,15 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         checkNotificationPermissionStatus()
-        com.arwora.utils.NativeAdbManager.refreshConnectionStatus(this)
-        com.arwora.utils.ShizukuBridge.refreshState(this)
-        com.arwora.utils.AdbShellExecutor.refreshEngineStatus(this)
-        val creds = com.arwora.utils.EncryptedAdbCredentialStore.loadState(this)
-        if (creds.isPaired && !creds.userStopped && !com.arwora.utils.NativeAdbManager.isAdbReady()) {
-            com.arwora.service.AdbConnectionService.startPersistentSession(this)
+        lifecycleScope.launch(Dispatchers.IO) {
+            val appCtx = applicationContext
+            com.arwora.utils.NativeAdbManager.refreshConnectionStatus(appCtx)
+            com.arwora.utils.ShizukuBridge.refreshState(appCtx)
+            com.arwora.utils.AdbShellExecutor.refreshEngineStatus(appCtx)
+            val creds = com.arwora.utils.EncryptedAdbCredentialStore.loadState(appCtx)
+            if (creds.isPaired && !creds.userStopped && !com.arwora.utils.NativeAdbManager.isAdbReady()) {
+                com.arwora.service.AdbConnectionService.startPersistentSession(appCtx)
+            }
         }
     }
 
@@ -50,10 +57,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         com.arwora.feature.common.metrics.StartupMetrics.onActivityCreate()
 
-        com.arwora.utils.NativeAdbManager.init(this)
         com.arwora.utils.ShizukuBridge.init(this, autoRequestIfNeeded = true)
-        com.arwora.utils.AdbShellExecutor.init(this)
-        com.arwora.service.WifiAutoPairMonitor.syncWithPreference(this)
+        lifecycleScope.launch(Dispatchers.IO) {
+            val appCtx = applicationContext
+            com.arwora.utils.NativeAdbManager.init(appCtx)
+            com.arwora.utils.AdbShellExecutor.init(appCtx)
+            com.arwora.service.WifiAutoPairMonitor.syncWithPreference(appCtx)
+        }
         
         enableEdgeToEdge()
         WindowCompat.setDecorFitsSystemWindows(window, false)
