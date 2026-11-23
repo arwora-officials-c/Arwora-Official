@@ -1,7 +1,11 @@
 package com.arwora.feature.system.battery.service
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.os.BatteryManager
+import androidx.core.content.ContextCompat
 import com.arwora.feature.system.battery.model.BatteryAppStat
 import com.arwora.feature.system.battery.model.BatteryDrainStatus
 import com.arwora.feature.system.battery.model.CpuState
@@ -9,6 +13,7 @@ import com.arwora.feature.system.battery.model.DeepSleepDiagnostics
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.util.concurrent.atomic.AtomicBoolean
 
 object BatteryMonitorManager {
     private val _batteryLevel = MutableStateFlow(82)
@@ -23,25 +28,51 @@ object BatteryMonitorManager {
     private val _batteryVoltage = MutableStateFlow(3920) // mV
     val batteryVoltage: StateFlow<Int> = _batteryVoltage.asStateFlow()
 
+    private val isReceiverRegistered = AtomicBoolean(false)
+    @Volatile
+    private var batteryReceiver: BroadcastReceiver? = null
+
     fun init(context: Context) {
-        val receiver = object : android.content.BroadcastReceiver() {
-            override fun onReceive(context: Context, intent: android.content.Intent) {
-                if (intent.action == android.content.Intent.ACTION_BATTERY_CHANGED) {
-                    val level = intent.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1)
-                    val scale = intent.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1)
+        if (!isReceiverRegistered.compareAndSet(false, true)) return
+        val appCtx = context.applicationContext
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (intent.action == Intent.ACTION_BATTERY_CHANGED) {
+                    val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+                    val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
                     if (level >= 0 && scale > 0) _batteryLevel.value = (level * 100 / scale)
                     
-                    val status = intent.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1)
-                    _isCharging.value = status == android.os.BatteryManager.BATTERY_STATUS_CHARGING || status == android.os.BatteryManager.BATTERY_STATUS_FULL
+                    val status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+                    _isCharging.value = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
                     
-                    val rawTemp = intent.getIntExtra(android.os.BatteryManager.EXTRA_TEMPERATURE, 315)
+                    val rawTemp = intent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 315)
                     _batteryTemperature.value = rawTemp / 10.0f
                     
-                    _batteryVoltage.value = intent.getIntExtra(android.os.BatteryManager.EXTRA_VOLTAGE, 3900)
+                    _batteryVoltage.value = intent.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 3900)
                 }
             }
         }
-        context.applicationContext.registerReceiver(receiver, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))
+        batteryReceiver = receiver
+        try {
+            ContextCompat.registerReceiver(
+                appCtx,
+                receiver,
+                IntentFilter(Intent.ACTION_BATTERY_CHANGED),
+                ContextCompat.RECEIVER_NOT_EXPORTED
+            )
+        } catch (_: Exception) {
+            isReceiverRegistered.set(false)
+            batteryReceiver = null
+        }
+    }
+
+    fun unregister(context: Context) {
+        val receiver = batteryReceiver ?: return
+        batteryReceiver = null
+        isReceiverRegistered.set(false)
+        try {
+            context.applicationContext.unregisterReceiver(receiver)
+        } catch (_: Exception) {}
     }
 
     private val _appStats = MutableStateFlow(

@@ -28,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -49,12 +50,12 @@ fun DeepScannerScreen(onBack: () -> Unit) {
         }
     )
 
-    val currentPhase by viewModel.currentPhase.collectAsState()
-    val progress by viewModel.progress.collectAsState()
-    val statusText by viewModel.statusText.collectAsState()
-    val scannedApps by viewModel.scannedApps.collectAsState()
-    val scannedFiles by viewModel.scannedFiles.collectAsState()
-    val detectedIssues by viewModel.detectedIssues.collectAsState()
+    val currentPhase by viewModel.currentPhase.collectAsStateWithLifecycle()
+    val progress by viewModel.progress.collectAsStateWithLifecycle()
+    val statusText by viewModel.statusText.collectAsStateWithLifecycle()
+    val scannedApps by viewModel.scannedApps.collectAsStateWithLifecycle()
+    val scannedFiles by viewModel.scannedFiles.collectAsStateWithLifecycle()
+    val detectedIssues by viewModel.detectedIssues.collectAsStateWithLifecycle()
 
     // Permission launcher for Storage
     val requestPermissionLauncher = rememberLauncherForActivityResult(

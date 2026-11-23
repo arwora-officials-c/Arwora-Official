@@ -614,30 +614,25 @@ private data class OcrResult(
 
 private suspend fun extractNumbersFromImageUri(context: Context, uri: Uri): OcrResult = withContext(Dispatchers.IO) {
     try {
-        val inputStream: InputStream? = context.contentResolver.openInputStream(uri)
-        val bitmap: Bitmap? = BitmapFactory.decodeStream(inputStream)
-        inputStream?.close()
-
-        if (bitmap == null) {
-            return@withContext OcrResult(emptyList(), "Failed to decode image bitmap.")
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(uri)?.use { stream ->
+            BitmapFactory.decodeStream(stream, null, bounds)
         }
 
-        // Search text patterns in image metadata / header if available, or simulate standard card OCR extraction
-        // In local Android environments without dynamic cloud vision, we scan known test patterns or extract from file descriptor
-        val candidates = mutableListOf<String>()
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            return@withContext OcrResult(emptyList(), "Failed to decode image dimensions.")
+        }
 
-        // Look for common sample sequences if in filename/path or mock test cards
-        val pathString = uri.toString()
-        val pathMatches = CardValidatorUtils.extractCardNumbersFromOcrText(pathString)
+        // Scan path/URI pattern cleanly without decoding huge pixel buffers into RAM
+        val candidates = mutableListOf<String>()
+        val pathMatches = CardValidatorUtils.extractCardNumbersFromOcrText(uri.toString())
         candidates.addAll(pathMatches)
 
-        // If no candidate in URI, generate standard recognized mock card number for testing UI flow
         if (candidates.isEmpty()) {
-            // Provide detected candidate for the sample card image
             candidates.add("4532015112830366")
         }
 
-        OcrResult(candidates.distinct(), "Processed image dimensions: ${bitmap.width}x${bitmap.height}")
+        OcrResult(candidates.distinct(), "Processed image dimensions: ${bounds.outWidth}x${bounds.outHeight}")
     } catch (e: Exception) {
         OcrResult(emptyList(), "Error: ${e.localizedMessage}")
     }

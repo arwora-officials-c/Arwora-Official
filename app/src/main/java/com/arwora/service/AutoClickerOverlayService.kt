@@ -8,6 +8,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
@@ -56,7 +57,11 @@ class AutoClickerOverlayService : Service() {
         super.onCreate()
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, createNotification())
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(NOTIFICATION_ID, createNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else {
+            startForeground(NOTIFICATION_ID, createNotification())
+        }
         isRunning = true
         AutoClickerManager.setOverlayActive(true)
 
@@ -315,7 +320,7 @@ class AutoClickerOverlayService : Service() {
         }
 
         controllerView = container
-        windowManager.addView(container, params)
+        runCatching { windowManager.addView(container, params) }
     }
 
     private fun updatePlayPauseButton(clicking: Boolean) {
@@ -448,7 +453,7 @@ class AutoClickerOverlayService : Service() {
                 }
 
                 targetViews[target.id] = frame
-                windowManager.addView(frame, params)
+                runCatching { windowManager.addView(frame, params) }
             }
         }
     }

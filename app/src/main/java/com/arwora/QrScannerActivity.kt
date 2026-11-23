@@ -8,15 +8,16 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arwora.ui.screens.QrScannerScreen
 import com.arwora.ui.theme.NameGenProTheme
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
 
 class QrScannerActivity : ComponentActivity() {
 
@@ -33,21 +34,21 @@ class QrScannerActivity : ComponentActivity() {
                 finish()
                 return
             }
-            val isDark = runBlocking { app.settingsRepository.darkModeFlow.first() }
-            val isWhite = runBlocking { app.settingsRepository.whiteThemeFlow.first() }
-            val uiColorVal = runBlocking { app.settingsRepository.uiColorFlow.first() }
-            val buttonColorVal = runBlocking { app.settingsRepository.buttonColorFlow.first() }
-
-            val isSystemDark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
-                Configuration.UI_MODE_NIGHT_YES
-            val resolvedDarkTheme = if (isWhite) false else (isDark ?: isSystemDark)
+            val viewModel = app.sharedViewModel
 
             setContent {
+                val isDark by viewModel.darkMode.collectAsStateWithLifecycle()
+                val isWhite by viewModel.whiteTheme.collectAsStateWithLifecycle()
+                val uiColorVal by viewModel.uiColor.collectAsStateWithLifecycle()
+                val buttonColorVal by viewModel.buttonColor.collectAsStateWithLifecycle()
+                val isSystemDark = isSystemInDarkTheme()
+                val resolvedDarkTheme = if (isWhite) false else (isDark ?: isSystemDark)
+
                 NameGenProTheme(
                     darkTheme = resolvedDarkTheme,
                     whiteTheme = isWhite,
-                    uiColor = Color(uiColorVal),
-                    buttonColor = Color(buttonColorVal)
+                    uiColor = Color(uiColorVal.toInt()),
+                    buttonColor = Color(buttonColorVal.toInt())
                 ) {
                     Surface(
                         modifier = Modifier.fillMaxSize(),

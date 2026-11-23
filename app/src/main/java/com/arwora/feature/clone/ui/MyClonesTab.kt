@@ -23,12 +23,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arwora.feature.clone.data.CloneRecord
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MyClonesTab(viewModel: CloneViewModel, onCreateNew: () -> Unit) {
-    val myClones by viewModel.myClones.collectAsState(initial = emptyList())
+    val myClones by viewModel.myClones.collectAsStateWithLifecycle(initialValue = emptyList())
     var cloneToDelete by remember { mutableStateOf<CloneRecord?>(null) }
 
     Scaffold(

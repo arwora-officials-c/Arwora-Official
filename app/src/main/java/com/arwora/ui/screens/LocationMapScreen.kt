@@ -19,7 +19,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.arwora.NameGenApplication
 import com.arwora.data.db.LocationLogEntity
 import com.arwora.data.repository.LocationLogRepository
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.osmdroid.config.Configuration
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
@@ -36,7 +36,7 @@ fun LocationMapScreen(
     val context = LocalContext.current
     val app = context.applicationContext as NameGenApplication
     val repository = remember { LocationLogRepository(app.database.locationLogDao()) }
-    val logs by repository.allLogs.collectAsState(initial = emptyList())
+    val logs by repository.allLogs.collectAsStateWithLifecycle(initialValue = emptyList())
 
     var mapViewRef by remember { mutableStateOf<MapView?>(null) }
     var selectedLog by remember { mutableStateOf<LocationLogEntity?>(null) }

@@ -9,11 +9,13 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.media.AudioManager
 import android.os.*
 import android.provider.Settings
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.arwora.utils.AdbShellExecutor
 import com.arwora.utils.NativeAdbManager
 import kotlinx.coroutines.*
@@ -53,7 +55,7 @@ class ScreenOffOptimizerService : Service() {
         super.onCreate()
         ScreenOffOptimizerManager.syncServiceState(true)
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, buildNotification("Smart Screen-Off Automation Active"))
+        startForegroundSafely(buildNotification("Smart Screen-Off Automation Active"))
 
         alarmManager = getSystemService(Context.ALARM_SERVICE) as? AlarmManager
         val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
@@ -62,8 +64,16 @@ class ScreenOffOptimizerService : Service() {
         registerScreenReceiver()
     }
 
+    private fun startForegroundSafely(notification: android.app.Notification) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(NOTIFICATION_ID, buildNotification("Smart Screen-Off Automation Active"))
+        startForegroundSafely(buildNotification("Smart Screen-Off Automation Active"))
         if (intent?.action == ACTION_EXECUTE_ROUTINE) {
             executeOptimizationTasks()
         }
@@ -152,11 +162,12 @@ class ScreenOffOptimizerService : Service() {
             addAction(Intent.ACTION_SCREEN_OFF)
             addAction(Intent.ACTION_SCREEN_ON)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(screenReceiver, filter, RECEIVER_EXPORTED)
-        } else {
-            registerReceiver(screenReceiver, filter)
-        }
+        ContextCompat.registerReceiver(
+            this,
+            screenReceiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
     }
 
     private fun unregisterScreenReceiver() {
@@ -183,28 +194,37 @@ class ScreenOffOptimizerService : Service() {
         )
 
         try {
-            acquireWakeLock()
             if (delaySecs <= 0L) {
                 executeOptimizationTasks()
             } else {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    alarmManager?.setExactAndAllowWhileIdle(
-                        AlarmManager.RTC_WAKEUP,
-                        triggerAtMillis,
-                        pendingIntent!!
-                    )
+                val alarm = alarmManager ?: return
+                val targetPi = pendingIntent ?: return
+                val canExact = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    alarm.canScheduleExactAlarms()
                 } else {
-                    alarmManager?.setExact(
-                        AlarmManager.RTC_WAKEUP,
-                        triggerAtMillis,
-                        pendingIntent!!
-                    )
+                    true
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    if (canExact) {
+                        alarm.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, targetPi)
+                    } else {
+                        alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, targetPi)
+                    }
+                } else {
+                    alarm.setExact(AlarmManager.RTC_WAKEUP, triggerAtMillis, targetPi)
                 }
                 ScreenOffOptimizerManager.updateLog("Screen off detected. Scheduled cleanup in ${delaySecs}s...")
             }
+        } catch (e: SecurityException) {
+            Log.w(TAG, "Exact alarm permission missing; falling back to inexact alarm: ${e.message}")
+            runCatching {
+                val pi = pendingIntent
+                if (pi != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    alarmManager?.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pi)
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to schedule alarm: ${e.message}", e)
-            releaseWakeLock()
         }
     }
 
@@ -218,7 +238,7 @@ class ScreenOffOptimizerService : Service() {
     private fun acquireWakeLock() {
         try {
             if (wakeLock?.isHeld == false) {
-                wakeLock?.acquire(15 * 60 * 1000L) // 15 minutes max safety timeout
+                wakeLock?.acquire(2 * 60 * 1000L) // Tight 2-minute safety timeout during active task only
                 Log.d(TAG, "WakeLock acquired")
             }
         } catch (e: Exception) {
@@ -246,9 +266,7 @@ class ScreenOffOptimizerService : Service() {
                 // 1. Memory and Apps cleanup
                 if (ScreenOffOptimizerManager.killBackgroundApps.value) {
                     val killedCount = performBackgroundAppsCleanup()
-                    System.gc()
-                    Runtime.getRuntime().gc()
-                    deleteDir(cacheDir)
+                    pruneStaleTempCache(cacheDir)
                     if (killedCount > 0) {
                         actions.add("Killed $killedCount Background Apps")
                     } else {
@@ -635,19 +653,13 @@ class ScreenOffOptimizerService : Service() {
         return success
     }
 
-    private fun deleteDir(dir: java.io.File?): Boolean {
-        if (dir != null && dir.isDirectory) {
-            val children = dir.list()
-            if (children != null) {
-                for (i in children.indices) {
-                    deleteDir(java.io.File(dir, children[i]))
-                }
+    private fun pruneStaleTempCache(dir: java.io.File?, maxAgeMs: Long = 3_600_000L) {
+        if (dir == null || !dir.exists()) return
+        val cutoff = System.currentTimeMillis() - maxAgeMs
+        dir.listFiles()?.forEach { child ->
+            if (child.isFile && child.name.startsWith("temp_") && child.lastModified() < cutoff) {
+                runCatching { child.delete() }
             }
-            return dir.delete()
-        } else if (dir != null && dir.isFile) {
-            return dir.delete()
-        } else {
-            return false
         }
     }
 }

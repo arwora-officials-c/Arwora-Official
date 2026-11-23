@@ -46,54 +46,67 @@
                 app:cardBackgroundColor="#F0F4FF"
                 android:layout_marginBottom="20dp">
 
-                <LinearLayout
+                <androidx.constraintlayout.widget.ConstraintLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:padding="16dp"
-                    android:gravity="center_vertical">
+                    android:padding="16dp">
 
                     <ImageView
+                        android:id="@+id/iv_dns_lock"
                         android:layout_width="40dp"
                         android:layout_height="40dp"
-                        android:src="@android:drawable/ic_lock_idle_lock"
-                        android:padding="8dp"
                         android:background="@drawable/circle_bg_light"
+                        android:contentDescription="Private DNS status"
+                        android:padding="8dp"
+                        android:src="@android:drawable/ic_lock_idle_lock"
+                        app:layout_constraintBottom_toBottomOf="parent"
+                        app:layout_constraintStart_toStartOf="parent"
+                        app:layout_constraintTop_toTopOf="parent"
                         app:tint="#4A5CFF" />
 
-                    <LinearLayout
+                    <TextView
+                        android:id="@+id/tv_current_mode_label"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
                         android:layout_marginStart="16dp"
-                        android:orientation="vertical">
+                        android:layout_marginEnd="8dp"
+                        android:text="Current Mode"
+                        android:textColor="#4A5CFF"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        app:layout_constraintBottom_toTopOf="@id/tv_current_mode"
+                        app:layout_constraintEnd_toStartOf="@id/btn_refresh"
+                        app:layout_constraintStart_toEndOf="@id/iv_dns_lock"
+                        app:layout_constraintTop_toTopOf="parent"
+                        app:layout_constraintVertical_chainStyle="packed" />
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Current Mode"
-                            android:textSize="12sp"
-                            android:textColor="#4A5CFF"
-                            android:textStyle="bold" />
-
-                        <TextView
-                            android:id="@+id/tv_current_mode"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Automatic"
-                            android:textSize="16sp"
-                            android:textColor="#1A1C1E"
-                            android:textStyle="bold" />
-                    </LinearLayout>
+                    <TextView
+                        android:id="@+id/tv_current_mode"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="16dp"
+                        android:layout_marginEnd="8dp"
+                        android:text="Automatic"
+                        android:textColor="#1A1C1E"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        app:layout_constraintBottom_toBottomOf="parent"
+                        app:layout_constraintEnd_toStartOf="@id/btn_refresh"
+                        app:layout_constraintStart_toEndOf="@id/iv_dns_lock"
+                        app:layout_constraintTop_toBottomOf="@id/tv_current_mode_label" />
 
                     <ImageButton
                         android:id="@+id/btn_refresh"
-                        android:layout_width="40dp"
-                        android:layout_height="40dp"
+                        android:layout_width="48dp"
+                        android:layout_height="48dp"
                         android:background="?attr/selectableItemBackgroundBorderless"
+                        android:contentDescription="Refresh DNS status"
                         android:src="@android:drawable/stat_notify_sync"
+                        app:layout_constraintBottom_toBottomOf="parent"
+                        app:layout_constraintEnd_toEndOf="parent"
+                        app:layout_constraintTop_toTopOf="parent"
                         app:tint="#4A5CFF" />
-                </LinearLayout>
+                </androidx.constraintlayout.widget.ConstraintLayout>
             </com.google.android.material.card.MaterialCardView>
 
             <!-- Unified Configuration Card -->

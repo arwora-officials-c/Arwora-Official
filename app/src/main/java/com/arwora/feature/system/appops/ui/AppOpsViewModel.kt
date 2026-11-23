@@ -69,6 +69,8 @@ class AppOpsViewModel(application: Application) : AndroidViewModel(application) 
     private val _selectedDetailCategory = MutableStateFlow(AppOpsCategory.ALL)
     val selectedDetailCategory: StateFlow<AppOpsCategory> = _selectedDetailCategory.asStateFlow()
 
+    private val _pendingFocusPackageName = MutableStateFlow<String?>(null)
+
     val counts: StateFlow<AppOpsCounts> = _rawApps.combine(_isLoading) { apps, loading ->
         if (loading) AppOpsCounts()
         else AppOpsCounts(
@@ -185,14 +187,37 @@ class AppOpsViewModel(application: Application) : AndroidViewModel(application) 
             _rawApps.value = apps
             _isLoading.value = false
 
+            val focusPkg = _pendingFocusPackageName.value
             val currentSelected = _selectedApp.value
-            if (currentSelected != null) {
+            if (!focusPkg.isNullOrBlank()) {
+                val match = apps.find { it.packageName == focusPkg }
+                if (match != null) {
+                    _pendingFocusPackageName.value = null
+                    _selectedDetailCategory.value = AppOpsCategory.ALL
+                    _selectedApp.value = match
+                    if (_isAdbConnected.value) {
+                        refreshOpsForSelectedApp(match.packageName)
+                    }
+                }
+            } else if (currentSelected != null) {
                 val updated = apps.find { it.packageName == currentSelected.packageName }
                 _selectedApp.value = updated
                 if (updated != null && _isAdbConnected.value) {
                     refreshOpsForSelectedApp(updated.packageName)
                 }
             }
+        }
+    }
+
+    fun focusPackage(packageName: String) {
+        if (packageName.isBlank()) return
+        _searchQuery.value = packageName
+        val match = _rawApps.value.find { it.packageName == packageName }
+        if (match != null) {
+            _pendingFocusPackageName.value = null
+            selectApp(match)
+        } else {
+            _pendingFocusPackageName.value = packageName
         }
     }
 

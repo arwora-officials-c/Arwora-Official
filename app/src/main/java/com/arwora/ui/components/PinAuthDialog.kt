@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arwora.utils.AppLockerManager
 import com.arwora.utils.BiometricStatus
 import com.arwora.utils.SoundEffectManager
@@ -45,10 +46,10 @@ fun PinAuthDialog(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val isBiometricEnabled by AppLockerManager.isBiometricEnabled.collectAsState()
-    val scrambleKeypad by AppLockerManager.scrambleKeypad.collectAsState()
-    val hasPin by AppLockerManager.hasPin.collectAsState()
-    val securityQuestion by AppLockerManager.securityQuestion.collectAsState()
+    val isBiometricEnabled by AppLockerManager.isBiometricEnabled.collectAsStateWithLifecycle()
+    val scrambleKeypad by AppLockerManager.scrambleKeypad.collectAsStateWithLifecycle()
+    val hasPin by AppLockerManager.hasPin.collectAsStateWithLifecycle()
+    val securityQuestion by AppLockerManager.securityQuestion.collectAsStateWithLifecycle()
 
     var enteredPin by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }

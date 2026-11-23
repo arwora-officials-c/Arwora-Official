@@ -26,11 +26,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arwora.ui.components.PinAuthDialog
 import com.arwora.ui.theme.NameGenProTheme
 import com.arwora.utils.AppLockerManager
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
 
 class AppLockActivity : ComponentActivity() {
 
@@ -85,24 +85,26 @@ class AppLockActivity : ComponentActivity() {
     private fun renderUi() {
         val pm = packageManager
         var appName = "Protected Application"
-        var appIcon: Drawable? = null
         try {
-            val appInfo = pm.getApplicationInfo(currentTargetPackage, 0)
+            val appInfo = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                pm.getApplicationInfo(currentTargetPackage, PackageManager.ApplicationInfoFlags.of(0L))
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getApplicationInfo(currentTargetPackage, 0)
+            }
             appName = pm.getApplicationLabel(appInfo).toString()
-            appIcon = pm.getApplicationIcon(appInfo)
         } catch (_: Exception) {}
 
-        val app = application as? NameGenApplication
-        val repo = app?.settingsRepository
-        val isDark = repo?.let { runBlocking { it.darkModeFlow.first() } }
-        val whiteTheme = repo?.let { runBlocking { it.whiteThemeFlow.first() } } ?: false
-        val uiColorVal = repo?.let { runBlocking { it.uiColorFlow.first() } } ?: 0xFF6C63FFL
-        val buttonColorVal = repo?.let { runBlocking { it.buttonColorFlow.first() } } ?: 0xFF6C63FFL
-
-        val isSystemDark = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
-        val resolvedDarkTheme = (isDark ?: isSystemDark) && !whiteTheme
+        val sharedViewModel = (application as? NameGenApplication)?.sharedViewModel
 
         setContent {
+            val isDark = sharedViewModel?.darkMode?.collectAsStateWithLifecycle()?.value
+            val whiteTheme = sharedViewModel?.whiteTheme?.collectAsStateWithLifecycle()?.value ?: false
+            val uiColorVal = sharedViewModel?.uiColor?.collectAsStateWithLifecycle()?.value ?: 0xFF6C63FFL
+            val buttonColorVal = sharedViewModel?.buttonColor?.collectAsStateWithLifecycle()?.value ?: 0xFF6C63FFL
+            val isSystemDark = isSystemInDarkTheme()
+            val resolvedDarkTheme = (isDark ?: isSystemDark) && !whiteTheme
+
             NameGenProTheme(
                 darkTheme = resolvedDarkTheme,
                 whiteTheme = whiteTheme,

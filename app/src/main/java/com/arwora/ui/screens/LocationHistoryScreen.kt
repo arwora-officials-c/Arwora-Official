@@ -32,7 +32,7 @@ import com.arwora.NameGenApplication
 import com.arwora.data.db.LocationLogEntity
 import com.arwora.feature.system.location.LocationTrackerManager
 import com.arwora.ui.components.ArworaAnimatedSwitch
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -45,7 +45,7 @@ fun LocationHistoryScreen(
     val context = LocalContext.current
     val app = context.applicationContext as NameGenApplication
     val repository = remember { com.arwora.data.repository.LocationLogRepository(app.database.locationLogDao()) }
-    val logs by repository.allLogs.collectAsState(initial = emptyList())
+    val logs by repository.allLogs.collectAsStateWithLifecycle(initialValue = emptyList())
     val coroutineScope = rememberCoroutineScope()
 
     var isTrackingActive by remember { mutableStateOf(false) }

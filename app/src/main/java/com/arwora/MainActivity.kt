@@ -57,12 +57,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         com.arwora.feature.common.metrics.StartupMetrics.onActivityCreate()
 
-        com.arwora.utils.ShizukuBridge.init(this, autoRequestIfNeeded = true)
-        lifecycleScope.launch(Dispatchers.IO) {
-            val appCtx = applicationContext
-            com.arwora.utils.NativeAdbManager.init(appCtx)
-            com.arwora.utils.AdbShellExecutor.init(appCtx)
-            com.arwora.service.WifiAutoPairMonitor.syncWithPreference(appCtx)
+        if (savedInstanceState == null) {
+            com.arwora.utils.ShizukuBridge.init(this, autoRequestIfNeeded = true)
+            lifecycleScope.launch(Dispatchers.IO) {
+                val appCtx = applicationContext
+                com.arwora.utils.NativeAdbManager.init(appCtx)
+                com.arwora.utils.AdbShellExecutor.init(appCtx)
+                com.arwora.service.WifiAutoPairMonitor.syncWithPreference(appCtx)
+            }
         }
         
         enableEdgeToEdge()
@@ -71,7 +73,17 @@ class MainActivity : ComponentActivity() {
         val app = application as NameGenApplication
         val viewModel = app.sharedViewModel
         val showComposeSplash = intent?.getBooleanExtra("show_compose_splash", false) == true
+        val openInstallAssistant = intent?.getBooleanExtra(
+            com.arwora.feature.system.installassistant.data.SmartInstallAssistantManager.EXTRA_OPEN_INSTALL_ASSISTANT,
+            false
+        ) == true
+        val openDownloadWorkflow = intent?.getBooleanExtra(
+            com.arwora.feature.system.downloadworkflow.data.DownloadWorkflowManager.EXTRA_OPEN_DOWNLOAD_WORKFLOW,
+            false
+        ) == true
         val skipSplash = !showComposeSplash ||
+            openInstallAssistant ||
+            openDownloadWorkflow ||
             (intent?.action == Intent.ACTION_SEND) ||
             (intent?.getBooleanExtra("skip_splash", false) == true)
 
@@ -153,6 +165,34 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIncomingIntent(intent: Intent?, viewModel: MainViewModel) {
         if (intent == null) return
+        if (intent.getBooleanExtra(
+                com.arwora.feature.system.installassistant.data.SmartInstallAssistantManager.EXTRA_OPEN_INSTALL_ASSISTANT,
+                false
+            )
+        ) {
+            val pkg = intent.getStringExtra(
+                com.arwora.feature.system.installassistant.data.SmartInstallAssistantManager.EXTRA_INSTALL_ASSISTANT_PKG
+            )
+            viewModel.requestOpenInstallAssistant(pkg)
+            return
+        }
+        if (intent.getBooleanExtra(
+                com.arwora.feature.system.downloadworkflow.data.DownloadWorkflowManager.EXTRA_OPEN_DOWNLOAD_WORKFLOW,
+                false
+            )
+        ) {
+            val action = intent.getStringExtra(
+                com.arwora.feature.system.downloadworkflow.data.DownloadWorkflowManager.EXTRA_WORKFLOW_ACTION
+            ) ?: com.arwora.feature.system.downloadworkflow.data.DownloadWorkflowManager.ACTION_VIEW_DETAILS
+            val eventId = intent.getStringExtra(
+                com.arwora.feature.system.downloadworkflow.data.DownloadWorkflowManager.EXTRA_WORKFLOW_EVENT_ID
+            )
+            val folderPath = intent.getStringExtra(
+                com.arwora.feature.system.downloadworkflow.data.DownloadWorkflowManager.EXTRA_WORKFLOW_FOLDER_PATH
+            )
+            viewModel.requestOpenDownloadWorkflow(action, eventId, folderPath)
+            return
+        }
         if (intent.action == Intent.ACTION_SEND) {
             val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
                 ?: intent.getStringExtra(Intent.EXTRA_SUBJECT)

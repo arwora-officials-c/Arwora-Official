@@ -138,6 +138,28 @@ sealed class Screen(val route: String) {
     object BatteryMonitor : Screen("battery_monitor")
     object WakelockDetector : Screen("wakelock_detector")
     object AppOps : Screen("app_ops")
+    object AppOpsPackage : Screen("app_ops_pkg/{packageName}") {
+        fun createRoute(packageName: String): String =
+            "app_ops_pkg/${android.net.Uri.encode(packageName)}"
+    }
+    object InstallAssistant : Screen("install_assistant?packageName={packageName}") {
+        fun createRoute(packageName: String? = null): String {
+            return if (packageName.isNullOrBlank()) {
+                "install_assistant"
+            } else {
+                "install_assistant?packageName=${android.net.Uri.encode(packageName)}"
+            }
+        }
+    }
+    object DownloadWorkflow : Screen("download_workflow?eventId={eventId}") {
+        fun createRoute(eventId: String? = null): String {
+            return if (eventId.isNullOrBlank()) {
+                "download_workflow"
+            } else {
+                "download_workflow?eventId=${android.net.Uri.encode(eventId)}"
+            }
+        }
+    }
     object CompressorHub : Screen("compressor_hub")
     object CompressorTool : Screen("compressor/{typeId}") {
         fun createRoute(typeId: String = "image") = "compressor/$typeId"
@@ -161,6 +183,45 @@ fun MainAppScreen(
     val coroutineScope = rememberCoroutineScope()
     val bottomBarScrollController = rememberBottomBarScrollController()
     var showSplashOverlay by remember(skipSplash) { mutableStateOf(!skipSplash) }
+    val pendingInstallAssistantPkg by viewModel.pendingInstallAssistantPackage.collectAsStateWithLifecycle()
+    val pendingDownloadWorkflowNav by viewModel.pendingDownloadWorkflowNav.collectAsStateWithLifecycle()
+    val appContext = androidx.compose.ui.platform.LocalContext.current
+
+    LaunchedEffect(pendingInstallAssistantPkg) {
+        val targetPkg = pendingInstallAssistantPkg
+        if (targetPkg != null) {
+            showSplashOverlay = false
+            onSplashDismissed()
+            viewModel.consumePendingInstallAssistant()
+            navController.navigate(Screen.InstallAssistant.createRoute(targetPkg.ifBlank { null })) {
+                launchSingleTop = true
+            }
+        }
+    }
+
+    LaunchedEffect(pendingDownloadWorkflowNav) {
+        val navReq = pendingDownloadWorkflowNav
+        if (navReq != null) {
+            showSplashOverlay = false
+            onSplashDismissed()
+            viewModel.consumePendingDownloadWorkflow()
+            if (navReq.action == com.arwora.feature.system.downloadworkflow.data.DownloadWorkflowManager.ACTION_OPEN_FOLDER) {
+                val opened = com.arwora.feature.system.downloadworkflow.data.DownloadWorkflowManager.openDownloadFolder(
+                    appContext,
+                    navReq.folderPath
+                )
+                if (!opened) {
+                    navController.navigate(Screen.DownloadWorkflow.createRoute(navReq.eventId)) {
+                        launchSingleTop = true
+                    }
+                }
+            } else {
+                navController.navigate(Screen.DownloadWorkflow.createRoute(navReq.eventId)) {
+                    launchSingleTop = true
+                }
+            }
+        }
+    }
 
     // Always reveal the bottom navigation bar automatically when switching tabs via swipe gestures
     LaunchedEffect(pagerState.currentPage, pagerState.targetPage, pagerState.isScrollInProgress) {
@@ -786,6 +847,51 @@ fun NameGenNavHost(
         }
         composable(Screen.AppOps.route) {
             com.arwora.feature.system.appops.ui.AppOpsScreen(onBack = { navController.popBackStack() })
+        }
+        composable(
+            route = Screen.AppOpsPackage.route,
+            arguments = listOf(navArgument("packageName") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val pkg = backStackEntry.arguments?.getString("packageName")
+            com.arwora.feature.system.appops.ui.AppOpsScreen(
+                initialPackageName = pkg,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(
+            route = Screen.InstallAssistant.route,
+            arguments = listOf(
+                navArgument("packageName") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
+            )
+        ) { backStackEntry ->
+            val pkg = backStackEntry.arguments?.getString("packageName")
+            com.arwora.feature.system.installassistant.ui.SmartInstallAssistantScreen(
+                initialPackageName = pkg,
+                onBack = { navController.popBackStack() },
+                onOpenAppOpsForPackage = { targetPkg ->
+                    navController.navigate(Screen.AppOpsPackage.createRoute(targetPkg))
+                }
+            )
+        }
+        composable(
+            route = Screen.DownloadWorkflow.route,
+            arguments = listOf(
+                navArgument("eventId") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
+            )
+        ) { backStackEntry ->
+            val eventId = backStackEntry.arguments?.getString("eventId")
+            com.arwora.feature.system.downloadworkflow.ui.SmartDownloadWorkflowScreen(
+                initialEventId = eventId,
+                onBack = { navController.popBackStack() }
+            )
         }
         composable(Screen.CompressorHub.route) {
             com.arwora.feature.compressor.CompressorHubScreen(

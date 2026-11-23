@@ -48,6 +48,7 @@ import com.arwora.ui.MainViewModel
 import com.arwora.ui.components.ArworaDesignTokens
 import com.arwora.ui.components.ArworaPillBadge
 import com.arwora.ui.components.ArworaTonalIconBadge
+import com.arwora.ui.components.AutoVideoScrollCard
 import com.arwora.ui.components.ExpressiveCompactLoadingIndicator
 import com.arwora.ui.components.ExpressiveWavyLinearProgressIndicator
 import com.arwora.utils.SoundEffectManager
@@ -171,6 +172,13 @@ fun SocialScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+
+        // ==================== AUTO VIDEO SCROLL CARD ====================
+        item {
+            AutoVideoScrollCard(
+                onToastMessage = { msg -> viewModel.showFloatingToast(msg) }
+            )
+        }
 
         // ==================== MEDIA METADATA (PHOTO & VIDEO) CARD ====================
         item {

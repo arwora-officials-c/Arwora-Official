@@ -118,7 +118,12 @@ class AppManagerViewModel(
             try {
                 val pm = context.packageManager
                 val packages = kotlinx.coroutines.withTimeoutOrNull(10000L) {
-                    pm.getInstalledPackages(0)
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                        pm.getInstalledPackages(android.content.pm.PackageManager.PackageInfoFlags.of(0L))
+                    } else {
+                        @Suppress("DEPRECATION")
+                        pm.getInstalledPackages(0)
+                    }
                 } ?: emptyList()
                 val standardDateFormat = SimpleDateFormat("dd/MM/yyyy - HH:mm:ss", Locale.getDefault())
                 val dayMonthFormat = SimpleDateFormat("EEEE, dd MMMM yyyy", Locale.getDefault())
@@ -177,7 +182,12 @@ class AppManagerViewModel(
     }
 
     companion object {
+        @Volatile
         private var memoryCachedApps: List<AppItem>? = null
+
+        fun clearMemoryCache() {
+            memoryCachedApps = null
+        }
         fun calculateRelativeTime(installTime: Long, currentTime: Long = System.currentTimeMillis()): String {
             if (installTime <= 0L) return "Installed on unknown date"
             val diffMillis = currentTime - installTime

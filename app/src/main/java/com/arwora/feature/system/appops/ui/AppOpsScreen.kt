@@ -166,6 +166,7 @@ fun AppOpsContainerCard(
 @Composable
 fun AppOpsScreen(
     onBack: () -> Unit,
+    initialPackageName: String? = null,
     vm: AppOpsViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -186,6 +187,12 @@ fun AppOpsScreen(
     var showSortMenu by remember { mutableStateOf(false) }
     var showPairingSheet by remember { mutableStateOf(false) }
     val lifecycleOwner = LocalLifecycleOwner.current
+
+    LaunchedEffect(initialPackageName) {
+        if (!initialPackageName.isNullOrBlank()) {
+            vm.focusPackage(initialPackageName)
+        }
+    }
 
     LaunchedEffect(nativeAdbConnected, activePrivilegeEngine) {
         vm.checkAdbStatus()

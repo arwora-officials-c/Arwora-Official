@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arwora.ui.components.ArworaAnimatedSwitch
 import com.arwora.ui.components.GooglePlayLinearProgressBar
 import kotlinx.coroutines.launch
@@ -31,7 +32,8 @@ import kotlinx.coroutines.delay
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateCloneTab(viewModel: CloneViewModel) {
-    val installedApps by viewModel.installedApps.collectAsState()
+    val installedApps by viewModel.installedApps.collectAsStateWithLifecycle()
+    val isAdvancedModeEnabled by viewModel.isAdvancedModeEnabled.collectAsStateWithLifecycle()
     var searchQuery by remember { mutableStateOf("") }
     var selectedApp by remember { mutableStateOf<InstalledApp?>(null) }
     val scope = rememberCoroutineScope()
@@ -130,7 +132,7 @@ fun CreateCloneTab(viewModel: CloneViewModel) {
             ) {
                 CloneConfigurationSheet(
                     app = selectedApp!!,
-                    isAdvancedMode = viewModel.isAdvancedModeEnabled.collectAsState().value,
+                    isAdvancedMode = isAdvancedModeEnabled,
                     onDismiss = {
                         scope.launch { 
                             sheetState.hide() 

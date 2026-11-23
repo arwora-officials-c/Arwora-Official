@@ -2,6 +2,8 @@ package com.arwora.feature.system.wifi.resolve
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.net.InetAddress
 import javax.jmdns.JmDNS
@@ -31,6 +33,7 @@ object MdnsResolver {
             jmdns = JmDNS.create(bindAddress)
             
             for (type in serviceTypes) {
+                currentCoroutineContext().ensureActive()
                 val infos = jmdns.list(type, 600)
                 for (info in infos) {
                     val cleanName = info.name?.trim()?.takeIf { it.isNotBlank() } ?: continue

@@ -38,6 +38,7 @@ import androidx.navigation.NavController
 import com.arwora.feature.clone.ui.CreateCloneTab
 import com.arwora.feature.clone.ui.MyClonesTab
 import com.arwora.feature.clone.ui.CloneSettingsTab
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.arwora.feature.clone.ui.CloneViewModel
 import com.arwora.ui.components.GoogleStyleLoadingView
@@ -47,11 +48,11 @@ import com.arwora.ui.components.GoogleStyleLoadingView
 fun AppCloneScreen(navController: NavController, viewModel: CloneViewModel = viewModel()) {
     var selectedTabIndex by remember { mutableStateOf(0) }
     val tabs = listOf("Create", "My clones", "Settings")
-    val myClones by viewModel.myClones.collectAsState(initial = emptyList())
+    val myClones by viewModel.myClones.collectAsStateWithLifecycle(initialValue = emptyList())
     
     var showChecksSheet by remember { mutableStateOf(false) }
-    val checkResults by viewModel.checkResults.collectAsState()
-    val isChecking by viewModel.isChecking.collectAsState()
+    val checkResults by viewModel.checkResults.collectAsStateWithLifecycle()
+    val isChecking by viewModel.isChecking.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val checksSheetState = rememberModalBottomSheetState()
     val context = androidx.compose.ui.platform.LocalContext.current

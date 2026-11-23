@@ -17,8 +17,8 @@ android {
     applicationId = "com.arworahyper.toolkit"
     minSdk = 24
     targetSdk = 35
-    versionCode = 219
-    versionName = "1.49.58"
+    versionCode = 223
+    versionName = "1.52.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

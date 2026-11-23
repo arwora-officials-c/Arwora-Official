@@ -49,7 +49,7 @@ fun NotificationHistoryScreen(navController: NavController) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val clipboardManager = LocalClipboardManager.current
     val repository = (context.applicationContext as NameGenApplication).notificationRepository
-    val notifications by repository.allNotifications.collectAsState(initial = emptyList())
+    val notifications by repository.allNotifications.collectAsStateWithLifecycle(initialValue = emptyList())
     val hasNotificationAccess by WirelessPairingManager.notificationAccessGranted.collectAsStateWithLifecycle()
     val coroutineScope = rememberCoroutineScope()
     val dateFormat = remember { SimpleDateFormat("MMM dd, HH:mm:ss", Locale.getDefault()) }

@@ -47,9 +47,9 @@ class NameGenApplication : Application() {
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             android.util.Log.e("CrashGuard", "Caught uncaught exception on thread ${thread.name}: ${throwable.message}", throwable)
-            // If the crash is on a non-main worker/background thread or IO dispatch, log and prevent hard app termination
-            if (thread.name != "main") {
-                android.util.Log.w("CrashGuard", "Suppressed background thread crash to keep app alive")
+            // Always propagate fatal JVM Errors or main-thread crashes; only isolate recoverable background worker exceptions
+            if (throwable !is Error && thread.name != "main") {
+                android.util.Log.w("CrashGuard", "Suppressed recoverable background thread exception to keep app alive")
             } else {
                 defaultHandler?.uncaughtException(thread, throwable)
             }
@@ -84,7 +84,7 @@ class NameGenApplication : Application() {
         notificationRepository = com.arwora.data.repository.NotificationRepository(database.notificationDao())
         sharedViewModel = com.arwora.ui.MainViewModel(historyRepository, favoriteRepository, settingsRepository, savedTextRepository)
 
-        // Defer heavy extraction engines (yt-dlp/FFmpeg), audio synthesis, and Wi-Fi monitor off cold-start main thread
+        // Defer heavy extraction engines (yt-dlp/FFmpeg), audio synthesis, and connectivity/ADB bridges off cold-start main thread
         StartupDefer.schedulePostFirstFrame(this) {
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 try {
@@ -94,18 +94,27 @@ class NameGenApplication : Application() {
                 } catch (e: Exception) {
                     android.util.Log.e("NameGenApplication", "Failed to initialize YoutubeDL engine", e)
                 }
+                runCatching { com.arwora.utils.SoundEffectManager.init(this@NameGenApplication) }
+                runCatching { com.arwora.feature.system.battery.service.BatteryMonitorManager.init(this@NameGenApplication) }
+                runCatching { com.arwora.utils.NativeAdbManager.init(this@NameGenApplication) }
+                runCatching { com.arwora.utils.ShizukuBridge.init(this@NameGenApplication, autoRequestIfNeeded = false) }
+                runCatching { com.arwora.utils.AdbShellExecutor.init(this@NameGenApplication) }
+                runCatching { com.arwora.utils.WirelessPairingManager.init(this@NameGenApplication) }
+                runCatching { com.arwora.service.WifiAutoPairMonitor.syncWithPreference(this@NameGenApplication) }
+                runCatching {
+                    val adbCreds = com.arwora.utils.EncryptedAdbCredentialStore.loadState(this@NameGenApplication)
+                    if (adbCreds.isPaired && !adbCreds.userStopped && !com.arwora.utils.NativeAdbManager.isAdbReady()) {
+                        com.arwora.service.AdbConnectionService.startPersistentSession(this@NameGenApplication)
+                    }
+                }
             }
-            com.arwora.utils.SoundEffectManager.init(this@NameGenApplication)
-            com.arwora.feature.system.battery.service.BatteryMonitorManager.init(this@NameGenApplication)
-            com.arwora.utils.NativeAdbManager.init(this@NameGenApplication)
-            com.arwora.utils.ShizukuBridge.init(this@NameGenApplication, autoRequestIfNeeded = false)
-            com.arwora.utils.AdbShellExecutor.init(this@NameGenApplication)
-            com.arwora.utils.WirelessPairingManager.init(this@NameGenApplication)
-            com.arwora.service.WifiAutoPairMonitor.syncWithPreference(this@NameGenApplication)
-            val adbCreds = com.arwora.utils.EncryptedAdbCredentialStore.loadState(this@NameGenApplication)
-            if (adbCreds.isPaired && !adbCreds.userStopped && !com.arwora.utils.NativeAdbManager.isAdbReady()) {
-                com.arwora.service.AdbConnectionService.startPersistentSession(this@NameGenApplication)
-            }
+        }
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= TRIM_MEMORY_BACKGROUND) {
+            com.arwora.ui.AppManagerViewModel.clearMemoryCache()
         }
     }
 }

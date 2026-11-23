@@ -32,6 +32,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Persistent background connection & auto-reconnect service for Wireless ADB.
@@ -160,6 +161,8 @@ class AdbConnectionService : Service() {
             enqueueReconnectWork(appCtx)
         }
 
+        private val fallbackReconnectScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
         fun enqueueReconnectWork(context: Context) {
             try {
                 val request = OneTimeWorkRequestBuilder<AdbReconnectWorker>().build()
@@ -171,8 +174,10 @@ class AdbConnectionService : Service() {
             } catch (t: Throwable) {
                 Log.w(TAG, "WorkManager unavailable; running fallback coroutine reconnect: ${t.message}")
                 val appCtx = context.applicationContext
-                CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
-                    runCatching { NativeAdbManager.reconnectSavedSession(appCtx) }
+                fallbackReconnectScope.launch {
+                    withTimeoutOrNull(15_000L) {
+                        runCatching { NativeAdbManager.reconnectSavedSession(appCtx) }
+                    }
                 }
             }
         }

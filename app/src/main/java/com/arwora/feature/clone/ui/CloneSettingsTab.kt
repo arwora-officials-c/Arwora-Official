@@ -13,12 +13,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arwora.ui.components.ArworaAnimatedSwitch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CloneSettingsTab(viewModel: CloneViewModel) {
-    val isAdvancedMode by viewModel.isAdvancedModeEnabled.collectAsState()
+    val isAdvancedMode by viewModel.isAdvancedModeEnabled.collectAsStateWithLifecycle()
     var engineExpanded by remember { mutableStateOf(false) }
     var selectedEngine by remember { mutableStateOf("Virtual Container") }
 

@@ -279,40 +279,16 @@ class MainViewModel(
         initialValue = ""
     )
 
-    private val initialDarkMode: Boolean? = runBlocking(kotlinx.coroutines.Dispatchers.IO) {
-        try {
-            settingsRepository.darkModeFlow.first()
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private val initialWhiteTheme: Boolean = runBlocking(kotlinx.coroutines.Dispatchers.IO) {
-        try {
-            settingsRepository.whiteThemeFlow.first()
-        } catch (_: Exception) {
-            false
-        }
-    }
-
-    private val initialAnimationsEnabled: Boolean = runBlocking(kotlinx.coroutines.Dispatchers.IO) {
-        try {
-            settingsRepository.animationsFlow.first()
-        } catch (_: Exception) {
-            true
-        }
-    }
-
     val darkMode: StateFlow<Boolean?> = settingsRepository.darkModeFlow.stateIn(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,
-        initialValue = initialDarkMode
+        initialValue = null
     )
     
     val whiteTheme: StateFlow<Boolean> = settingsRepository.whiteThemeFlow.stateIn(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,
-        initialValue = initialWhiteTheme
+        initialValue = false
     )
     
     val hapticFeedback: StateFlow<Boolean> = settingsRepository.hapticFeedbackFlow.stateIn(
@@ -355,7 +331,7 @@ class MainViewModel(
     val animationsEnabled: StateFlow<Boolean> = settingsRepository.animationsFlow.stateIn(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,
-        initialValue = initialAnimationsEnabled
+        initialValue = true
     )
 
     val floatingModeEnabled: StateFlow<Boolean> = settingsRepository.floatingModeFlow.stateIn(
@@ -388,22 +364,6 @@ class MainViewModel(
         initialValue = 150f
     )
 
-    private val initialUiColor: Long = runBlocking(kotlinx.coroutines.Dispatchers.IO) {
-        try {
-            settingsRepository.uiColorFlow.first()
-        } catch (e: Exception) {
-            0xFF6C63FFL
-        }
-    }
-
-    private val initialButtonColor: Long = runBlocking(kotlinx.coroutines.Dispatchers.IO) {
-        try {
-            settingsRepository.buttonColorFlow.first()
-        } catch (e: Exception) {
-            0xFF6C63FFL
-        }
-    }
-
     private val _liveAccentPreview = MutableStateFlow<Long?>(null)
 
     val uiColor: StateFlow<Long> = combine(settingsRepository.uiColorFlow, _liveAccentPreview) { saved, preview ->
@@ -411,7 +371,7 @@ class MainViewModel(
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,
-        initialValue = initialUiColor
+        initialValue = 0xFF6C63FFL
     )
 
     val buttonColor: StateFlow<Long> = combine(settingsRepository.buttonColorFlow, _liveAccentPreview) { saved, preview ->
@@ -419,7 +379,7 @@ class MainViewModel(
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,
-        initialValue = initialButtonColor
+        initialValue = 0xFF6C63FFL
     )
 
     fun setLiveAccentPreview(color: Long?) {
@@ -1078,6 +1038,36 @@ class MainViewModel(
             android.util.Log.e("MainViewModel", "Error handling shared URL", e)
             showFloatingToast("Failed to process shared link")
         }
+    }
+
+    // === Smart App Installation Assistant Deep-Link State ===
+    private val _pendingInstallAssistantPackage = MutableStateFlow<String?>(null)
+    val pendingInstallAssistantPackage: StateFlow<String?> = _pendingInstallAssistantPackage.asStateFlow()
+
+    fun requestOpenInstallAssistant(packageName: String?) {
+        _pendingInstallAssistantPackage.value = packageName.orEmpty()
+    }
+
+    fun consumePendingInstallAssistant() {
+        _pendingInstallAssistantPackage.value = null
+    }
+
+    // === Smart Download Workflow Notification Deep-Link State ===
+    data class PendingDownloadWorkflowNav(
+        val action: String,
+        val eventId: String?,
+        val folderPath: String?
+    )
+
+    private val _pendingDownloadWorkflowNav = MutableStateFlow<PendingDownloadWorkflowNav?>(null)
+    val pendingDownloadWorkflowNav: StateFlow<PendingDownloadWorkflowNav?> = _pendingDownloadWorkflowNav.asStateFlow()
+
+    fun requestOpenDownloadWorkflow(action: String, eventId: String?, folderPath: String?) {
+        _pendingDownloadWorkflowNav.value = PendingDownloadWorkflowNav(action, eventId, folderPath)
+    }
+
+    fun consumePendingDownloadWorkflow() {
+        _pendingDownloadWorkflowNav.value = null
     }
 
     private fun extractUrl(text: String): String {

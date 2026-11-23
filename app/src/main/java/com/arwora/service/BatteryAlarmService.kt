@@ -1,17 +1,22 @@
 package com.arwora.service
 
+import android.Manifest
 import android.app.*
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.os.BatteryManager
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.arwora.NameGenApplication
 import com.arwora.R
 import com.arwora.data.datastore.SettingsRepository
+import com.arwora.data.datastore.dataStore
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.asStateFlow
@@ -48,11 +53,12 @@ class BatteryAlarmService : Service() {
     override fun onCreate() {
         super.onCreate()
         
-        // Create notification channel
-        val channel = NotificationChannel("battery_alarm", "Battery Alarm & Monitor", NotificationManager.IMPORTANCE_HIGH)
-        channel.description = "Urgent alerts for high and low battery limits"
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(channel)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel("battery_alarm", "Battery Alarm & Monitor", NotificationManager.IMPORTANCE_HIGH)
+            channel.description = "Urgent alerts for high and low battery limits"
+            val manager = getSystemService(NotificationManager::class.java)
+            manager?.createNotificationChannel(channel)
+        }
 
         serviceScope.launch {
             com.arwora.feature.system.battery.service.BatteryMonitorManager.batteryLevel.collect { level ->
@@ -63,38 +69,68 @@ class BatteryAlarmService : Service() {
     }
 
     private suspend fun checkAlarms(pct: Int, isCharging: Boolean) {
-        val repository = (application as NameGenApplication).settingsRepository
-        
-        // 1. High charging limit alarm
-        val chargingAlarmEnabled = repository.batteryAlarmEnabledFlow.first()
-        val chargingThreshold = repository.batteryAlarmThresholdFlow.first()
-        val alarmSound = repository.batteryAlarmSoundFlow.first()
-        val repeatAlarm = repository.batteryAlarmRepeatFlow.first()
-        val volume = repository.batteryAlarmVolumeFlow.first()
-        val volumeBoost = repository.batteryAlarmVolumeBoostFlow.first()
+        val repository = (application as? NameGenApplication)?.settingsRepository
+            ?: SettingsRepository(applicationContext.dataStore)
 
-        if (chargingAlarmEnabled && isCharging && pct >= chargingThreshold) {
-            triggerAlarm(this, "Battery Charged!", "Battery reached $pct%. Please unplug the charger.", alarmSound, repeatAlarm, volume, volumeBoost)
+        val settings = withContext(Dispatchers.IO) {
+            AlarmPrefsSnapshot(
+                chargingAlarmEnabled = repository.batteryAlarmEnabledFlow.first(),
+                chargingThreshold = repository.batteryAlarmThresholdFlow.first(),
+                alarmSound = repository.batteryAlarmSoundFlow.first(),
+                repeatAlarm = repository.batteryAlarmRepeatFlow.first(),
+                volume = repository.batteryAlarmVolumeFlow.first(),
+                volumeBoost = repository.batteryAlarmVolumeBoostFlow.first(),
+                lowAlarmEnabled = repository.batteryLowAlarmEnabledFlow.first(),
+                lowThreshold = repository.batteryLowAlarmThresholdFlow.first()
+            )
         }
 
-        // 2. Low battery alarm
-        val lowAlarmEnabled = repository.batteryLowAlarmEnabledFlow.first()
-        val lowThreshold = repository.batteryLowAlarmThresholdFlow.first()
-        if (lowAlarmEnabled && !isCharging && pct in 1..lowThreshold) {
-            triggerAlarm(this, "Battery Low Alert!", "Battery is down to $pct%. Connect charger immediately.", alarmSound, repeatAlarm, volume, volumeBoost)
+        if (settings.chargingAlarmEnabled && isCharging && pct >= settings.chargingThreshold) {
+            triggerAlarm(
+                this,
+                "Battery Charged!",
+                "Battery reached $pct%. Please unplug the charger.",
+                settings.alarmSound,
+                settings.repeatAlarm,
+                settings.volume,
+                settings.volumeBoost
+            )
+        }
+
+        if (settings.lowAlarmEnabled && !isCharging && pct in 1..settings.lowThreshold) {
+            triggerAlarm(
+                this,
+                "Battery Low Alert!",
+                "Battery is down to $pct%. Connect charger immediately.",
+                settings.alarmSound,
+                settings.repeatAlarm,
+                settings.volume,
+                settings.volumeBoost
+            )
         }
 
         // Auto-stop alarm if unplugged during high charge alert OR plugged during low battery alert
         if (isRinging) {
-            if (!isCharging && pct >= chargingThreshold) {
+            if (!isCharging && pct >= settings.chargingThreshold) {
                 stopRinging()
                 dismissNotification(NOTIFICATION_ID_ALARM)
-            } else if (isCharging && pct <= lowThreshold) {
+            } else if (isCharging && pct <= settings.lowThreshold) {
                 stopRinging()
                 dismissNotification(NOTIFICATION_ID_ALARM)
             }
         }
     }
+
+    private data class AlarmPrefsSnapshot(
+        val chargingAlarmEnabled: Boolean,
+        val chargingThreshold: Int,
+        val alarmSound: String,
+        val repeatAlarm: Boolean,
+        val volume: Int,
+        val volumeBoost: Boolean,
+        val lowAlarmEnabled: Boolean,
+        val lowThreshold: Int
+    )
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
@@ -143,7 +179,11 @@ class BatteryAlarmService : Service() {
             .addAction(R.drawable.ic_launcher_foreground, "Turn Off Guard", stopPendingIntent)
             .build()
 
-        startForeground(NOTIFICATION_ID_FOREGROUND, notification)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(NOTIFICATION_ID_FOREGROUND, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else {
+            startForeground(NOTIFICATION_ID_FOREGROUND, notification)
+        }
     }
 
     private fun triggerAlarm(
@@ -208,7 +248,11 @@ class BatteryAlarmService : Service() {
             )
             .addAction(R.drawable.ic_launcher_foreground, "Dismiss Alarm", dismissPendingIntent)
 
-        notificationManager.notify(NOTIFICATION_ID_ALARM, builder.build())
+        val canNotify = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        if (canNotify) {
+            runCatching { notificationManager.notify(NOTIFICATION_ID_ALARM, builder.build()) }
+        }
     }
 
     private fun startRingingLoop(context: Context, soundName: String, repeat: Boolean, volume: Int, volumeBoost: Boolean) {

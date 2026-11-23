@@ -29,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.arwora.ui.MainViewModel
 import com.arwora.NameGenApplication
@@ -110,14 +111,14 @@ fun ShareDownloaderBottomSheet(
     val clipboardManager = LocalClipboardManager.current
     val focusManager = LocalFocusManager.current
 
-    val rawUrl by viewModel.sharedMediaUrl.collectAsState()
+    val rawUrl by viewModel.sharedMediaUrl.collectAsStateWithLifecycle()
     var inputUrl by remember(rawUrl) { mutableStateOf(rawUrl) }
     var mediaTitle by remember(rawUrl) { mutableStateOf("") }
     var mediaDuration by remember { mutableStateOf("00:00") }
     var fetchedThumbnail by remember { mutableStateOf<String?>(null) }
     var isEditingTitle by remember { mutableStateOf(false) }
 
-    val customDownloadPath by viewModel.customDownloadPath.collectAsState()
+    val customDownloadPath by viewModel.customDownloadPath.collectAsStateWithLifecycle()
     var showFolderDialog by remember { mutableStateOf(false) }
 
     // Dynamic Options State

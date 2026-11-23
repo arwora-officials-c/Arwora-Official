@@ -1,21 +1,22 @@
 package com.arwora
 
-import androidx.activity.SystemBarStyle
-import androidx.activity.enableEdgeToEdge
-import androidx.core.view.WindowInsetsControllerCompat
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arwora.ui.screens.NetworkSettingsScreen
 import com.arwora.ui.theme.NameGenProTheme
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
+import com.arwora.ui.theme.ThemeManager
 
 class DnsChangerActivity : ComponentActivity() {
 
@@ -23,36 +24,41 @@ class DnsChangerActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         try {
-            // Read styling preferences synchronously
             val app = application as? NameGenApplication
             if (app == null) {
                 android.util.Log.e("DnsChangerActivity", "Application is not NameGenApplication")
                 finish()
                 return
             }
-            
-            val isDark = runBlocking { app.settingsRepository.darkModeFlow.first() }
-            val whiteTheme = runBlocking { app.settingsRepository.whiteThemeFlow.first() }
-            val uiColorVal = runBlocking { app.settingsRepository.uiColorFlow.first() }
-            val buttonColorVal = runBlocking { app.settingsRepository.buttonColorFlow.first() }
-
-            val isSystemDark = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
-            val resolvedDarkTheme = (isDark ?: isSystemDark) && !whiteTheme
+            val viewModel = app.sharedViewModel
 
             enableEdgeToEdge()
-            val themeConfig = com.arwora.ui.theme.ThemeManager.getThemeConfig(
-                darkModeState = isDark,
-                whiteThemeState = whiteTheme,
-                isSystemDark = isSystemDark
+            val isSystemDarkNow = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                android.content.res.Configuration.UI_MODE_NIGHT_YES
+            ThemeManager.applySystemBarsTheme(
+                window,
+                ThemeManager.getThemeConfig(viewModel.darkMode.value, viewModel.whiteTheme.value, isSystemDarkNow)
             )
-            com.arwora.ui.theme.ThemeManager.applySystemBarsTheme(window, themeConfig)
 
             setContent {
+                val isDark by viewModel.darkMode.collectAsStateWithLifecycle()
+                val whiteTheme by viewModel.whiteTheme.collectAsStateWithLifecycle()
+                val uiColorVal by viewModel.uiColor.collectAsStateWithLifecycle()
+                val buttonColorVal by viewModel.buttonColor.collectAsStateWithLifecycle()
+                val isSystemDark = isSystemInDarkTheme()
+                val themeConfig = remember(isDark, whiteTheme, isSystemDark) {
+                    ThemeManager.getThemeConfig(isDark, whiteTheme, isSystemDark)
+                }
+
+                LaunchedEffect(themeConfig) {
+                    ThemeManager.applySystemBarsTheme(window, themeConfig)
+                }
+
                 NameGenProTheme(
-                    darkTheme = resolvedDarkTheme,
+                    darkTheme = themeConfig.isDark,
                     whiteTheme = whiteTheme,
-                    uiColor = Color(uiColorVal),
-                    buttonColor = Color(buttonColorVal)
+                    uiColor = Color(uiColorVal.toInt()),
+                    buttonColor = Color(buttonColorVal.toInt())
                 ) {
                     Surface(
                         modifier = Modifier.fillMaxSize(),

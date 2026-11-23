@@ -520,23 +520,26 @@ object ExifEditorUtils {
                     BitmapFactory.decodeStream(stream)
                 } ?: return null
 
-                val compressFormat = when (targetMime) {
-                    "image/png" -> Bitmap.CompressFormat.PNG
-                    "image/webp" -> {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                            if (quality >= 100) Bitmap.CompressFormat.WEBP_LOSSLESS else Bitmap.CompressFormat.WEBP_LOSSY
-                        } else {
-                            @Suppress("DEPRECATION")
-                            Bitmap.CompressFormat.WEBP
+                try {
+                    val compressFormat = when (targetMime) {
+                        "image/png" -> Bitmap.CompressFormat.PNG
+                        "image/webp" -> {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                if (quality >= 100) Bitmap.CompressFormat.WEBP_LOSSLESS else Bitmap.CompressFormat.WEBP_LOSSY
+                            } else {
+                                @Suppress("DEPRECATION")
+                                Bitmap.CompressFormat.WEBP
+                            }
                         }
+                        else -> Bitmap.CompressFormat.JPEG
                     }
-                    else -> Bitmap.CompressFormat.JPEG
-                }
 
-                tempFile.outputStream().use { output ->
-                    bitmap.compress(compressFormat, quality.coerceIn(10, 100), output)
+                    tempFile.outputStream().use { output ->
+                        bitmap.compress(compressFormat, quality.coerceIn(10, 100), output)
+                    }
+                } finally {
+                    if (!bitmap.isRecycled) bitmap.recycle()
                 }
-                bitmap.recycle()
             }
 
             // 2. Modify EXIF metadata if target format supports EXIF (primarily JPEG)

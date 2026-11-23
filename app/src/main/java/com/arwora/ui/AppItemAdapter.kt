@@ -27,6 +27,14 @@ class AppItemAdapter(
     private val onCopyPackageClick: (AppItem) -> Unit = {}
 ) : ListAdapter<AppItem, AppItemAdapter.AppViewHolder>(AppDiffCallback()) {
 
+    init {
+        setHasStableIds(true)
+    }
+
+    override fun getItemId(position: Int): Long {
+        return getItem(position).packageName.hashCode().toLong()
+    }
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): AppViewHolder {
         val view = LayoutInflater.from(parent.context).inflate(
             android.R.layout.simple_list_item_2, parent, false
@@ -37,6 +45,13 @@ class AppItemAdapter(
     override fun onBindViewHolder(holder: AppViewHolder, position: Int) {
         val app = getItem(position)
         holder.bind(app, onUninstallClick, onCopyPackageClick)
+    }
+
+    companion object {
+        fun applySmoothDefaults(recyclerView: RecyclerView) {
+            recyclerView.setHasFixedSize(true)
+            recyclerView.setItemViewCacheSize(20)
+        }
     }
 
     class AppViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {

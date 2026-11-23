@@ -2143,6 +2143,40 @@ fun SystemDashboardScreen(
                 }
             }
 
+            // SMART APP INSTALLATION ASSISTANT CARD
+            item {
+                DashboardStaggeredItem(
+                    index = 29,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
+                    com.arwora.feature.system.installassistant.ui.SmartInstallAssistantCard(
+                        onOpenAssistant = { initialPkg ->
+                            navigateGuarded(Screen.InstallAssistant.route) {
+                                navController.navigate(Screen.InstallAssistant.createRoute(initialPkg))
+                            }
+                        }
+                    )
+                }
+            }
+
+            // SMART DOWNLOAD WORKFLOW CARD
+            item {
+                DashboardStaggeredItem(
+                    index = 30,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
+                    com.arwora.feature.system.downloadworkflow.ui.SmartDownloadWorkflowCard(
+                        onOpenWorkflowHub = { eventId ->
+                            navigateGuarded(Screen.DownloadWorkflow.route) {
+                                navController.navigate(Screen.DownloadWorkflow.createRoute(eventId))
+                            }
+                        }
+                    )
+                }
+            }
+
             item {
                 Spacer(modifier = Modifier.height(96.dp))
             }

@@ -33,53 +33,66 @@
             app:cardCornerRadius="18dp"
             app:cardElevation="2dp">
 
-            <LinearLayout
+            <androidx.constraintlayout.widget.ConstraintLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:padding="16dp"
-                android:gravity="center_vertical">
+                android:padding="16dp">
 
                 <ImageView
+                    android:id="@+id/iv_auto_clicker_icon"
                     android:layout_width="44dp"
                     android:layout_height="44dp"
-                    android:src="@android:drawable/ic_menu_compass"
                     android:contentDescription="Auto Clicker"
-                    android:padding="8dp" />
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="12dp"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Auto Clicker"
-                        android:textSize="16sp"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Automated taps, multi-target &amp; swipe floating overlay"
-                        android:textSize="13sp"
-                        android:textColor="?android:attr/textColorSecondary" />
-                </LinearLayout>
+                    android:padding="8dp"
+                    android:src="@android:drawable/ic_menu_compass"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintTop_toTopOf="parent" />
 
                 <TextView
+                    android:id="@+id/tv_auto_clicker_title"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:layout_marginEnd="8dp"
+                    android:text="Auto Clicker"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    app:layout_constraintBottom_toTopOf="@id/tv_auto_clicker_subtitle"
+                    app:layout_constraintEnd_toStartOf="@id/tv_auto_clicker_badge"
+                    app:layout_constraintStart_toEndOf="@id/iv_auto_clicker_icon"
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:layout_constraintVertical_chainStyle="packed" />
+
+                <TextView
+                    android:id="@+id/tv_auto_clicker_subtitle"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:layout_marginEnd="8dp"
+                    android:text="Automated taps, multi-target &amp; swipe floating overlay"
+                    android:textColor="?android:attr/textColorSecondary"
+                    android:textSize="13sp"
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintEnd_toStartOf="@id/tv_auto_clicker_badge"
+                    app:layout_constraintStart_toEndOf="@id/iv_auto_clicker_icon"
+                    app:layout_constraintTop_toBottomOf="@id/tv_auto_clicker_title" />
+
+                <TextView
+                    android:id="@+id/tv_auto_clicker_badge"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:paddingStart="8dp"
+                    android:paddingTop="3dp"
+                    android:paddingEnd="8dp"
+                    android:paddingBottom="3dp"
                     android:text="New"
                     android:textSize="11sp"
                     android:textStyle="bold"
-                    android:paddingStart="8dp"
-                    android:paddingEnd="8dp"
-                    android:paddingTop="3dp"
-                    android:paddingBottom="3dp" />
-            </LinearLayout>
+                    app:layout_constraintBottom_toBottomOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent"
+                    app:layout_constraintTop_toTopOf="parent" />
+            </androidx.constraintlayout.widget.ConstraintLayout>
         </androidx.cardview.widget.CardView>
 
     </LinearLayout>

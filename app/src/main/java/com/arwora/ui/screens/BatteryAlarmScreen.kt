@@ -56,16 +56,16 @@ fun BatteryAlarmScreen(navController: NavController) {
     val coroutineScope = rememberCoroutineScope()
 
     // Battery Settings States from SettingsRepository
-    val chargingAlarmEnabled by repository.batteryAlarmEnabledFlow.collectAsState(initial = false)
-    val chargingThreshold by repository.batteryAlarmThresholdFlow.collectAsState(initial = 80)
-    val alarmSound by repository.batteryAlarmSoundFlow.collectAsState(initial = "Classic Digital Beep")
-    val lowAlarmEnabled by repository.batteryLowAlarmEnabledFlow.collectAsState(initial = false)
-    val lowThreshold by repository.batteryLowAlarmThresholdFlow.collectAsState(initial = 20)
+    val chargingAlarmEnabled by repository.batteryAlarmEnabledFlow.collectAsStateWithLifecycle(initialValue = false)
+    val chargingThreshold by repository.batteryAlarmThresholdFlow.collectAsStateWithLifecycle(initialValue = 80)
+    val alarmSound by repository.batteryAlarmSoundFlow.collectAsStateWithLifecycle(initialValue = "Classic Digital Beep")
+    val lowAlarmEnabled by repository.batteryLowAlarmEnabledFlow.collectAsStateWithLifecycle(initialValue = false)
+    val lowThreshold by repository.batteryLowAlarmThresholdFlow.collectAsStateWithLifecycle(initialValue = 20)
     var localLowThreshold by remember(lowThreshold) { mutableFloatStateOf(lowThreshold.toFloat().coerceIn(1f, 40f)) }
-    val repeatAlarm by repository.batteryAlarmRepeatFlow.collectAsState(initial = false)
-    val alarmVolume by repository.batteryAlarmVolumeFlow.collectAsState(initial = 100)
+    val repeatAlarm by repository.batteryAlarmRepeatFlow.collectAsStateWithLifecycle(initialValue = false)
+    val alarmVolume by repository.batteryAlarmVolumeFlow.collectAsStateWithLifecycle(initialValue = 100)
     var localAlarmVolume by remember(alarmVolume) { mutableFloatStateOf(alarmVolume.toFloat().coerceIn(0f, 100f)) }
-    val alarmVolumeBoost by repository.batteryAlarmVolumeBoostFlow.collectAsState(initial = false)
+    val alarmVolumeBoost by repository.batteryAlarmVolumeBoostFlow.collectAsStateWithLifecycle(initialValue = false)
 
     val batteryLevel by BatteryMonitorManager.batteryLevel.collectAsStateWithLifecycle()
     val isBatteryCharging by BatteryMonitorManager.isCharging.collectAsStateWithLifecycle()
@@ -81,7 +81,7 @@ fun BatteryAlarmScreen(navController: NavController) {
     var energyCounterUwh by remember { mutableLongStateOf(0L) }
     var estimatedCycles by remember { mutableIntStateOf(0) }
     
-    val drainStats by BatteryDrainTracker.drainStats.collectAsState()
+    val drainStats by BatteryDrainTracker.drainStats.collectAsStateWithLifecycle()
 
     DisposableEffect(context) {
         BatteryDrainTracker.init(context, batteryLevel, isBatteryCharging)

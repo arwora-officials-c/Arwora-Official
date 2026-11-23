@@ -147,13 +147,7 @@ fun ImageMetadataEditorScreen(navController: NavController, viewModel: MainViewM
                 val bmp = if (detectedType == MediaType.VIDEO) {
                     ExifEditorUtils.getVideoThumbnail(context, uri)
                 } else {
-                    try {
-                        context.contentResolver.openInputStream(uri)?.use { stream ->
-                            BitmapFactory.decodeStream(stream)
-                        }
-                    } catch (e: Exception) {
-                        null
-                    }
+                    decodeSampledPreviewBitmap(context, uri, maxDim = 1024)
                 }
 
                 val baseName = origName.substringBeforeLast(".")
@@ -219,13 +213,7 @@ fun ImageMetadataEditorScreen(navController: NavController, viewModel: MainViewM
                 val bmp = if (detectedType == MediaType.VIDEO) {
                     ExifEditorUtils.getVideoThumbnail(context, uri)
                 } else {
-                    try {
-                        context.contentResolver.openInputStream(uri)?.use { stream ->
-                            BitmapFactory.decodeStream(stream)
-                        }
-                    } catch (e: Exception) {
-                        null
-                    }
+                    decodeSampledPreviewBitmap(context, uri, maxDim = 1024)
                 }
 
                 withContext(Dispatchers.Main) {
@@ -2053,4 +2041,34 @@ fun PreviewChangesDialog(
         },
         shape = RoundedCornerShape(20.dp)
     )
+}
+
+private fun decodeSampledPreviewBitmap(
+    context: android.content.Context,
+    uri: Uri,
+    maxDim: Int = 1024
+): Bitmap? {
+    return try {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(uri)?.use { stream ->
+            BitmapFactory.decodeStream(stream, null, bounds)
+        }
+        var sampleSize = 1
+        if (bounds.outWidth > maxDim || bounds.outHeight > maxDim) {
+            val halfW = bounds.outWidth / 2
+            val halfH = bounds.outHeight / 2
+            while ((halfW / sampleSize) >= maxDim && (halfH / sampleSize) >= maxDim) {
+                sampleSize *= 2
+            }
+        }
+        val decodeOpts = BitmapFactory.Options().apply {
+            inSampleSize = sampleSize
+            inPreferredConfig = Bitmap.Config.RGB_565
+        }
+        context.contentResolver.openInputStream(uri)?.use { stream ->
+            BitmapFactory.decodeStream(stream, null, decodeOpts)
+        }
+    } catch (_: Exception) {
+        null
+    }
 }
