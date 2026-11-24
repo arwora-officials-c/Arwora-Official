@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.ArworaHyperToolkit" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="android:windowBackground">@color/dark_surface_bg</item>
-        <item name="android:colorBackground">@color/dark_surface_bg</item>
-        <item name="colorSurface">@color/splash_background</item>
-        <item name="android:statusBarColor">@color/dark_surface_bg</item>
-        <item name="android:navigationBarColor">@color/dark_surface_bg</item>
+        <item name="android:windowBackground">@color/colorSurface</item>
+        <item name="android:colorBackground">@color/colorSurface</item>
+        <item name="colorSurface">@color/colorSurface</item>
+        <item name="android:statusBarColor">@color/colorSurface</item>
+        <item name="android:navigationBarColor">@color/colorSurface</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
@@ -14,12 +14,12 @@
     <style name="Theme.MyApplication" parent="Theme.ArworaHyperToolkit" />
 
     <style name="Theme.App.Starting" parent="Theme.SplashScreen">
-        <item name="android:windowBackground">@color/splash_background</item>
-        <item name="windowSplashScreenBackground">@color/splash_background</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_transparent</item>
+        <item name="android:windowBackground">@color/colorSurface</item>
+        <item name="windowSplashScreenBackground">@color/colorSurface</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_arwora_wordmark</item>
         <item name="windowSplashScreenAnimationDuration">0</item>
-        <item name="android:statusBarColor">@color/splash_background</item>
-        <item name="android:navigationBarColor">@color/splash_background</item>
+        <item name="android:statusBarColor">@color/colorSurface</item>
+        <item name="android:navigationBarColor">@color/colorSurface</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
         <item name="postSplashScreenTheme">@style/Theme.ArworaHyperToolkit</item>

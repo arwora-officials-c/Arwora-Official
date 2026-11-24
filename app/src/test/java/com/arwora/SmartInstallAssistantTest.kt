@@ -223,7 +223,7 @@ class SmartInstallAssistantTest {
     }
 
     @Test
-    fun assistantCardAndDashboardFilterChecklistAndOpenAppOps() = runBlocking {
+    fun assistantCardAndDashboardFilterChecklistAndOpenAppOps() {
         val gamePkg = "com.example.pixelracer"
         val prodPkg = "com.example.focusnotes"
         installFakePackage(gamePkg, "Pixel Racer", category = ApplicationInfo.CATEGORY_GAME)
@@ -235,8 +235,10 @@ class SmartInstallAssistantTest {
             grantedFlags = intArrayOf(PackageInfo.REQUESTED_PERMISSION_GRANTED)
         )
 
-        SmartInstallAssistantManager.recordPackageEvent(context, gamePkg, isUpdate = false)
-        SmartInstallAssistantManager.recordPackageEvent(context, prodPkg, isUpdate = false)
+        runBlocking {
+            SmartInstallAssistantManager.recordPackageEvent(context, gamePkg, isUpdate = false)
+            SmartInstallAssistantManager.recordPackageEvent(context, prodPkg, isUpdate = false)
+        }
 
         var openedPkgFromCard: String? = "unset"
         composeTestRule.setContent {
@@ -253,7 +255,7 @@ class SmartInstallAssistantTest {
     }
 
     @Test
-    fun assistantDashboardCategoryFilteringAndChecklistAppOpsHandoff() = runBlocking {
+    fun assistantDashboardCategoryFilteringAndChecklistAppOpsHandoff() {
         val gamePkg = "com.example.pixelracer2"
         val prodPkg = "com.example.focusnotes2"
         installFakePackage(gamePkg, "Pixel Racer 2", category = ApplicationInfo.CATEGORY_GAME)
@@ -264,8 +266,10 @@ class SmartInstallAssistantTest {
             requestedPermissions = arrayOf(Manifest.permission.CAMERA),
             grantedFlags = intArrayOf(PackageInfo.REQUESTED_PERMISSION_GRANTED)
         )
-        SmartInstallAssistantManager.recordPackageEvent(context, gamePkg, isUpdate = false)
-        SmartInstallAssistantManager.recordPackageEvent(context, prodPkg, isUpdate = false)
+        runBlocking {
+            SmartInstallAssistantManager.recordPackageEvent(context, gamePkg, isUpdate = false)
+            SmartInstallAssistantManager.recordPackageEvent(context, prodPkg, isUpdate = false)
+        }
 
         val vm = SmartInstallAssistantViewModel(context)
         var launchedAppOpsPkg: String? = null

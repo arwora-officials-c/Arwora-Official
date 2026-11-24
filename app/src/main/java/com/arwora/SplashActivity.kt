@@ -99,12 +99,13 @@ class SplashActivity : ComponentActivity() {
         enableEdgeToEdge()
         WindowCompat.setDecorFitsSystemWindows(window, false)
         setContentView(R.layout.activity_splash)
+        (application as? NameGenApplication)?.warmupAsync()
 
         val isSystemDark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
             Configuration.UI_MODE_NIGHT_YES
 
-        val bgColor = if (isSystemDark) Color.BLACK else Color.WHITE
-        val fgColor = if (isSystemDark) Color.WHITE else Color.BLACK
+        val bgColor = if (isSystemDark) Color.BLACK else androidx.core.content.ContextCompat.getColor(this, R.color.colorSurface)
+        val fgColor = Color.WHITE
 
         val root = findViewById<ConstraintLayout>(R.id.splash_root)
         val wordmark = findViewById<ImageView>(R.id.iv_arwora_wordmark)
@@ -123,8 +124,8 @@ class SplashActivity : ComponentActivity() {
         wordmark.translationY = 0f
 
         val insetsController = WindowCompat.getInsetsController(window, window.decorView)
-        insetsController.isAppearanceLightStatusBars = !isSystemDark
-        insetsController.isAppearanceLightNavigationBars = !isSystemDark
+        insetsController.isAppearanceLightStatusBars = false
+        insetsController.isAppearanceLightNavigationBars = false
 
         handler.postDelayed(startExitTransitionRunnable, HOLD_DURATION_MS)
     }

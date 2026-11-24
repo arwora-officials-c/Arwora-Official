@@ -6,7 +6,6 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
@@ -14,6 +13,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModelProvider
@@ -40,7 +40,7 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             val appCtx = applicationContext
             com.arwora.utils.NativeAdbManager.refreshConnectionStatus(appCtx)
-            com.arwora.utils.ShizukuBridge.refreshState(appCtx)
+            com.arwora.utils.ShizukuBridgeManager.checkShizukuStatus(appCtx)
             com.arwora.utils.AdbShellExecutor.refreshEngineStatus(appCtx)
             val creds = com.arwora.utils.EncryptedAdbCredentialStore.loadState(appCtx)
             if (creds.isPaired && !creds.userStopped && !com.arwora.utils.NativeAdbManager.isAdbReady()) {
@@ -58,9 +58,9 @@ class MainActivity : ComponentActivity() {
         com.arwora.feature.common.metrics.StartupMetrics.onActivityCreate()
 
         if (savedInstanceState == null) {
-            com.arwora.utils.ShizukuBridge.init(this, autoRequestIfNeeded = true)
             lifecycleScope.launch(Dispatchers.IO) {
                 val appCtx = applicationContext
+                com.arwora.utils.ShizukuBridge.init(appCtx, autoRequestIfNeeded = true)
                 com.arwora.utils.NativeAdbManager.init(appCtx)
                 com.arwora.utils.AdbShellExecutor.init(appCtx)
                 com.arwora.service.WifiAutoPairMonitor.syncWithPreference(appCtx)
@@ -71,6 +71,7 @@ class MainActivity : ComponentActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
         val app = application as NameGenApplication
+        app.warmupAsync()
         val viewModel = app.sharedViewModel
         val showComposeSplash = intent?.getBooleanExtra("show_compose_splash", false) == true
         val openInstallAssistant = intent?.getBooleanExtra(
@@ -81,9 +82,14 @@ class MainActivity : ComponentActivity() {
             com.arwora.feature.system.downloadworkflow.data.DownloadWorkflowManager.EXTRA_OPEN_DOWNLOAD_WORKFLOW,
             false
         ) == true
+        val openArworaConnect = intent?.getBooleanExtra(
+            com.arwora.feature.system.connect.data.ArworaConnectManager.EXTRA_OPEN_ARWORA_CONNECT,
+            false
+        ) == true
         val skipSplash = !showComposeSplash ||
             openInstallAssistant ||
             openDownloadWorkflow ||
+            openArworaConnect ||
             (intent?.action == Intent.ACTION_SEND) ||
             (intent?.getBooleanExtra("skip_splash", false) == true)
 
@@ -102,11 +108,11 @@ class MainActivity : ComponentActivity() {
             com.arwora.feature.common.metrics.StartupMetrics.onFirstCompose()
             
             LaunchedEffect(Unit) {
+                withFrameNanos { }
                 com.arwora.feature.common.metrics.StartupMetrics.onFirstDraw()
                 com.arwora.feature.common.metrics.StartupMetrics.onFullContentRendered()
-                com.arwora.feature.common.startup.StartupDefer.postFirstFrame {
-                    // Preload light caches if needed
-                }
+                runCatching { reportFullyDrawn() }
+                com.arwora.feature.common.startup.StartupDefer.markFirstFrameDrawn()
             }
             val darkModeState by viewModel.darkMode.collectAsStateWithLifecycle()
             val whiteThemeState by viewModel.whiteTheme.collectAsStateWithLifecycle()
@@ -191,6 +197,14 @@ class MainActivity : ComponentActivity() {
                 com.arwora.feature.system.downloadworkflow.data.DownloadWorkflowManager.EXTRA_WORKFLOW_FOLDER_PATH
             )
             viewModel.requestOpenDownloadWorkflow(action, eventId, folderPath)
+            return
+        }
+        if (intent.getBooleanExtra(
+                com.arwora.feature.system.connect.data.ArworaConnectManager.EXTRA_OPEN_ARWORA_CONNECT,
+                false
+            )
+        ) {
+            viewModel.requestOpenArworaConnect()
             return
         }
         if (intent.action == Intent.ACTION_SEND) {

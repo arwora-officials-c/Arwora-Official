@@ -1,10 +1,13 @@
 # Baseline Profile for NameGen Pro
 # Generated to optimize cold start (TTID/TTFF) for MainActivity, Navigation, and Home screens
 
+Lcom/arwora/SplashActivity;
 Lcom/arwora/MainActivity;
 Lcom/arwora/MainActivity$onCreate$$inlined$setContent$1;
 Lcom/arwora/NameGenApplication;
 Lcom/arwora/ui/MainViewModel;
+Lcom/arwora/ui/theme/ThemeManager;
+Lcom/arwora/ui/theme/ThemeKt;
 Lcom/arwora/ui/screens/HomeScreenKt;
 Lcom/arwora/ui/screens/SystemDashboardScreenKt;
 Lcom/arwora/ui/navigation/NavigationKt;
@@ -12,6 +15,7 @@ Lcom/arwora/ui/navigation/Screen;
 Lcom/arwora/ui/components/BottomNavigationBarKt;
 Lcom/arwora/feature/common/startup/StartupDefer;
 Lcom/arwora/feature/common/metrics/StartupMetrics;
+Landroidx/core/splashscreen/SplashScreen;
 Lcom/arwora/feature/system/apps/AppManagerViewModel;
 Lcom/arwora/feature/system/wifi/WifiControllerViewModel;
 Lcom/arwora/data/db/AppDatabase;

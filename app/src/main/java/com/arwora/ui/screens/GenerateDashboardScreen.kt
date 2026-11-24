@@ -88,12 +88,10 @@ fun GenerateDashboardScreen(navController: NavController, viewModel: MainViewMod
         ToolItem("Bio Maker", Icons.Filled.TextSnippet, Screen.BioGen.route),
         ToolItem("Random Profile", Icons.Filled.AssignmentInd, Screen.RandomProfile.route),
         ToolItem("Name Mixer", Icons.Filled.Shuffle, Screen.NameMixer.route),
-        ToolItem("Username Builder", Icons.Filled.Build, Screen.UsernameBuilder.route),
         ToolItem("Text Saver", Icons.Filled.Save, Screen.TextSaver.route),
         ToolItem("Text Repeat", Icons.Filled.Repeat, Screen.TextRepeat.route),
         ToolItem("Age Calculator", Icons.Filled.Cake, Screen.AgeCalculator.route),
         ToolItem("Fake Chat & Bill", Icons.Filled.ChatBubble, Screen.FakeContentDashboard.route),
-        ToolItem("Fake Data Generator", Icons.Filled.DataArray, Screen.FakeDataGenerator.route),
         ToolItem("Coin Toss", Icons.Filled.Casino, Screen.CoinToss.route)
     )
 
@@ -124,7 +122,8 @@ fun GenerateDashboardScreen(navController: NavController, viewModel: MainViewMod
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 18.dp, vertical = 8.dp),
+                .padding(horizontal = 18.dp, vertical = 8.dp)
+                .testTag("generate_dashboard_grid"),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {

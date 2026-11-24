@@ -71,12 +71,9 @@ fun BatteryAlarmScreen(navController: NavController) {
     val isBatteryCharging by BatteryMonitorManager.isCharging.collectAsStateWithLifecycle()
     val batteryTemp by BatteryMonitorManager.batteryTemperature.collectAsStateWithLifecycle()
     val batteryVoltage by BatteryMonitorManager.batteryVoltage.collectAsStateWithLifecycle()
+    val batteryHealth by BatteryMonitorManager.batteryHealth.collectAsStateWithLifecycle()
+    val batteryPlugType by BatteryMonitorManager.batteryPlugType.collectAsStateWithLifecycle()
 
-    // Mock/placeholder for health and other metrics that are not in BatteryMonitorManager yet
-    // I will simplify or extend BatteryMonitorManager later if needed, but for now, focus on the reported issue: temperature inconsistency.
-    // Assuming batteryHealth, batteryPlugType, etc., were not the main cause of the *temperature* inconsistency.
-    var batteryHealth by remember { mutableStateOf("Optimal") }
-    var batteryPlugType by remember { mutableStateOf("Battery") }
     var currentNowMicroAmps by remember { mutableLongStateOf(0L) }
     var energyCounterUwh by remember { mutableLongStateOf(0L) }
     var estimatedCycles by remember { mutableIntStateOf(0) }

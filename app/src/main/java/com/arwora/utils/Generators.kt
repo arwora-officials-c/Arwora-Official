@@ -87,30 +87,6 @@ object UsernameGenerator {
             count = 1
         ).firstOrNull() ?: "user123"
     }
-    
-    fun buildUsername(baseName: String, prefix: String, suffix: String, addNumbers: Boolean, addUnderscore: Boolean, addDot: Boolean, randomLetters: Boolean): String {
-        if(baseName.isEmpty()) return ""
-        var user = baseName.lowercase().replace(" ", "")
-        
-        if(prefix.isNotEmpty()) user = "${prefix.lowercase()}${if(addUnderscore) "_" else ""}$user"
-        if(suffix.isNotEmpty()) user = "$user${if(addUnderscore) "_" else ""}${suffix.lowercase()}"
-        
-        if(addNumbers) user = "$user${(10..999).random()}"
-        if(randomLetters) {
-            val letters = "abcdefghijklmnopqrstuvwxyz"
-            user = "$user${letters.random()}${letters.random()}"
-        }
-        if (addDot && !user.contains(".")) {
-             val idx = (1 until user.length).random()
-             user = user.substring(0, idx) + "." + user.substring(idx)
-        }
-        if (addUnderscore && !user.contains("_")) {
-             val idx = (1 until user.length).random()
-             user = user.substring(0, idx) + "_" + user.substring(idx)
-        }
-        
-        return user
-    }
 }
 
 object BioGenerator {

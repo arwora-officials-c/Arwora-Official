@@ -86,7 +86,6 @@ sealed class Screen(val route: String) {
     object StylishTextGen : Screen("stylish_text_gen")
     object RandomProfile : Screen("random_profile")
     object NameMixer : Screen("name_mixer")
-    object UsernameBuilder : Screen("username_builder")
     object TextSaver : Screen("text_saver")
     object CoinToss : Screen("coin_toss")
     object DnsChanger : Screen("dns_changer")
@@ -124,7 +123,6 @@ sealed class Screen(val route: String) {
     object FakeBillGenerator : Screen("fake_bill_gen/{templateName}") {
         fun createRoute(templateName: String) = "fake_bill_gen/$templateName"
     }
-    object FakeDataGenerator : Screen("fake_data_gen")
     object Calculator : Screen("calculator")
     object WifiController : Screen("wifi_controller")
     object WifiPassword : Screen("wifi_password")
@@ -160,6 +158,7 @@ sealed class Screen(val route: String) {
             }
         }
     }
+    object ArworaConnect : Screen("arwora_connect")
     object CompressorHub : Screen("compressor_hub")
     object CompressorTool : Screen("compressor/{typeId}") {
         fun createRoute(typeId: String = "image") = "compressor/$typeId"
@@ -185,6 +184,7 @@ fun MainAppScreen(
     var showSplashOverlay by remember(skipSplash) { mutableStateOf(!skipSplash) }
     val pendingInstallAssistantPkg by viewModel.pendingInstallAssistantPackage.collectAsStateWithLifecycle()
     val pendingDownloadWorkflowNav by viewModel.pendingDownloadWorkflowNav.collectAsStateWithLifecycle()
+    val pendingArworaConnectNav by viewModel.pendingArworaConnectNav.collectAsStateWithLifecycle()
     val appContext = androidx.compose.ui.platform.LocalContext.current
 
     LaunchedEffect(pendingInstallAssistantPkg) {
@@ -219,6 +219,17 @@ fun MainAppScreen(
                 navController.navigate(Screen.DownloadWorkflow.createRoute(navReq.eventId)) {
                     launchSingleTop = true
                 }
+            }
+        }
+    }
+
+    LaunchedEffect(pendingArworaConnectNav) {
+        if (pendingArworaConnectNav) {
+            showSplashOverlay = false
+            onSplashDismissed()
+            viewModel.consumePendingArworaConnect()
+            navController.navigate(Screen.ArworaConnect.route) {
+                launchSingleTop = true
             }
         }
     }
@@ -674,9 +685,6 @@ fun NameGenNavHost(
         composable(Screen.NameMixer.route) {
             NameMixerScreen(navController = navController, viewModel = viewModel)
         }
-        composable(Screen.UsernameBuilder.route) {
-            UsernameBuilderScreen(navController = navController, viewModel = viewModel)
-        }
         composable(Screen.TextSaver.route) {
             TextSaverScreen(navController = navController, viewModel = viewModel)
         }
@@ -826,9 +834,6 @@ fun NameGenNavHost(
             val templateName = backStackEntry.arguments?.getString("templateName") ?: "bKash Bill"
             FakeBillGeneratorScreen(navController = navController, initialPlatform = templateName)
         }
-        composable(Screen.FakeDataGenerator.route) {
-            FakeDataGeneratorScreen(navController = navController)
-        }
         composable(Screen.AppLocker.route) {
             val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as com.arwora.NameGenApplication
             AppLockerScreen(navController = navController, appManagerViewModel = app.appManagerViewModel)
@@ -890,6 +895,11 @@ fun NameGenNavHost(
             val eventId = backStackEntry.arguments?.getString("eventId")
             com.arwora.feature.system.downloadworkflow.ui.SmartDownloadWorkflowScreen(
                 initialEventId = eventId,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(Screen.ArworaConnect.route) {
+            com.arwora.feature.system.connect.ui.ArworaConnectScreen(
                 onBack = { navController.popBackStack() }
             )
         }

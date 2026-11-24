@@ -109,10 +109,9 @@ object AdbShellExecutor {
         }
     }
 
-    internal fun onShizukuPermissionResolved(granted: Boolean, context: Context? = null) {
-        val binderAlive = granted || isShizukuRunning()
+    internal fun syncFromShizukuState(binderAlive: Boolean, granted: Boolean, context: Context? = null) {
         _isShizukuBinderAlive.value = binderAlive
-        _isShizukuPermissionGranted.value = granted
+        _isShizukuPermissionGranted.value = binderAlive && granted
         val adbReady = isWirelessAdbActive(context)
         val engine = when {
             binderAlive && granted -> PrivilegeEngine.SHIZUKU
@@ -121,6 +120,11 @@ object AdbShellExecutor {
         }
         _activeEngine.value = engine
         _isAnyEngineReady.value = engine != PrivilegeEngine.NONE
+    }
+
+    internal fun onShizukuPermissionResolved(granted: Boolean, context: Context? = null) {
+        val binderAlive = granted || isShizukuRunning()
+        syncFromShizukuState(binderAlive = binderAlive, granted = granted, context = context)
     }
 
     fun resolveActiveEngine(context: Context? = null): PrivilegeEngine {
@@ -369,8 +373,19 @@ object AdbShellExecutor {
                 output = combined,
                 exitCode = exitCode
             )
+        } catch (dead: android.os.DeadObjectException) {
+            Log.w(TAG, "Shizuku binder died during command [$command]: ${dead.message}")
+            ShizukuBridgeManager.handleBinderDeath()
+            NativeShellResult(
+                success = false,
+                output = "Shizuku service stopped during command execution",
+                exitCode = -1
+            )
         } catch (t: Throwable) {
             Log.e(TAG, "Shizuku command error for [$command]: ${t.message}", t)
+            if (!ShizukuBridge.isRunning()) {
+                ShizukuBridgeManager.handleBinderDeath()
+            }
             NativeShellResult(
                 success = false,
                 output = t.message ?: "Shizuku execution failed",

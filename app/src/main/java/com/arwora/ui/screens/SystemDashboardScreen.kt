@@ -70,19 +70,14 @@ import com.arwora.ui.components.AdbPairingSheetTab
 import com.arwora.ui.components.ArworaDesignTokens
 import com.arwora.ui.components.ArworaMotionTokens
 import com.arwora.ui.components.ArworaTonalIconBadge
-import com.arwora.ui.components.ExpressiveCompactLoadingIndicator
-import com.arwora.ui.components.ExpressiveWavyLinearProgressIndicator
 import com.arwora.ui.components.FakeDeviceDialog
-import com.arwora.ui.components.GooglePlayCompactLinearProgress
-import com.arwora.ui.components.GooglePlayLinearProgressBar
-import com.arwora.ui.components.GoogleStyleLinearLoadingCard
 import com.arwora.feature.system.shell.ShellCommandCard
 import com.arwora.feature.system.shell.ShellCommandViewModel
-import com.arwora.feature.system.linkshortener.LinkShortenerCard
-import com.arwora.feature.system.linkshortener.LinkShortenerViewModel
 import com.arwora.feature.system.htmltoapk.HtmlToApkBottomSheet
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.text.style.TextAlign
+import com.arwora.data.datastore.SettingsRepository
+import com.arwora.data.datastore.dataStore
 import com.arwora.utils.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -116,10 +111,20 @@ fun SystemDashboardScreen(
     val coroutineScope = rememberCoroutineScope()
     LaunchedEffect(Unit) {
         NativeAdbManager.init(context)
-        ShizukuBridge.init(context, autoRequestIfNeeded = false)
+        ShizukuBridgeManager.initialize(context, autoRequestIfNeeded = false)
         AdbShellExecutor.init(context)
         com.arwora.utils.AppLockerManager.init(context)
+        com.arwora.feature.system.battery.service.BatteryMonitorManager.init(context)
     }
+
+    val settingsRepository = remember(context) {
+        (context.applicationContext as? com.arwora.NameGenApplication)?.settingsRepository
+            ?: SettingsRepository(context.applicationContext.dataStore)
+    }
+    val chargingAlarmEnabled by settingsRepository.batteryAlarmEnabledFlow.collectAsStateWithLifecycle(initialValue = false)
+    val chargingThreshold by settingsRepository.batteryAlarmThresholdFlow.collectAsStateWithLifecycle(initialValue = 80)
+    val lowAlarmEnabled by settingsRepository.batteryLowAlarmEnabledFlow.collectAsStateWithLifecycle(initialValue = false)
+    val lowThreshold by settingsRepository.batteryLowAlarmThresholdFlow.collectAsStateWithLifecycle(initialValue = 20)
 
     var pendingGuardedRoute by remember { mutableStateOf<String?>(null) }
     var pendingGuardedAction by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -135,115 +140,21 @@ fun SystemDashboardScreen(
 
     val clipboardManager = LocalClipboardManager.current
     val shellViewModel: ShellCommandViewModel = viewModel()
-    val linkShortenerViewModel: LinkShortenerViewModel = viewModel()
 
     // Expanded section states
     var isDnsExpanded by remember { mutableStateOf(false) }
     var isAnimationExpanded by remember { mutableStateOf(false) }
     var isFakeGpsExpanded by rememberSaveable { mutableStateOf(false) }
     var isFakeDeviceExpanded by remember { mutableStateOf(false) }
-    var isIpLookupExpanded by remember { mutableStateOf(false) }
     var showHtmlToApkSheet by rememberSaveable { mutableStateOf(false) }
     var showAdbPairingSheet by rememberSaveable { mutableStateOf(false) }
     var adbPairingSheetTab by remember { mutableStateOf(AdbPairingSheetTab.AUTOMATIC) }
 
-    var ipDetails by remember { mutableStateOf<com.arwora.utils.IpLookupManager.IpDetails?>(null) }
-    var isLoadingIp by remember { mutableStateOf(false) }
-    var refreshIpTrigger by remember { mutableStateOf(0) }
-    var ipLookupInput by remember { mutableStateOf("") }
-    var targetForLookup by remember { mutableStateOf("") }
-
-    // Diagnostic Results
-    var reverseDnsResult by remember { mutableStateOf("") }
-    var portScanResults by remember { mutableStateOf<List<com.arwora.utils.IpLookupManager.PortStatus>>(emptyList()) }
-    var pingResult by remember { mutableStateOf<com.arwora.utils.IpLookupManager.PingResult?>(null) }
-    var tracerouteHops by remember { mutableStateOf<List<com.arwora.utils.IpLookupManager.TraceHop>>(emptyList()) }
-
-    var isLoadingReverseDns by remember { mutableStateOf(false) }
-    var isScanningPorts by remember { mutableStateOf(false) }
-    var isPinging by remember { mutableStateOf(false) }
-    var isTracerouting by remember { mutableStateOf(false) }
-
-    // IP/Network Toolkit Extended States
-    var activeToolkitTab by remember { mutableStateOf(0) } // 0: Lookup & Geolocation, 1: Subnet & MAC, 2: Web & Security, 3: DNS Propagation
-    
-    // Subnet Calculator State
-    var subnetIpInput by remember { mutableStateOf("192.168.1.1") }
-    var subnetCidrInput by remember { mutableStateOf("24") }
-    var subnetResult by remember { mutableStateOf<com.arwora.utils.IpLookupManager.SubnetResult?>(null) }
-
-    // DNS Propagation State
-    var dnsDomainInput by remember { mutableStateOf("google.com") }
-    var dnsRecordType by remember { mutableStateOf("A") } // A, CNAME, MX, TXT
-    var dnsPropagationResults by remember { mutableStateOf<List<com.arwora.utils.IpLookupManager.DnsResolverResult>>(emptyList()) }
-    var isCheckingDns by remember { mutableStateOf(false) }
-
-    // SSL Certificate State
-    var sslDomainInput by remember { mutableStateOf("google.com") }
-    var sslCertResult by remember { mutableStateOf<com.arwora.utils.IpLookupManager.SslCertResult?>(null) }
-    var isCheckingSsl by remember { mutableStateOf(false) }
-
-    // HTTP Header State
-    var httpUrlInput by remember { mutableStateOf("google.com") }
-    var httpHeadersResult by remember { mutableStateOf<List<com.arwora.utils.IpLookupManager.HttpHeader>>(emptyList()) }
-    var isFetchingHeaders by remember { mutableStateOf(false) }
-
     val isLight = MaterialTheme.colorScheme.background.red > 0.8f
     val subtleBorderColor = if (isLight) Color(0xFFE2E8F0) else MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)
 
-    // MAC Address State
-    var macInput by remember { mutableStateOf("00:1A:11") }
-    var macLookupResult by remember { mutableStateOf<com.arwora.utils.IpLookupManager.MacLookupResult?>(null) }
-
     // DNS state
     var selectedDnsProvider by remember { mutableStateOf(DnsManager.getSelectedDns(context)) }
-
-    LaunchedEffect(isIpLookupExpanded, targetForLookup, refreshIpTrigger) {
-        if (isIpLookupExpanded) {
-            isLoadingIp = true
-            val queryTarget = targetForLookup.trim()
-            if (queryTarget.isEmpty()) {
-                // Fetch public current IP details
-                val rawPublicIp = com.arwora.utils.IpLookupManager.fetchPublicIp(context)
-                ipDetails = rawPublicIp
-                if (rawPublicIp.ip != "Fetch Failed" && rawPublicIp.ip != "No Connection") {
-                    ipLookupInput = rawPublicIp.ip
-                }
-            } else {
-                ipDetails = com.arwora.utils.IpLookupManager.fetchDetails(context, queryTarget)
-            }
-            isLoadingIp = false
-
-            // Automatically query sub-diagnostics for the loaded IP
-            val activeIp = ipDetails?.ip
-            if (activeIp != null && activeIp != "Fetch Failed" && activeIp != "No Connection" && activeIp != "Empty target") {
-                // Reverse DNS
-                isLoadingReverseDns = true
-                reverseDnsResult = com.arwora.utils.IpLookupManager.lookupReverseDns(activeIp)
-                isLoadingReverseDns = false
-
-                // Port scan
-                isScanningPorts = true
-                portScanResults = com.arwora.utils.IpLookupManager.scanPorts(activeIp)
-                isScanningPorts = false
-
-                // Ping
-                isPinging = true
-                pingResult = com.arwora.utils.IpLookupManager.performPing(activeIp)
-                isPinging = false
-
-                // Traceroute
-                isTracerouting = true
-                tracerouteHops = com.arwora.utils.IpLookupManager.performTraceroute(activeIp)
-                isTracerouting = false
-            } else {
-                reverseDnsResult = ""
-                portScanResults = emptyList()
-                pingResult = null
-                tracerouteHops = emptyList()
-            }
-        }
-    }
 
     // Animation & Refresh state
     var animScale by remember { mutableStateOf(AnimationTweakManager.getCurrentAnimationScale(context)) }
@@ -252,6 +163,7 @@ fun SystemDashboardScreen(
     val isWirelessOnlyEnabled by NativeAdbManager.isWirelessOnlyEnabled.collectAsStateWithLifecycle()
     val isSessionForgotten by NativeAdbManager.isSessionForgotten.collectAsStateWithLifecycle()
     val activePrivilegeEngine by AdbShellExecutor.activeEngine.collectAsStateWithLifecycle()
+    val shizukuUiStatus by ShizukuBridgeManager.connectionStatus.collectAsStateWithLifecycle()
     val shizukuBinderAlive by ShizukuBridge.isBinderAlive.collectAsStateWithLifecycle()
     val shizukuPermissionGranted by ShizukuBridge.isPermissionGranted.collectAsStateWithLifecycle()
     val shizukuShouldShowRationale by ShizukuBridge.shouldShowRationale.collectAsStateWithLifecycle()
@@ -296,8 +208,9 @@ fun SystemDashboardScreen(
         coroutineScope.launch {
             checkNotificationPermissionStatus()
             NativeAdbManager.refreshConnectionStatus(context)
-            ShizukuBridge.refreshState(context)
+            ShizukuBridgeManager.checkShizukuStatus(context)
             AdbShellExecutor.refreshEngineStatus(context)
+            com.arwora.feature.system.battery.service.BatteryMonitorManager.refreshStats(context, emitLog = false)
             val (scale, dns) = withContext(Dispatchers.IO) {
                 AnimationTweakManager.getCurrentAnimationScale(context) to
                     DnsManager.getSelectedDns(context)
@@ -306,6 +219,31 @@ fun SystemDashboardScreen(
             selectedDnsProvider = dns
             shellViewModel.refreshStatus()
         }
+    }
+
+    LaunchedEffect(isVisible) {
+        if (isVisible) {
+            com.arwora.feature.system.battery.service.BatteryMonitorManager.refreshStats(context, emitLog = false)
+        }
+    }
+
+    fun handleConnectShizukuClick() {
+        SoundEffectManager.playClick()
+        when (ShizukuBridgeManager.connectShizuku(context)) {
+            ShizukuConnectOutcome.ALREADY_CONNECTED -> {
+                Toast.makeText(context, "Shizuku permission is active", Toast.LENGTH_SHORT).show()
+            }
+            ShizukuConnectOutcome.PERMISSION_REQUESTED -> {
+                Toast.makeText(context, "Authorizing Shizuku permission...", Toast.LENGTH_SHORT).show()
+            }
+            ShizukuConnectOutcome.SERVICE_STOPPED_OPENED_APP -> {
+                Toast.makeText(context, "Start Shizuku service and return to connect", Toast.LENGTH_SHORT).show()
+            }
+            ShizukuConnectOutcome.SERVICE_STOPPED_UNAVAILABLE -> {
+                Toast.makeText(context, "Shizuku app not installed", Toast.LENGTH_SHORT).show()
+            }
+        }
+        refreshDashboardStatuses()
     }
 
     DisposableEffect(lifecycleOwner, context) {
@@ -507,6 +445,8 @@ fun SystemDashboardScreen(
                 ) {
                     PrivilegeEngineBridgeCard(
                         engine = activePrivilegeEngine,
+                        shizukuUiStatus = shizukuUiStatus,
+                        onConnectShizukuClick = { handleConnectShizukuClick() },
                         onClick = {
                             SoundEffectManager.playClick()
                             showPrivilegeEngineDialog = true
@@ -888,6 +828,7 @@ fun SystemDashboardScreen(
             // APP LOCKER CARD
             item {
                 val isLockerEnabled by com.arwora.utils.AppLockerManager.isLockerEnabled.collectAsStateWithLifecycle()
+                val hasPin by com.arwora.utils.AppLockerManager.hasPin.collectAsStateWithLifecycle()
                 val lockedTools by com.arwora.utils.AppLockerManager.lockedToolIds.collectAsStateWithLifecycle()
                 val lockedApps by com.arwora.utils.AppLockerManager.lockedPackages.collectAsStateWithLifecycle()
                 val totalSecured = lockedTools.size + lockedApps.size
@@ -897,18 +838,23 @@ fun SystemDashboardScreen(
                     triggerAnimation = canPlayCardEntrance,
                     isInitialLoadBurst = isInitialStaggerWindowActive
                 ) {
-                    SystemActionRowCard(
-                        title = "App Locker",
-                        subtitle = if (isLockerEnabled) "$totalSecured items secured with PIN & Biometrics" else "Lock apps & system features with PIN / Biometrics",
-                        icon = Icons.Default.Lock,
-                        iconColor = if (isLockerEnabled) Color(0xFF10B981) else MaterialTheme.colorScheme.primary,
-                        badge = if (isLockerEnabled) "Active" else "Security",
-                        badgeColor = if (isLockerEnabled) Color(0xFF10B981) else MaterialTheme.colorScheme.primary,
-                        onClick = {
-                            SoundEffectManager.playClick()
-                            navController.navigate(Screen.AppLocker.route)
+                    AppLockerDashboardCard(
+                        isLockerEnabled = isLockerEnabled,
+                        hasPin = hasPin,
+                        totalSecured = totalSecured,
+                        onToggleLocker = { enable ->
+                            SoundEffectManager.playClick(context)
+                            if (enable && !hasPin) {
+                                Toast.makeText(context, "Set a PIN in App Locker to enable protection", Toast.LENGTH_SHORT).show()
+                                navController.navigate(Screen.AppLocker.route)
+                            } else {
+                                com.arwora.utils.AppLockerManager.setLockerEnabled(context, enable)
+                            }
                         },
-                        modifier = Modifier.testTag("system_app_locker_card")
+                        onOpenAppLocker = {
+                            SoundEffectManager.playClick(context)
+                            navController.navigate(Screen.AppLocker.route)
+                        }
                     )
                 }
             }
@@ -1014,50 +960,49 @@ fun SystemDashboardScreen(
 
             // SMART SCREEN-OFF OPTIMIZER CARD
             item {
+                val isScreenOffActive by com.arwora.feature.system.optimizer.service.ScreenOffOptimizerManager.isServiceActive.collectAsStateWithLifecycle()
+                val screenOffDelay by com.arwora.feature.system.optimizer.service.ScreenOffOptimizerManager.delaySeconds.collectAsStateWithLifecycle()
+
                 DashboardStaggeredItem(
                     index = 15,
                     triggerAnimation = canPlayCardEntrance,
                     isInitialLoadBurst = isInitialStaggerWindowActive
                 ) {
-                    SystemActionRowCard(
-                        title = "Smart Screen-Off Optimizer",
-                        subtitle = "Automated background cleanup routines on device screen-off events",
-                        icon = Icons.Default.Bedtime,
-                        iconColor = MaterialTheme.colorScheme.primary,
-                        badge = "Automation",
-                        badgeColor = MaterialTheme.colorScheme.primary,
-                        onClick = {
-                            SoundEffectManager.playClick()
+                    SmartScreenOffDashboardCard(
+                        isServiceActive = isScreenOffActive,
+                        delaySeconds = screenOffDelay,
+                        onToggleService = { enabled ->
+                            SoundEffectManager.playClick(context)
+                            if (enabled) {
+                                com.arwora.feature.system.optimizer.service.ScreenOffOptimizerManager.startService(context)
+                            } else {
+                                com.arwora.feature.system.optimizer.service.ScreenOffOptimizerManager.stopService(context)
+                            }
+                        },
+                        onOpenDetails = {
+                            SoundEffectManager.playClick(context)
                             navigateGuarded(Screen.ScreenOffOptimizer.route) {
                                 navController.navigate(Screen.ScreenOffOptimizer.route)
                             }
-                        },
-                        modifier = Modifier.testTag("system_screen_off_optimizer_card")
+                        }
                     )
                 }
             }
 
-            // BATTERY USAGE & DEEP SLEEP MONITOR CARD
+            // BATTERY MONITOR & DEEP SLEEP CARD
             item {
                 DashboardStaggeredItem(
                     index = 16,
                     triggerAnimation = canPlayCardEntrance,
                     isInitialLoadBurst = isInitialStaggerWindowActive
                 ) {
-                    SystemActionRowCard(
-                        title = "Battery Monitor & Deep Sleep",
-                        subtitle = "Real-time app consumption stats & CPU wake lock diagnostics",
-                        icon = Icons.Default.BatteryChargingFull,
-                        iconColor = MaterialTheme.colorScheme.primary,
-                        badge = "Power",
-                        badgeColor = MaterialTheme.colorScheme.primary,
-                        onClick = {
-                            SoundEffectManager.playClick()
+                    com.arwora.feature.system.battery.ui.BatteryMonitorDashboardCard(
+                        onOpenDetails = {
+                            SoundEffectManager.playClick(context)
                             navigateGuarded(Screen.BatteryMonitor.route) {
                                 navController.navigate(Screen.BatteryMonitor.route)
                             }
-                        },
-                        modifier = Modifier.testTag("system_battery_monitor_card")
+                        }
                     )
                 }
             }
@@ -1098,13 +1043,51 @@ fun SystemDashboardScreen(
                     triggerAnimation = canPlayCardEntrance,
                     isInitialLoadBurst = isInitialStaggerWindowActive
                 ) {
-                    SystemActionRowCard(
-                        title = "Battery Charging Alarm",
-                        subtitle = "Alert at target charge level",
-                        icon = Icons.Default.BatteryChargingFull,
-                        iconColor = MaterialTheme.colorScheme.primary,
-                        onClick = {
-                            SoundEffectManager.playClick()
+                    BatteryChargingAlarmDashboardCard(
+                        chargingAlarmEnabled = chargingAlarmEnabled,
+                        chargingThreshold = chargingThreshold,
+                        lowAlarmEnabled = lowAlarmEnabled,
+                        lowThreshold = lowThreshold,
+                        onToggleChargingAlarm = { enabled ->
+                            SoundEffectManager.playClick(context)
+                            coroutineScope.launch {
+                                settingsRepository.setBatteryAlarmEnabled(enabled)
+                                val serviceIntent = Intent(context, com.arwora.service.BatteryAlarmService::class.java)
+                                runCatching {
+                                    if (enabled || lowAlarmEnabled) {
+                                        serviceIntent.action = com.arwora.service.BatteryAlarmService.ACTION_UPDATE_SETTINGS
+                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                            context.startForegroundService(serviceIntent)
+                                        } else {
+                                            context.startService(serviceIntent)
+                                        }
+                                    } else {
+                                        serviceIntent.action = com.arwora.service.BatteryAlarmService.ACTION_DISMISS_ALARM
+                                        context.stopService(serviceIntent)
+                                    }
+                                }
+                            }
+                        },
+                        onSelectThreshold = { selectedPct ->
+                            SoundEffectManager.playClick(context)
+                            coroutineScope.launch {
+                                settingsRepository.setBatteryAlarmThreshold(selectedPct)
+                                if (chargingAlarmEnabled) {
+                                    val serviceIntent = Intent(context, com.arwora.service.BatteryAlarmService::class.java).apply {
+                                        action = com.arwora.service.BatteryAlarmService.ACTION_UPDATE_SETTINGS
+                                    }
+                                    runCatching {
+                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                            context.startForegroundService(serviceIntent)
+                                        } else {
+                                            context.startService(serviceIntent)
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        onOpenDetails = {
+                            SoundEffectManager.playClick(context)
                             navigateGuarded(Screen.BatteryAlarm.route) {
                                 navController.navigate(Screen.BatteryAlarm.route)
                             }
@@ -1157,831 +1140,10 @@ fun SystemDashboardScreen(
                 }
             }
 
-            // IP ADDRESS LOOKUP CARD
-            item {
-                val scope = rememberCoroutineScope()
-                DashboardStaggeredItem(
-                    index = 21,
-                    triggerAnimation = canPlayCardEntrance,
-                    isInitialLoadBurst = isInitialStaggerWindowActive
-                ) {
-                    SystemFeatureCard(
-                    title = "IP Address Lookup",
-                    subtitle = "Polished network diagnostics & utilities toolkit",
-                    icon = Icons.Default.Language,
-                    badge = if (ipDetails != null && ipDetails!!.ip != "No Connection" && ipDetails!!.ip != "Fetch Failed" && !ipDetails!!.isPrivate) "Online" else if (ipDetails?.isPrivate == true) "LAN" else "Toolkit",
-                    badgeColor = if (ipDetails != null && ipDetails!!.ip != "No Connection" && ipDetails!!.ip != "Fetch Failed" && !ipDetails!!.isPrivate) Color(0xFF10B981) else if (ipDetails?.isPrivate == true) Color(0xFFF59E0B) else MaterialTheme.colorScheme.primary,
-                    isExpanded = isIpLookupExpanded,
-                    onToggleExpand = {
-                        SoundEffectManager.playClick()
-                        isIpLookupExpanded = !isIpLookupExpanded
-                    }
-                ) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        
-                        // Header with Title & Subtitle inside the card
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            Text("Network Diagnostics Toolkit", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                            Text("Explore standard utilities & DNS intelligence tools", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-
-                        // Horizontal Segmented Tabs with visible bottom divider
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            ScrollableTabRow(
-                                selectedTabIndex = activeToolkitTab,
-                                edgePadding = 6.dp,
-                                containerColor = Color.Transparent,
-                                contentColor = MaterialTheme.colorScheme.primary,
-                                indicator = {},
-                                divider = {},
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(
-                                        color = if (isLight) Color(0xFFF9FAFB)
-                                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.12f),
-                                        shape = RoundedCornerShape(14.dp)
-                                    )
-                                    .border(0.75.dp, subtleBorderColor.copy(alpha = if (isLight) 0.65f else 0.8f), RoundedCornerShape(14.dp))
-                                    .padding(vertical = 4.dp, horizontal = 4.dp)
-                            ) {
-                                val toolkitTabs = listOf("Lookup & WHOIS", "Diagnostics", "Calculators & Utils", "Web & Security")
-                                toolkitTabs.forEachIndexed { index, tabTitle ->
-                                    val isSelected = activeToolkitTab == index
-                                    val tabBorderColor = if (isSelected) {
-                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
-                                    } else {
-                                        subtleBorderColor.copy(alpha = if (isLight) 0.65f else 0.8f)
-                                    }
-                                    val tabBgColor = if (isSelected) {
-                                        if (isLight) Color(0xFFF3E8FF) else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
-                                    } else {
-                                        if (isLight) Color.White else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)
-                                    }
-
-                                    Tab(
-                                        selected = isSelected,
-                                        onClick = { 
-                                            SoundEffectManager.playClick()
-                                            activeToolkitTab = index 
-                                        },
-                                        selectedContentColor = MaterialTheme.colorScheme.primary,
-                                        unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier
-                                            .padding(horizontal = 3.dp, vertical = 2.dp)
-                                            .shadow(if (isLight && isSelected) 1.dp else 0.dp, RoundedCornerShape(10.dp))
-                                            .background(
-                                                color = tabBgColor,
-                                                shape = RoundedCornerShape(10.dp)
-                                            )
-                                            .border(0.75.dp, tabBorderColor, RoundedCornerShape(10.dp))
-                                            .clip(RoundedCornerShape(10.dp)),
-                                        text = { 
-                                            Text(
-                                                text = tabTitle, 
-                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium, 
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                maxLines = 1,
-                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                                            ) 
-                                        }
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                        }
-
-                        // RENDER TABS CONTENT
-                        when (activeToolkitTab) {
-                            0 -> { // LOOKUP & WHOIS
-                                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                                    // Primary Search Inputs
-                                    Card(
-                                        colors = CardDefaults.cardColors(containerColor = if (isLight) Color.White else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f)),
-                                        border = BorderStroke(1.dp, subtleBorderColor),
-                                        shape = RoundedCornerShape(14.dp),
-                                        elevation = CardDefaults.cardElevation(defaultElevation = if (isLight) 1.5.dp else 0.dp),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                            Text("Search Target IP / Domain", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                                            
-                                            OutlinedTextField(
-                                                value = ipLookupInput,
-                                                onValueChange = { ipLookupInput = it },
-                                                label = { Text("IP Address or Domain") },
-                                                placeholder = { Text("e.g. 8.8.8.8 or google.com") },
-                                                singleLine = true,
-                                                modifier = Modifier.fillMaxWidth(),
-                                                trailingIcon = {
-                                                    if (ipLookupInput.isNotEmpty()) {
-                                                        IconButton(onClick = { ipLookupInput = "" }) {
-                                                            Icon(Icons.Default.Clear, contentDescription = "Clear")
-                                                        }
-                                                    }
-                                                },
-                                                shape = RoundedCornerShape(12.dp),
-                                                colors = OutlinedTextFieldDefaults.colors(
-                                                    unfocusedBorderColor = subtleBorderColor,
-                                                    focusedBorderColor = MaterialTheme.colorScheme.primary
-                                                )
-                                            )
-
-                                            Button(
-                                                onClick = {
-                                                    SoundEffectManager.playClick()
-                                                    targetForLookup = ipLookupInput
-                                                },
-                                                modifier = Modifier.fillMaxWidth().height(48.dp),
-                                                shape = ArworaDesignTokens.PillShape,
-                                                enabled = !isLoadingIp
-                                            ) {
-                                                if (isLoadingIp) {
-                                                    ExpressiveCompactLoadingIndicator(
-                                                        size = 18.dp,
-                                                        color = MaterialTheme.colorScheme.onPrimary
-                                                    )
-                                                    Spacer(modifier = Modifier.width(8.dp))
-                                                    Text("Looking up...", fontWeight = FontWeight.Bold)
-                                                } else {
-                                                    Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
-                                                    Spacer(modifier = Modifier.width(8.dp))
-                                                    Text("Lookup Target", fontWeight = FontWeight.Bold)
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    if (isLoadingIp) {
-                                        GoogleStyleLinearLoadingCard(
-                                            title = "Resolving IP & WHOIS Intelligence...",
-                                            subtitle = "Querying ASN, geolocation, and registrar records",
-                                            icon = Icons.Default.TravelExplore
-                                        )
-                                    } else {
-                                        val details = ipDetails
-                                        if (details != null) {
-                                            // Private Warning Banner
-                                            if (details.isPrivate) {
-                                                Card(
-                                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f)),
-                                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f)),
-                                                    shape = RoundedCornerShape(14.dp),
-                                                    elevation = CardDefaults.cardElevation(defaultElevation = if (isLight) 1.5.dp else 0.dp),
-                                                    modifier = Modifier.fillMaxWidth()
-                                                ) {
-                                                    Column(modifier = Modifier.padding(12.dp)) {
-                                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                            Icon(Icons.Default.Warning, contentDescription = "Warning", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
-                                                            Text("Private Address Space", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
-                                                        }
-                                                        Spacer(modifier = Modifier.height(4.dp))
-                                                        Text(
-                                                            "This is a private/local IP range (${details.ip}). Global geolocation and registrar lookups require public routing coordinates.",
-                                                            style = MaterialTheme.typography.bodySmall,
-                                                            color = MaterialTheme.colorScheme.onErrorContainer
-                                                        )
-                                                    }
-                                                }
-                                            }
-
-                                            // 1. WHOIS & ASN Details
-                                            Card(
-                                                colors = CardDefaults.cardColors(containerColor = if (isLight) Color.White else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)),
-                                                border = BorderStroke(1.dp, subtleBorderColor),
-                                                shape = RoundedCornerShape(14.dp),
-                                                elevation = CardDefaults.cardElevation(defaultElevation = if (isLight) 1.5.dp else 0.dp),
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                        Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                                                        Text("WHOIS & ASN Details", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                                                    }
-                                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-                                                    
-                                                    TooltipRow("Resolved IP", details.ip, isPrimary = true)
-                                                    TooltipRow("ISP / Carrier", details.isp)
-                                                    TooltipRow("Organization", details.org)
-                                                    TooltipRow("ASN Identifier", details.asn)
-                                                    TooltipRow("Registrar", details.registrar)
-                                                    TooltipRow("Abuse Contact", details.abuseContact)
-                                                }
-                                            }
-
-                                            // 2. Reverse DNS PTR
-                                            Card(
-                                                colors = CardDefaults.cardColors(containerColor = if (isLight) Color.White else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)),
-                                                border = BorderStroke(1.dp, subtleBorderColor),
-                                                shape = RoundedCornerShape(14.dp),
-                                                elevation = CardDefaults.cardElevation(defaultElevation = if (isLight) 1.5.dp else 0.dp),
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                        Icon(Icons.Default.Dns, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                                                        Text("Reverse DNS (PTR Record)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                                                    }
-                                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-                                                    if (isLoadingReverseDns) {
-                                                        GooglePlayLinearProgressBar(modifier = Modifier.fillMaxWidth(), height = 4.dp)
-                                                    } else {
-                                                        val ptrText = if (reverseDnsResult.isEmpty() || reverseDnsResult == "No PTR Record") "No reverse DNS found" else reverseDnsResult
-                                                        Text(
-                                                            text = ptrText,
-                                                            style = MaterialTheme.typography.bodySmall,
-                                                            fontWeight = FontWeight.SemiBold,
-                                                            color = if (ptrText == "No reverse DNS found") MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary
-                                                        )
-                                                    }
-                                                }
-                                            }
-
-                                            // 3. Geolocation Map
-                                            Card(
-                                                colors = CardDefaults.cardColors(containerColor = if (isLight) Color.White else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)),
-                                                border = BorderStroke(1.dp, subtleBorderColor),
-                                                shape = RoundedCornerShape(14.dp),
-                                                elevation = CardDefaults.cardElevation(defaultElevation = if (isLight) 1.5.dp else 0.dp),
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                        Icon(Icons.Default.Place, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                                                        Text("Approximate Geolocation", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                                                    }
-                                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-                                                    
-                                                    TooltipRow("Location Details", "${details.city}, ${details.region}, ${details.country}")
-                                                    TooltipRow("GPS Coordinates", "${details.latitude}, ${details.longitude}")
-
-                                                    if (!details.isPrivate && details.latitude != 0.0) {
-                                                        Spacer(modifier = Modifier.height(4.dp))
-                                                        OutlinedButton(
-                                                            onClick = {
-                                                                SoundEffectManager.playClick()
-                                                                try {
-                                                                    val uri = "geo:${details.latitude},${details.longitude}?q=${details.latitude},${details.longitude}(IP Geolocation)"
-                                                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uri))
-                                                                    context.startActivity(intent)
-                                                                } catch (e: Exception) {
-                                                                    Toast.makeText(context, "Google Maps app not found", Toast.LENGTH_SHORT).show()
-                                                                }
-                                                            },
-                                                            modifier = Modifier.fillMaxWidth().height(48.dp),
-                                                            shape = ArworaDesignTokens.PillShape,
-                                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
-                                                        ) {
-                                                            Icon(Icons.Default.Map, contentDescription = null, modifier = Modifier.size(18.dp))
-                                                            Spacer(modifier = Modifier.width(8.dp))
-                                                            Text("Open in Google Maps")
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        } else {
-                                            // Empty State
-                                            Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                                                Text("Enter a target above to start diagnostics.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            
-                            1 -> { // PING, ROUTE & PORTS
-                                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                                    // Port Scan
-                                    Card(
-                                        colors = CardDefaults.cardColors(containerColor = if (isLight) Color.White else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)),
-                                        border = BorderStroke(1.dp, subtleBorderColor),
-                                        shape = RoundedCornerShape(14.dp),
-                                        elevation = CardDefaults.cardElevation(defaultElevation = if (isLight) 1.5.dp else 0.dp),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                    Icon(Icons.Default.Security, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                                                    Text("Diagnostic Port Check", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                                                }
-                                                Box(
-                                                    modifier = Modifier
-                                                        .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(4.dp))
-                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                                ) {
-                                                    Text("Authorized Only", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer, fontWeight = FontWeight.Bold)
-                                                }
-                                            }
-                                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-                                            
-                                            if (isScanningPorts) {
-                                                GooglePlayLinearProgressBar(modifier = Modifier.fillMaxWidth(), height = 4.dp)
-                                            } else {
-                                                if (portScanResults.isEmpty()) {
-                                                    Text("No target resolved. Perform WHOIS lookup first.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                                } else {
-                                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                        portScanResults.forEach { port ->
-                                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                                                Text("Port ${port.port} (${port.name})", style = MaterialTheme.typography.bodySmall)
-                                                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                                                    val color = when (port.status) {
-                                                                        "Open" -> Color(0xFF10B981)
-                                                                        "Closed" -> Color(0xFFEF4444)
-                                                                        else -> Color(0xFF6B7280)
-                                                                    }
-                                                                    Box(modifier = Modifier.size(8.dp).background(color, CircleShape))
-                                                                    Text(port.status, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = color)
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // Ping & Route Summary
-                                    Card(
-                                        colors = CardDefaults.cardColors(containerColor = if (isLight) Color.White else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)),
-                                        border = BorderStroke(1.dp, subtleBorderColor),
-                                        shape = RoundedCornerShape(14.dp),
-                                        elevation = CardDefaults.cardElevation(defaultElevation = if (isLight) 1.5.dp else 0.dp),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                Icon(Icons.Default.Speed, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                                                Text("Ping & Route Summary", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                                            }
-                                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-                                            
-                                            if (isPinging) {
-                                                GooglePlayLinearProgressBar(modifier = Modifier.fillMaxWidth(), height = 4.dp)
-                                            } else {
-                                                pingResult?.let { pr ->
-                                                    TooltipRow(
-                                                        label = "ICMP Ping Status",
-                                                        value = if (pr.success) "${pr.packetsReceived}/${pr.packetsSent} Received (${pr.latencyMs} ms)" else "Timeout",
-                                                        isPrimary = pr.success
-                                                    )
-                                                } ?: Text("Run IP Lookup to measure ping parameters.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                            }
-
-                                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-                                            Text("Network Route Hops (Traceroute)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-                                            if (isTracerouting) {
-                                                GooglePlayLinearProgressBar(modifier = Modifier.fillMaxWidth(), height = 4.dp)
-                                            } else {
-                                                if (tracerouteHops.isEmpty()) {
-                                                    Text("Hops not resolved.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                                } else {
-                                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                        tracerouteHops.forEach { hop ->
-                                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                                                Text("${hop.hop}. ${hop.ip} (${hop.hostname.ifEmpty { "Transit Node" }})", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f), maxLines = 1)
-                                                                Text("${hop.latencyMs} ms", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            2 -> { // CALCULATORS & UTILS
-                                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                                    // 1. Subnet Calculator
-                                    Card(
-                                        colors = CardDefaults.cardColors(containerColor = if (isLight) Color.White else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)),
-                                        border = BorderStroke(1.dp, subtleBorderColor),
-                                        shape = RoundedCornerShape(14.dp),
-                                        elevation = CardDefaults.cardElevation(defaultElevation = if (isLight) 1.5.dp else 0.dp),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                Icon(Icons.Default.Build, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                                                Text("Subnet Calculator & CIDR Finder", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                                            }
-                                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-                                            
-                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                OutlinedTextField(
-                                                    value = subnetIpInput,
-                                                    onValueChange = { subnetIpInput = it },
-                                                    label = { Text("Base IP Address") },
-                                                    placeholder = { Text("e.g. 192.168.1.1") },
-                                                    modifier = Modifier.weight(1f),
-                                                    singleLine = true,
-                                                    shape = RoundedCornerShape(12.dp),
-                                                    colors = OutlinedTextFieldDefaults.colors(
-                                                        unfocusedBorderColor = subtleBorderColor,
-                                                        focusedBorderColor = MaterialTheme.colorScheme.primary
-                                                    )
-                                                )
-                                                OutlinedTextField(
-                                                    value = subnetCidrInput,
-                                                    onValueChange = { subnetCidrInput = it },
-                                                    label = { Text("CIDR") },
-                                                    placeholder = { Text("24") },
-                                                    modifier = Modifier.width(80.dp),
-                                                    singleLine = true,
-                                                    shape = RoundedCornerShape(12.dp),
-                                                    colors = OutlinedTextFieldDefaults.colors(
-                                                        unfocusedBorderColor = subtleBorderColor,
-                                                        focusedBorderColor = MaterialTheme.colorScheme.primary
-                                                    )
-                                                )
-                                            }
-                                            
-                                            Button(
-                                                onClick = {
-                                                    SoundEffectManager.playClick()
-                                                    val cidrVal = subnetCidrInput.toIntOrNull() ?: 24
-                                                    subnetResult = com.arwora.utils.IpLookupManager.calculateSubnet(subnetIpInput, cidrVal)
-                                                },
-                                                modifier = Modifier.fillMaxWidth().height(48.dp),
-                                                shape = ArworaDesignTokens.PillShape
-                                            ) {
-                                                Text("Calculate Subnet Boundaries", fontWeight = FontWeight.Bold)
-                                            }
-                                            
-                                            subnetResult?.let { res ->
-                                                Card(
-                                                    colors = CardDefaults.cardColors(containerColor = if (isLight) Color(0xFFF9FAFB) else MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)),
-                                                    border = BorderStroke(1.dp, subtleBorderColor),
-                                                    shape = RoundedCornerShape(12.dp),
-                                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-                                                ) {
-                                                    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                        TooltipRow("Network Address", res.networkAddress, isPrimary = true)
-                                                        TooltipRow("Subnet Mask", res.subnetMask)
-                                                        TooltipRow("Broadcast Address", res.broadcastAddress)
-                                                        TooltipRow("Usable Range", "${res.firstUsable} - ${res.lastUsable}")
-                                                        TooltipRow("Total Usable Hosts", res.totalHosts.toString())
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // 2. MAC Address Lookup
-                                    Card(
-                                        colors = CardDefaults.cardColors(containerColor = if (isLight) Color.White else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)),
-                                        border = BorderStroke(1.dp, subtleBorderColor),
-                                        shape = RoundedCornerShape(14.dp),
-                                        elevation = CardDefaults.cardElevation(defaultElevation = if (isLight) 1.5.dp else 0.dp),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                Icon(Icons.Default.Devices, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                                                Text("MAC Address Vendor Finder", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                                            }
-                                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-                                            
-                                            OutlinedTextField(
-                                                value = macInput,
-                                                onValueChange = { macInput = it },
-                                                label = { Text("MAC Address / OUI Prefix") },
-                                                placeholder = { Text("e.g. 00:1A:11") },
-                                                modifier = Modifier.fillMaxWidth(),
-                                                singleLine = true,
-                                                shape = RoundedCornerShape(12.dp),
-                                                colors = OutlinedTextFieldDefaults.colors(
-                                                    unfocusedBorderColor = subtleBorderColor,
-                                                    focusedBorderColor = MaterialTheme.colorScheme.primary
-                                                )
-                                            )
-                                            
-                                            Button(
-                                                onClick = {
-                                                    SoundEffectManager.playClick()
-                                                    macLookupResult = com.arwora.utils.IpLookupManager.lookupMacVendor(macInput)
-                                                },
-                                                modifier = Modifier.fillMaxWidth().height(48.dp),
-                                                shape = ArworaDesignTokens.PillShape
-                                            ) {
-                                                Text("Lookup Vendor OUI", fontWeight = FontWeight.Bold)
-                                            }
-                                            
-                                            macLookupResult?.let { res ->
-                                                Card(
-                                                    colors = CardDefaults.cardColors(containerColor = if (res.formatValid) { if (isLight) Color(0xFFF9FAFB) else MaterialTheme.colorScheme.surface } else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.1f)),
-                                                    border = BorderStroke(1.dp, if (res.formatValid) subtleBorderColor else MaterialTheme.colorScheme.error.copy(alpha = 0.3f)),
-                                                    shape = RoundedCornerShape(12.dp),
-                                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-                                                ) {
-                                                    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                        TooltipRow("Standard MAC Format", res.mac)
-                                                        TooltipRow("OUI Manufacturer", res.vendor, isPrimary = res.formatValid)
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            3 -> { // WEB & SECURITY
-                                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                                    // 1. SSL Certificate Checker
-                                    Card(
-                                        colors = CardDefaults.cardColors(containerColor = if (isLight) Color.White else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)),
-                                        border = BorderStroke(1.dp, subtleBorderColor),
-                                        shape = RoundedCornerShape(14.dp),
-                                        elevation = CardDefaults.cardElevation(defaultElevation = if (isLight) 1.5.dp else 0.dp),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                Icon(Icons.Default.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                                                Text("SSL Certificate Checker", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                                            }
-                                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-                                            
-                                            OutlinedTextField(
-                                                value = sslDomainInput,
-                                                onValueChange = { sslDomainInput = it },
-                                                label = { Text("Secure Domain URL") },
-                                                placeholder = { Text("e.g. google.com") },
-                                                modifier = Modifier.fillMaxWidth(),
-                                                singleLine = true,
-                                                shape = RoundedCornerShape(12.dp),
-                                                colors = OutlinedTextFieldDefaults.colors(
-                                                    unfocusedBorderColor = subtleBorderColor,
-                                                    focusedBorderColor = MaterialTheme.colorScheme.primary
-                                                )
-                                            )
-                                            
-                                            Button(
-                                                onClick = {
-                                                    SoundEffectManager.playClick()
-                                                    isCheckingSsl = true
-                                                    scope.launch {
-                                                        sslCertResult = com.arwora.utils.IpLookupManager.checkSslCertificate(sslDomainInput)
-                                                        isCheckingSsl = false
-                                                    }
-                                                },
-                                                modifier = Modifier.fillMaxWidth().height(48.dp),
-                                                shape = ArworaDesignTokens.PillShape,
-                                                enabled = !isCheckingSsl
-                                            ) {
-                                                if (isCheckingSsl) {
-                                                    ExpressiveCompactLoadingIndicator(
-                                                        size = 18.dp,
-                                                        color = MaterialTheme.colorScheme.onPrimary
-                                                    )
-                                                    Spacer(modifier = Modifier.width(8.dp))
-                                                    Text("Verifying SSL...", fontWeight = FontWeight.Bold)
-                                                } else {
-                                                    Text("Verify SSL Validity", fontWeight = FontWeight.Bold)
-                                                }
-                                            }
-                                            
-                                            sslCertResult?.let { res ->
-                                                val cardBg = if (!res.isValid) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f) 
-                                                             else if (res.daysRemaining < 30) Color(0xFFFEF3C7).copy(alpha = 0.3f) 
-                                                             else if (isLight) Color(0xFFF9FAFB) else MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)
-                                                val cardBorder = if (!res.isValid) MaterialTheme.colorScheme.error.copy(alpha = 0.3f)
-                                                                 else if (res.daysRemaining < 30) Color(0xFFF59E0B).copy(alpha = 0.4f)
-                                                                 else subtleBorderColor
-                                                Card(
-                                                    colors = CardDefaults.cardColors(containerColor = cardBg),
-                                                    border = BorderStroke(1.dp, cardBorder),
-                                                    shape = RoundedCornerShape(12.dp),
-                                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-                                                ) {
-                                                    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                                            Text("Trust Status", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                                            val statusText = if (!res.isValid) "Invalid / Expired" else "Valid & Encrypted"
-                                                            val statusColor = if (!res.isValid) Color(0xFFEF4444) else Color(0xFF10B981)
-                                                            Text(statusText, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = statusColor)
-                                                        }
-                                                        if (res.error.isNotEmpty()) {
-                                                            Text("Error: ${res.error}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                                                        } else {
-                                                            TooltipRow("Subject DN", res.subject)
-                                                            TooltipRow("Issuer Authority", res.issuer)
-                                                            TooltipRow("Issued From", res.validFrom)
-                                                            TooltipRow("Expires At", res.validTo)
-                                                            TooltipRow("Days Active Remaining", "${res.daysRemaining} Days", isPrimary = res.isValid)
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // 2. HTTP Headers Inspector
-                                    Card(
-                                        colors = CardDefaults.cardColors(containerColor = if (isLight) Color.White else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)),
-                                        border = BorderStroke(1.dp, subtleBorderColor),
-                                        shape = RoundedCornerShape(14.dp),
-                                        elevation = CardDefaults.cardElevation(defaultElevation = if (isLight) 1.5.dp else 0.dp),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                Icon(Icons.Default.List, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                                                Text("HTTP Response Headers", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                                            }
-                                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-                                            
-                                            OutlinedTextField(
-                                                value = httpUrlInput,
-                                                onValueChange = { httpUrlInput = it },
-                                                label = { Text("Secure URL / Address") },
-                                                placeholder = { Text("e.g. google.com") },
-                                                modifier = Modifier.fillMaxWidth(),
-                                                singleLine = true,
-                                                shape = RoundedCornerShape(12.dp),
-                                                colors = OutlinedTextFieldDefaults.colors(
-                                                    unfocusedBorderColor = subtleBorderColor,
-                                                    focusedBorderColor = MaterialTheme.colorScheme.primary
-                                                )
-                                            )
-                                            
-                                            Button(
-                                                onClick = {
-                                                    SoundEffectManager.playClick()
-                                                    isFetchingHeaders = true
-                                                    scope.launch {
-                                                        httpHeadersResult = com.arwora.utils.IpLookupManager.fetchHttpHeaders(httpUrlInput)
-                                                        isFetchingHeaders = false
-                                                    }
-                                                },
-                                                modifier = Modifier.fillMaxWidth().height(48.dp),
-                                                shape = ArworaDesignTokens.PillShape,
-                                                enabled = !isFetchingHeaders
-                                            ) {
-                                                if (isFetchingHeaders) {
-                                                    ExpressiveCompactLoadingIndicator(
-                                                        size = 18.dp,
-                                                        color = MaterialTheme.colorScheme.onPrimary
-                                                    )
-                                                    Spacer(modifier = Modifier.width(8.dp))
-                                                    Text("Fetching Headers...", fontWeight = FontWeight.Bold)
-                                                } else {
-                                                    Text("Parse HTTP Headers", fontWeight = FontWeight.Bold)
-                                                }
-                                            }
-                                            
-                                            if (httpHeadersResult.isNotEmpty()) {
-                                                Card(
-                                                    colors = CardDefaults.cardColors(containerColor = if (isLight) Color(0xFFF9FAFB) else MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)),
-                                                    border = BorderStroke(1.dp, subtleBorderColor),
-                                                    shape = RoundedCornerShape(12.dp),
-                                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-                                                ) {
-                                                    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                        httpHeadersResult.take(12).forEach { header ->
-                                                            Column(modifier = Modifier.fillMaxWidth()) {
-                                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                                    Text(header.key, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = if (header.isSecurityHeader) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurface)
-                                                                    if (header.isSecurityHeader) {
-                                                                        Box(
-                                                                            modifier = Modifier
-                                                                                .background(Color(0xFF10B981).copy(alpha = 0.1f), RoundedCornerShape(4.dp))
-                                                                                .padding(horizontal = 4.dp, vertical = 1.dp)
-                                                                        ) {
-                                                                            Text("Security", style = MaterialTheme.typography.labelSmall, color = Color(0xFF10B981), fontWeight = FontWeight.Bold)
-                                                                        }
-                                                                    }
-                                                                }
-                                                                Text(header.value, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                                            }
-                                                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 4.dp))
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                    
-                                    // 3. DNS Propagation
-                                    Card(
-                                        colors = CardDefaults.cardColors(containerColor = if (isLight) Color.White else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)),
-                                        border = BorderStroke(1.dp, subtleBorderColor),
-                                        shape = RoundedCornerShape(14.dp),
-                                        elevation = CardDefaults.cardElevation(defaultElevation = if (isLight) 1.5.dp else 0.dp),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                Icon(Icons.Default.Refresh, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                                                Text("DNS Record Propagation Check", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                                            }
-                                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-                                            
-                                            OutlinedTextField(
-                                                value = dnsDomainInput,
-                                                onValueChange = { dnsDomainInput = it },
-                                                label = { Text("Query Hostname") },
-                                                placeholder = { Text("google.com") },
-                                                modifier = Modifier.fillMaxWidth(),
-                                                singleLine = true,
-                                                shape = RoundedCornerShape(12.dp),
-                                                colors = OutlinedTextFieldDefaults.colors(
-                                                    unfocusedBorderColor = subtleBorderColor,
-                                                    focusedBorderColor = MaterialTheme.colorScheme.primary
-                                                )
-                                            )
-                                            
-                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                listOf("A", "CNAME", "MX", "TXT").forEach { type ->
-                                                    val isSelected = dnsRecordType == type
-                                                    FilterChip(
-                                                        selected = isSelected,
-                                                        onClick = { dnsRecordType = type },
-                                                        label = { Text(type) },
-                                                        shape = ArworaDesignTokens.PillShape,
-                                                        modifier = Modifier.weight(1f)
-                                                    )
-                                                }
-                                            }
-                                            
-                                            Button(
-                                                onClick = {
-                                                    SoundEffectManager.playClick()
-                                                    isCheckingDns = true
-                                                    scope.launch {
-                                                        dnsPropagationResults = com.arwora.utils.IpLookupManager.checkDnsPropagation(dnsDomainInput, dnsRecordType)
-                                                        isCheckingDns = false
-                                                    }
-                                                },
-                                                modifier = Modifier.fillMaxWidth().height(48.dp),
-                                                shape = ArworaDesignTokens.PillShape,
-                                                enabled = !isCheckingDns
-                                            ) {
-                                                if (isCheckingDns) {
-                                                    ExpressiveCompactLoadingIndicator(
-                                                        size = 18.dp,
-                                                        color = MaterialTheme.colorScheme.onPrimary
-                                                    )
-                                                    Spacer(modifier = Modifier.width(8.dp))
-                                                    Text("Checking DNS...", fontWeight = FontWeight.Bold)
-                                                } else {
-                                                    Text("Check Global Propagation", fontWeight = FontWeight.Bold)
-                                                }
-                                            }
-                                            
-                                            if (dnsPropagationResults.isNotEmpty()) {
-                                                Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 4.dp)) {
-                                                    dnsPropagationResults.forEach { res ->
-                                                        Card(
-                                                            colors = CardDefaults.cardColors(containerColor = if (isLight) Color(0xFFF9FAFB) else MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)),
-                                                            border = BorderStroke(1.dp, subtleBorderColor),
-                                                            shape = RoundedCornerShape(12.dp),
-                                                            modifier = Modifier.fillMaxWidth()
-                                                        ) {
-                                                            Row(
-                                                                modifier = Modifier.padding(10.dp).fillMaxWidth(),
-                                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                                verticalAlignment = Alignment.CenterVertically
-                                                            ) {
-                                                                Column(modifier = Modifier.weight(1f)) {
-                                                                    Text(res.resolverName, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
-                                                                    Text(res.resolvedValue, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                                                }
-                                                                val statusColor = when (res.status) {
-                                                                    "Resolved" -> Color(0xFF10B981)
-                                                                    "No Record" -> Color(0xFFF59E0B)
-                                                                    else -> Color(0xFFEF4444)
-                                                                }
-                                                                Box(
-                                                                    modifier = Modifier
-                                                                        .background(statusColor.copy(alpha = 0.12f), RoundedCornerShape(6.dp))
-                                                                        .border(1.dp, statusColor.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
-                                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                                                ) {
-                                                                    Text(res.status, style = MaterialTheme.typography.labelSmall, color = statusColor, fontWeight = FontWeight.Bold)
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                }
-            }
-
             // ANIMATION SPEED CARD
             item {
                 DashboardStaggeredItem(
-                    index = 22,
+                    index = 21,
                     triggerAnimation = canPlayCardEntrance,
                     isInitialLoadBurst = isInitialStaggerWindowActive
                 ) {
@@ -2056,7 +1218,7 @@ fun SystemDashboardScreen(
             // SECTION 3: PACKAGES & TOOLS
             item {
                 DashboardStaggeredItem(
-                    index = 23,
+                    index = 22,
                     triggerAnimation = canPlayCardEntrance,
                     isInitialLoadBurst = isInitialStaggerWindowActive
                 ) {
@@ -2067,7 +1229,7 @@ fun SystemDashboardScreen(
             // APP OPS MANAGER CARD
             item {
                 DashboardStaggeredItem(
-                    index = 24,
+                    index = 23,
                     triggerAnimation = canPlayCardEntrance,
                     isInitialLoadBurst = isInitialStaggerWindowActive
                 ) {
@@ -2089,7 +1251,7 @@ fun SystemDashboardScreen(
             // BACKGROUND PROCESS & WAKELOCK DETECTOR CARD
             item {
                 DashboardStaggeredItem(
-                    index = 25,
+                    index = 24,
                     triggerAnimation = canPlayCardEntrance,
                     isInitialLoadBurst = isInitialStaggerWindowActive
                 ) {
@@ -2102,7 +1264,7 @@ fun SystemDashboardScreen(
             // SHELL COMMAND CARD
             item {
                 DashboardStaggeredItem(
-                    index = 26,
+                    index = 25,
                     triggerAnimation = canPlayCardEntrance,
                     isInitialLoadBurst = isInitialStaggerWindowActive
                 ) {
@@ -2110,21 +1272,10 @@ fun SystemDashboardScreen(
                 }
             }
 
-            // LINK SHORTENER CARD
-            item {
-                DashboardStaggeredItem(
-                    index = 27,
-                    triggerAnimation = canPlayCardEntrance,
-                    isInitialLoadBurst = isInitialStaggerWindowActive
-                ) {
-                    LinkShortenerCard(viewModel = linkShortenerViewModel)
-                }
-            }
-
             // HTML TO APK CARD
             item {
                 DashboardStaggeredItem(
-                    index = 28,
+                    index = 26,
                     triggerAnimation = canPlayCardEntrance,
                     isInitialLoadBurst = isInitialStaggerWindowActive
                 ) {
@@ -2146,7 +1297,7 @@ fun SystemDashboardScreen(
             // SMART APP INSTALLATION ASSISTANT CARD
             item {
                 DashboardStaggeredItem(
-                    index = 29,
+                    index = 27,
                     triggerAnimation = canPlayCardEntrance,
                     isInitialLoadBurst = isInitialStaggerWindowActive
                 ) {
@@ -2163,7 +1314,7 @@ fun SystemDashboardScreen(
             // SMART DOWNLOAD WORKFLOW CARD
             item {
                 DashboardStaggeredItem(
-                    index = 30,
+                    index = 28,
                     triggerAnimation = canPlayCardEntrance,
                     isInitialLoadBurst = isInitialStaggerWindowActive
                 ) {
@@ -2171,6 +1322,23 @@ fun SystemDashboardScreen(
                         onOpenWorkflowHub = { eventId ->
                             navigateGuarded(Screen.DownloadWorkflow.route) {
                                 navController.navigate(Screen.DownloadWorkflow.createRoute(eventId))
+                            }
+                        }
+                    )
+                }
+            }
+
+            // ARWORA CONNECT OFFLINE P2P FILE SHARING HUB CARD
+            item {
+                DashboardStaggeredItem(
+                    index = 29,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
+                    com.arwora.feature.system.connect.ui.ArworaConnectCard(
+                        onOpenConnectHub = {
+                            navigateGuarded(Screen.ArworaConnect.route) {
+                                navController.navigate(Screen.ArworaConnect.route)
                             }
                         }
                     )
@@ -2371,16 +1539,26 @@ fun SystemDashboardScreen(
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("Shizuku Daemon:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text(
-                                    text = when {
-                                        shizukuPermitted -> "Authorized & Active"
-                                        shizukuRunning && shizukuShouldShowRationale -> "Permission Denied (Tap Grant)"
-                                        shizukuRunning -> "Running (Tap Authorize)"
-                                        shizukuInstalled -> "Installed (Service Stopped)"
-                                        else -> "Not Installed"
+                                    text = when (shizukuUiStatus) {
+                                        ShizukuUiStatus.ACTIVE_CONNECTED -> ShizukuUiStatus.ACTIVE_CONNECTED.badgeText
+                                        ShizukuUiStatus.PERMISSION_REQUIRED -> if (shizukuShouldShowRationale) {
+                                            "Permission Required (Denied)"
+                                        } else {
+                                            ShizukuUiStatus.PERMISSION_REQUIRED.badgeText
+                                        }
+                                        ShizukuUiStatus.SERVICE_STOPPED -> if (shizukuInstalled) {
+                                            ShizukuUiStatus.SERVICE_STOPPED.badgeText
+                                        } else {
+                                            "Not Installed"
+                                        }
                                     },
                                     style = MaterialTheme.typography.bodySmall,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = if (shizukuPermitted) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurface
+                                    color = when (shizukuUiStatus) {
+                                        ShizukuUiStatus.ACTIVE_CONNECTED -> Color(0xFF10B981)
+                                        ShizukuUiStatus.PERMISSION_REQUIRED -> Color(0xFFF59E0B)
+                                        ShizukuUiStatus.SERVICE_STOPPED -> MaterialTheme.colorScheme.error
+                                    }
                                 )
                             }
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -2399,25 +1577,19 @@ fun SystemDashboardScreen(
                     ) {
                         OutlinedButton(
                             onClick = {
-                                SoundEffectManager.playClick()
-                                if (shizukuPermitted) {
-                                    refreshDashboardStatuses()
-                                    Toast.makeText(context, "Shizuku permission is active", Toast.LENGTH_SHORT).show()
-                                } else if (shizukuRunning) {
-                                    ShizukuBridge.requestPermission(ShizukuBridge.REQUEST_CODE)
-                                } else {
+                                if (shizukuUiStatus == ShizukuUiStatus.SERVICE_STOPPED && !shizukuRunning) {
                                     showPrivilegeEngineDialog = false
-                                    AdbShellExecutor.openOrInstallShizuku(context)
                                 }
+                                handleConnectShizukuClick()
                             },
-                            modifier = Modifier.weight(1f).height(44.dp),
+                            modifier = Modifier.weight(1f).height(48.dp),
                             shape = ArworaDesignTokens.PillShape
                         ) {
                             Text(
                                 text = when {
-                                    shizukuPermitted -> "Shizuku Active"
-                                    shizukuRunning -> "Authorize Shizuku"
-                                    shizukuInstalled -> "Open Shizuku"
+                                    shizukuPermitted -> "Shizuku Connected"
+                                    shizukuRunning -> "Connect Shizuku"
+                                    shizukuInstalled -> "Connect Shizuku"
                                     else -> "Get Shizuku"
                                 },
                                 maxLines = 1,
@@ -3082,33 +2254,6 @@ fun SystemActionRowCard(
     }
 }
 
-@Composable
-fun TooltipRow(
-    label: String,
-    value: String,
-    isPrimary: Boolean = false
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = if (isPrimary) FontWeight.Bold else FontWeight.SemiBold,
-            color = if (isPrimary) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            modifier = Modifier.widthIn(max = 210.dp)
-        )
-    }
-}
-
 
 @Composable
 fun SystemToolNavigationCard(
@@ -3173,7 +2318,7 @@ fun SystemToolNavigationCard(
 
 /**
  * Common System Card implementation that unifies the border, shape, elevation, and background style
- * across all system dashboard tools, matching DNS Changer and IP Address Lookup.
+ * across all system dashboard tools, matching DNS Changer and Animation Speed.
  */
 @Composable
 fun SystemCard(
@@ -3233,7 +2378,7 @@ internal fun CentralizedControlPanelHeroCard(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "A secure, user-controlled diagnostic environment. Toggle permissions, automate configurations, execute ADB shell operations, or shorten links locally with direct, authorized control.",
+                text = "A secure, user-controlled diagnostic environment. Toggle permissions, automate configurations, execute ADB shell operations, or manage local device workflows with direct, authorized control.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
                 lineHeight = 16.sp
@@ -3246,7 +2391,9 @@ internal fun CentralizedControlPanelHeroCard(
 internal fun PrivilegeEngineBridgeCard(
     engine: PrivilegeEngine,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    shizukuUiStatus: ShizukuUiStatus? = null,
+    onConnectShizukuClick: (() -> Unit)? = null
 ) {
     val badgeColor = when (engine) {
         PrivilegeEngine.SHIZUKU,
@@ -3263,83 +2410,180 @@ internal fun PrivilegeEngineBridgeCard(
         modifier = modifier.testTag("system_privilege_engine_card"),
         onClick = onClick
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
                 modifier = Modifier
-                    .size(46.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(badgeColor.copy(alpha = 0.10f))
-                    .border(
-                        width = 1.dp,
-                        color = badgeColor.copy(alpha = 0.25f),
-                        shape = RoundedCornerShape(14.dp)
-                    ),
-                contentAlignment = Alignment.Center
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Default.AdminPanelSettings,
-                    contentDescription = "Privilege Engine Status",
-                    tint = badgeColor,
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(end = 8.dp)
-                    .align(Alignment.CenterVertically)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(badgeColor)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Privilege Engine",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = (-0.2).sp
+                Box(
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(badgeColor.copy(alpha = 0.10f))
+                        .border(
+                            width = 1.dp,
+                            color = badgeColor.copy(alpha = 0.25f),
+                            shape = RoundedCornerShape(14.dp)
                         ),
-                        color = MaterialTheme.colorScheme.onSurface,
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AdminPanelSettings,
+                        contentDescription = "Privilege Engine Status",
+                        tint = badgeColor,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp)
+                        .align(Alignment.CenterVertically)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(badgeColor)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Privilege Engine",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = (-0.2).sp
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = subtitleText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = subtitleText,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+
+                Surface(
+                    shape = ArworaDesignTokens.PillShape,
+                    color = badgeColor.copy(alpha = 0.12f),
+                    border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.35f)),
+                    modifier = Modifier.testTag("system_privilege_engine_badge")
+                ) {
+                    Text(
+                        text = engine.statusBadgeLabel,
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = badgeColor,
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
             }
 
-            Surface(
-                shape = ArworaDesignTokens.PillShape,
-                color = badgeColor.copy(alpha = 0.12f),
-                border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.35f)),
-                modifier = Modifier.testTag("system_privilege_engine_badge")
-            ) {
-                Text(
-                    text = engine.statusBadgeLabel,
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                    color = badgeColor,
-                    maxLines = 1,
-                    softWrap = false,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+            if (shizukuUiStatus != null && onConnectShizukuClick != null) {
+                val shizukuColor = when (shizukuUiStatus) {
+                    ShizukuUiStatus.ACTIVE_CONNECTED -> Color(0xFF10B981)
+                    ShizukuUiStatus.PERMISSION_REQUIRED -> Color(0xFFF59E0B)
+                    ShizukuUiStatus.SERVICE_STOPPED -> Color(0xFFDC2626)
+                }
+
+                HorizontalDivider(
+                    thickness = 1.dp,
+                    color = ArworaDesignTokens.cardBorderColor().copy(alpha = 0.6f),
+                    modifier = Modifier.padding(horizontal = 16.dp)
                 )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .testTag("shizuku_connection_section"),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "Shizuku Connection",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Surface(
+                            shape = ArworaDesignTokens.PillShape,
+                            color = shizukuColor.copy(alpha = 0.12f),
+                            border = BorderStroke(1.dp, shizukuColor.copy(alpha = 0.35f)),
+                            modifier = Modifier.testTag("shizuku_status_badge")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(shizukuColor)
+                                )
+                                Text(
+                                    text = shizukuUiStatus.badgeText,
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = shizukuColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+
+                    Button(
+                        onClick = onConnectShizukuClick,
+                        shape = ArworaDesignTokens.PillShape,
+                        colors = if (shizukuUiStatus == ShizukuUiStatus.ACTIVE_CONNECTED) {
+                            ButtonDefaults.filledTonalButtonColors(
+                                containerColor = Color(0xFF10B981).copy(alpha = 0.16f),
+                                contentColor = Color(0xFF10B981)
+                            )
+                        } else {
+                            ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            )
+                        },
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag("connect_shizuku_button")
+                    ) {
+                        Text(
+                            text = if (shizukuUiStatus == ShizukuUiStatus.ACTIVE_CONNECTED) {
+                                "Connected"
+                            } else {
+                                "Connect Shizuku"
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
+                }
             }
         }
     }

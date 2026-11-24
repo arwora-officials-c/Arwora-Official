@@ -223,8 +223,10 @@ class SmartDownloadWorkflowTest {
     }
 
     @Test
-    fun cardRendersMasterAndAllFourGranularSwitchesAndUpdatesConfig() = runBlocking {
-        DownloadWorkflowManager.initIfNeeded(context)
+    fun cardRendersMasterAndAllFourGranularSwitchesAndUpdatesConfig() {
+        runBlocking {
+            DownloadWorkflowManager.initIfNeeded(context)
+        }
         var hubOpenedCount = 0
 
         composeTestRule.setContent {
@@ -263,31 +265,34 @@ class SmartDownloadWorkflowTest {
     }
 
     @Test
-    fun workflowHubDisplaysProcessedEventsFiltersAndDetailSheet() = runBlocking {
-        DownloadWorkflowManager.initIfNeeded(context)
-        DownloadWorkflowManager.setMasterEnabled(context, true, startServiceIfEnabled = false)
+    fun workflowHubDisplaysProcessedEventsFiltersAndDetailSheet() {
+        val (first, second) = runBlocking {
+            DownloadWorkflowManager.initIfNeeded(context)
+            DownloadWorkflowManager.setMasterEnabled(context, true, startServiceIfEnabled = false)
 
-        val apkFile = File(tempDownloadDir, "Copy of toolkit_v2.apk").apply {
-            writeBytes("APK_CONTENT_V2".toByteArray())
-        }
-        val first = DownloadWorkflowManager.handleCandidateFile(
-            context = context,
-            file = apkFile,
-            downloadRoot = tempDownloadDir,
-            stabilityDurationMs = 0L,
-            requireMasterEnabled = false
-        )!!
+            val apkFile = File(tempDownloadDir, "Copy of toolkit_v2.apk").apply {
+                writeBytes("APK_CONTENT_V2".toByteArray())
+            }
+            val firstEvent = DownloadWorkflowManager.handleCandidateFile(
+                context = context,
+                file = apkFile,
+                downloadRoot = tempDownloadDir,
+                stabilityDurationMs = 0L,
+                requireMasterEnabled = false
+            )!!
 
-        val dupApk = File(tempDownloadDir, "toolkit_v2_mirror.apk").apply {
-            writeBytes("APK_CONTENT_V2".toByteArray())
+            val dupApk = File(tempDownloadDir, "toolkit_v2_mirror.apk").apply {
+                writeBytes("APK_CONTENT_V2".toByteArray())
+            }
+            val secondEvent = DownloadWorkflowManager.handleCandidateFile(
+                context = context,
+                file = dupApk,
+                downloadRoot = tempDownloadDir,
+                stabilityDurationMs = 0L,
+                requireMasterEnabled = false
+            )!!
+            firstEvent to secondEvent
         }
-        val second = DownloadWorkflowManager.handleCandidateFile(
-            context = context,
-            file = dupApk,
-            downloadRoot = tempDownloadDir,
-            stabilityDurationMs = 0L,
-            requireMasterEnabled = false
-        )!!
 
         val vm = SmartDownloadWorkflowViewModel(context)
 

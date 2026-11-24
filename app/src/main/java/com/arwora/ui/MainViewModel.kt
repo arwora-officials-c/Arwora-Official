@@ -182,27 +182,6 @@ class MainViewModel(
     private val _bioEmoji = MutableStateFlow(true)
     val bioEmoji: StateFlow<Boolean> = _bioEmoji.asStateFlow()
 
-    private val _builderBaseName = MutableStateFlow("")
-    val builderBaseName: StateFlow<String> = _builderBaseName.asStateFlow()
-
-    private val _builderPrefix = MutableStateFlow("")
-    val builderPrefix: StateFlow<String> = _builderPrefix.asStateFlow()
-
-    private val _builderSuffix = MutableStateFlow("")
-    val builderSuffix: StateFlow<String> = _builderSuffix.asStateFlow()
-
-    private val _builderAddNumbers = MutableStateFlow(false)
-    val builderAddNumbers: StateFlow<Boolean> = _builderAddNumbers.asStateFlow()
-
-    private val _builderAddUnderscore = MutableStateFlow(false)
-    val builderAddUnderscore: StateFlow<Boolean> = _builderAddUnderscore.asStateFlow()
-
-    private val _builderAddDot = MutableStateFlow(false)
-    val builderAddDot: StateFlow<Boolean> = _builderAddDot.asStateFlow()
-
-    private val _builderRandomLetters = MutableStateFlow(false)
-    val builderRandomLetters: StateFlow<Boolean> = _builderRandomLetters.asStateFlow()
-
     private val _textSaverInput = MutableStateFlow("")
     val textSaverInput: StateFlow<String> = _textSaverInput.asStateFlow()
 
@@ -701,34 +680,6 @@ class MainViewModel(
         _bioEmoji.value = emoji
     }
 
-    fun setBuilderBaseName(name: String) {
-        _builderBaseName.value = name
-    }
-
-    fun setBuilderPrefix(prefix: String) {
-        _builderPrefix.value = prefix
-    }
-
-    fun setBuilderSuffix(suffix: String) {
-        _builderSuffix.value = suffix
-    }
-
-    fun setBuilderAddNumbers(add: Boolean) {
-        _builderAddNumbers.value = add
-    }
-
-    fun setBuilderAddUnderscore(add: Boolean) {
-        _builderAddUnderscore.value = add
-    }
-
-    fun setBuilderAddDot(add: Boolean) {
-        _builderAddDot.value = add
-    }
-
-    fun setBuilderRandomLetters(random: Boolean) {
-        _builderRandomLetters.value = random
-    }
-
     fun setTextSaverInput(text: String) {
         _textSaverInput.value = text
     }
@@ -1068,6 +1019,18 @@ class MainViewModel(
 
     fun consumePendingDownloadWorkflow() {
         _pendingDownloadWorkflowNav.value = null
+    }
+
+    // === Arwora Connect P2P Hub Notification Deep-Link State ===
+    private val _pendingArworaConnectNav = MutableStateFlow(false)
+    val pendingArworaConnectNav: StateFlow<Boolean> = _pendingArworaConnectNav.asStateFlow()
+
+    fun requestOpenArworaConnect() {
+        _pendingArworaConnectNav.value = true
+    }
+
+    fun consumePendingArworaConnect() {
+        _pendingArworaConnectNav.value = false
     }
 
     private fun extractUrl(text: String): String {

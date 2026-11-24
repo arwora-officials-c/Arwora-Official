@@ -63,13 +63,13 @@ class SystemDashboardCardsRemovalTest {
         assertEquals(0, composeTestRule.onAllNodesWithText("APK Extractor & Backup", substring = true).fetchSemanticsNodes().size)
         assertEquals(0, composeTestRule.onAllNodesWithText("Status: Active / Connected", substring = true).fetchSemanticsNodes().size)
         assertEquals(0, composeTestRule.onAllNodesWithText("Status: Inactive / Disconnected", substring = true).fetchSemanticsNodes().size)
+        assertEquals(0, composeTestRule.onAllNodesWithText("IP Address Lookup").fetchSemanticsNodes().size)
+        assertEquals(0, composeTestRule.onAllNodesWithText("Network Diagnostics Toolkit", substring = true).fetchSemanticsNodes().size)
+        assertEquals(0, composeTestRule.onAllNodesWithText("Link Shortener", substring = true).fetchSemanticsNodes().size)
 
         // Scroll through remaining System Dashboard tools and verify they remain intact
         list.performScrollToNode(hasText("Permission Inspector"))
         composeTestRule.onNodeWithText("Permission Inspector").assertIsDisplayed()
-
-        list.performScrollToNode(hasText("IP Address Lookup"))
-        composeTestRule.onNodeWithText("IP Address Lookup").assertIsDisplayed()
 
         list.performScrollToNode(hasText("Animation Speed"))
         composeTestRule.onNodeWithText("Animation Speed").assertIsDisplayed()
@@ -80,7 +80,18 @@ class SystemDashboardCardsRemovalTest {
         list.performScrollToNode(hasText("Html To Apk"))
         composeTestRule.onNodeWithText("Html To Apk").assertIsDisplayed()
 
+        list.performScrollToNode(hasText("Smart App Installation Assistant"))
+        composeTestRule.onNodeWithText("Smart App Installation Assistant").assertIsDisplayed()
+
+        list.performScrollToNode(hasText("Smart Download Workflow"))
+        composeTestRule.onNodeWithText("Smart Download Workflow").assertIsDisplayed()
+
+        list.performScrollToNode(hasText("Arwora Connect"))
+        composeTestRule.onNodeWithText("Arwora Connect").assertIsDisplayed()
+
         assertEquals(0, composeTestRule.onAllNodesWithText("Advanced App Manager & APK Extractor").fetchSemanticsNodes().size)
         assertEquals(0, composeTestRule.onAllNodesWithText("APK Extractor & Backup", substring = true).fetchSemanticsNodes().size)
+        assertEquals(0, composeTestRule.onAllNodesWithText("IP Address Lookup").fetchSemanticsNodes().size)
+        assertEquals(0, composeTestRule.onAllNodesWithText("Link Shortener", substring = true).fetchSemanticsNodes().size)
     }
 }

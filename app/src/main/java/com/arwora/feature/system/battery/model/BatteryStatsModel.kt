@@ -19,7 +19,10 @@ data class DeepSleepDiagnostics(
     val activeWakeLocksCount: Int,
     val pendingAlarmsCount: Int,
     val deepSleepPercentage: Int, // e.g. 84%
-    val cpuState: CpuState
+    val cpuState: CpuState,
+    val elapsedRealtimeMs: Long = 0L,
+    val awakeUptimeMs: Long = 0L,
+    val deepSleepMs: Long = 0L
 )
 
 enum class CpuState {

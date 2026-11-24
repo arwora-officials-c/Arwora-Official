@@ -46,6 +46,9 @@ fun BatteryMonitorScreen(
     val isCharging by BatteryMonitorManager.isCharging.collectAsStateWithLifecycle()
     val temperature by BatteryMonitorManager.batteryTemperature.collectAsStateWithLifecycle()
     val voltage by BatteryMonitorManager.batteryVoltage.collectAsStateWithLifecycle()
+    val batteryHealth by BatteryMonitorManager.batteryHealth.collectAsStateWithLifecycle()
+    val dischargeRateMah by BatteryMonitorManager.dischargeRateMahPerHour.collectAsStateWithLifecycle()
+    val isCurrentAvailable by BatteryMonitorManager.isCurrentAvailable.collectAsStateWithLifecycle()
     val appStats by BatteryMonitorManager.appStats.collectAsStateWithLifecycle()
     val diagnostics by BatteryMonitorManager.deepSleepDiagnostics.collectAsStateWithLifecycle()
     val lastLog by BatteryMonitorManager.lastActionLog.collectAsStateWithLifecycle()
@@ -64,7 +67,7 @@ fun BatteryMonitorScreen(
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                         )
                         Text(
-                            text = "$batteryLevel% • ${if (isCharging) "Charging" else "Discharging"} • ${temperature}°C",
+                            text = "$batteryLevel% • ${if (isCharging) "Charging" else "Discharging"} • ${String.format(java.util.Locale.US, "%.1f", temperature)}°C • $batteryHealth",
                             style = MaterialTheme.typography.labelSmall,
                             color = if (batteryLevel > 20) Color(0xFF10B981) else Color(0xFFEF4444)
                         )
@@ -134,9 +137,9 @@ fun BatteryMonitorScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("battery_overview_card"),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
+                    shape = com.arwora.ui.components.ArworaDesignTokens.CardShape,
+                    colors = CardDefaults.cardColors(containerColor = com.arwora.ui.components.ArworaDesignTokens.cardContainerColor()),
+                    border = com.arwora.ui.components.ArworaDesignTokens.cardBorder()
                 ) {
                     Column(
                         modifier = Modifier
@@ -158,12 +161,12 @@ fun BatteryMonitorScreen(
                                 )
                             }
                             Surface(
-                                shape = RoundedCornerShape(6.dp),
+                                shape = com.arwora.ui.components.ArworaDesignTokens.PillShape,
                                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
                             ) {
                                 Text(
                                     text = if (isCharging) "AC Charging" else "Battery Powered",
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary
@@ -185,8 +188,35 @@ fun BatteryMonitorScreen(
                                 Text(text = "Voltage", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(text = "${temperature}°C", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                                Text(text = "${String.format(java.util.Locale.US, "%.1f", temperature)}°C", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                                 Text(text = "Temperature", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+
+                        HorizontalDivider(color = com.arwora.ui.components.ArworaDesignTokens.cardBorderColor().copy(alpha = 0.5f))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceAround,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = batteryHealth,
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = if (batteryHealth == "Good") Color(0xFF10B981) else MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(text = "Battery Health", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = if (isCurrentAvailable && dischargeRateMah > 0) "$dischargeRateMah mAh/h" else "0 mAh/h",
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(text = if (isCharging) "Charge Rate" else "Power Drain", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -199,9 +229,9 @@ fun BatteryMonitorScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("deep_sleep_diagnostic_card"),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
+                    shape = com.arwora.ui.components.ArworaDesignTokens.CardShape,
+                    colors = CardDefaults.cardColors(containerColor = com.arwora.ui.components.ArworaDesignTokens.cardContainerColor()),
+                    border = com.arwora.ui.components.ArworaDesignTokens.cardBorder()
                 ) {
                     Column(
                         modifier = Modifier
@@ -219,7 +249,7 @@ fun BatteryMonitorScreen(
                         }
 
                         Text(
-                            text = "Analyzes CPU idle states, active Partial WakeLocks holding the processor awake, and Doze mode efficiency.",
+                            text = "Analyzes CPU idle states (${BatteryMonitorManager.formatDurationCompact(diagnostics.deepSleepMs)} deep sleep vs ${BatteryMonitorManager.formatDurationCompact(diagnostics.awakeUptimeMs)} awake), active WakeLocks, and Doze efficiency.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -237,7 +267,7 @@ fun BatteryMonitorScreen(
                                 Text(text = "Active WakeLocks", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Column {
-                                Text(text = diagnostics.cpuState.name, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                                Text(text = diagnostics.cpuState.name.replace("_", " "), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
                                 Text(text = "CPU State", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }

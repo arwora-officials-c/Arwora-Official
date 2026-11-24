@@ -11,34 +11,67 @@ import com.arwora.data.repository.HistoryRepository
 import com.arwora.data.repository.SavedTextRepository
 import com.arwora.feature.common.startup.StartupDefer
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
+
 class NameGenApplication : Application() {
-    
-    lateinit var database: AppDatabase
-        private set
-        
-    lateinit var historyRepository: HistoryRepository
-        private set
-        
-    lateinit var favoriteRepository: FavoriteRepository
-        private set
-        
-    lateinit var settingsRepository: SettingsRepository
-        private set
-        
-    lateinit var savedTextRepository: SavedTextRepository
-        private set
 
-    lateinit var downloadHistoryRepository: com.arwora.data.repository.DownloadHistoryRepository
-        private set
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val warmupStarted = AtomicBoolean(false)
 
-    lateinit var notificationRepository: com.arwora.data.repository.NotificationRepository
-        private set
+    companion object {
+        private val deferredEnginesScheduled = AtomicBoolean(false)
+    }
 
-    lateinit var sharedViewModel: com.arwora.ui.MainViewModel
-        private set
+    val database: AppDatabase by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        Room.databaseBuilder(
+            this,
+            AppDatabase::class.java,
+            "namegen_database"
+        ).fallbackToDestructiveMigration().build()
+    }
 
-    val appManagerViewModel: com.arwora.ui.AppManagerViewModel by lazy {
+    val historyRepository: HistoryRepository by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        HistoryRepository(database.historyDao())
+    }
+
+    val favoriteRepository: FavoriteRepository by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        FavoriteRepository(database.favoriteDao())
+    }
+
+    val settingsRepository: SettingsRepository by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        SettingsRepository(dataStore)
+    }
+
+    val savedTextRepository: SavedTextRepository by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        SavedTextRepository(database.savedTextDao())
+    }
+
+    val downloadHistoryRepository: com.arwora.data.repository.DownloadHistoryRepository by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        com.arwora.data.repository.DownloadHistoryRepository(database.downloadHistoryDao())
+    }
+
+    val notificationRepository: com.arwora.data.repository.NotificationRepository by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        com.arwora.data.repository.NotificationRepository(database.notificationDao())
+    }
+
+    val sharedViewModel: com.arwora.ui.MainViewModel by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        com.arwora.ui.MainViewModel(historyRepository, favoriteRepository, settingsRepository, savedTextRepository)
+    }
+
+    val appManagerViewModel: com.arwora.ui.AppManagerViewModel by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         com.arwora.ui.AppManagerViewModel(this, database.appHistoryDao())
+    }
+
+    fun warmupAsync() {
+        if (!warmupStarted.compareAndSet(false, true)) return
+        appScope.launch {
+            runCatching { settingsRepository.prewarm() }
+        }
     }
 
     override fun onCreate() {
@@ -54,7 +87,7 @@ class NameGenApplication : Application() {
                 defaultHandler?.uncaughtException(thread, throwable)
             }
         }
-        
+
         if (BuildConfig.DEBUG) {
             StrictMode.setThreadPolicy(
                 StrictMode.ThreadPolicy.Builder()
@@ -69,46 +102,40 @@ class NameGenApplication : Application() {
                     .build()
             )
         }
-        
-        database = Room.databaseBuilder(
-            this,
-            AppDatabase::class.java,
-            "namegen_database"
-        ).fallbackToDestructiveMigration().build()
-        
-        historyRepository = HistoryRepository(database.historyDao())
-        favoriteRepository = FavoriteRepository(database.favoriteDao())
-        savedTextRepository = SavedTextRepository(database.savedTextDao())
-        settingsRepository = SettingsRepository(dataStore)
-        downloadHistoryRepository = com.arwora.data.repository.DownloadHistoryRepository(database.downloadHistoryDao())
-        notificationRepository = com.arwora.data.repository.NotificationRepository(database.notificationDao())
-        sharedViewModel = com.arwora.ui.MainViewModel(historyRepository, favoriteRepository, settingsRepository, savedTextRepository)
 
         // Defer heavy extraction engines (yt-dlp/FFmpeg), audio synthesis, and connectivity/ADB bridges off cold-start main thread
-        StartupDefer.schedulePostFirstFrame(this) {
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                try {
-                    com.arwora.utils.MediaDownloadUtils.saveAppId(this@NameGenApplication)
-                    com.yausername.youtubedl_android.YoutubeDL.getInstance().init(this@NameGenApplication)
-                    com.yausername.ffmpeg.FFmpeg.getInstance().init(this@NameGenApplication)
-                } catch (e: Exception) {
-                    android.util.Log.e("NameGenApplication", "Failed to initialize YoutubeDL engine", e)
-                }
-                runCatching { com.arwora.utils.SoundEffectManager.init(this@NameGenApplication) }
-                runCatching { com.arwora.feature.system.battery.service.BatteryMonitorManager.init(this@NameGenApplication) }
-                runCatching { com.arwora.utils.NativeAdbManager.init(this@NameGenApplication) }
-                runCatching { com.arwora.utils.ShizukuBridge.init(this@NameGenApplication, autoRequestIfNeeded = false) }
-                runCatching { com.arwora.utils.AdbShellExecutor.init(this@NameGenApplication) }
-                runCatching { com.arwora.utils.WirelessPairingManager.init(this@NameGenApplication) }
-                runCatching { com.arwora.service.WifiAutoPairMonitor.syncWithPreference(this@NameGenApplication) }
-                runCatching {
-                    val adbCreds = com.arwora.utils.EncryptedAdbCredentialStore.loadState(this@NameGenApplication)
-                    if (adbCreds.isPaired && !adbCreds.userStopped && !com.arwora.utils.NativeAdbManager.isAdbReady()) {
-                        com.arwora.service.AdbConnectionService.startPersistentSession(this@NameGenApplication)
+        if (deferredEnginesScheduled.compareAndSet(false, true)) {
+            StartupDefer.schedulePostFirstFrame(this) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val appCtx = applicationContext
+                    try {
+                        com.arwora.utils.MediaDownloadUtils.saveAppId(appCtx)
+                        com.yausername.youtubedl_android.YoutubeDL.getInstance().init(appCtx)
+                        com.yausername.ffmpeg.FFmpeg.getInstance().init(appCtx)
+                    } catch (e: Exception) {
+                        android.util.Log.e("NameGenApplication", "Failed to initialize YoutubeDL engine", e)
+                    }
+                    runCatching { com.arwora.utils.SoundEffectManager.init(appCtx) }
+                    runCatching { com.arwora.feature.system.battery.service.BatteryMonitorManager.init(appCtx) }
+                    runCatching { com.arwora.utils.NativeAdbManager.init(appCtx) }
+                    runCatching { com.arwora.utils.ShizukuBridge.init(appCtx, autoRequestIfNeeded = false) }
+                    runCatching { com.arwora.utils.AdbShellExecutor.init(appCtx) }
+                    runCatching { com.arwora.utils.WirelessPairingManager.init(appCtx) }
+                    runCatching { com.arwora.service.WifiAutoPairMonitor.syncWithPreference(appCtx) }
+                    runCatching {
+                        val adbCreds = com.arwora.utils.EncryptedAdbCredentialStore.loadState(appCtx)
+                        if (adbCreds.isPaired && !adbCreds.userStopped && !com.arwora.utils.NativeAdbManager.isAdbReady()) {
+                            com.arwora.service.AdbConnectionService.startPersistentSession(appCtx)
+                        }
                     }
                 }
             }
         }
+    }
+
+    override fun onTerminate() {
+        appScope.coroutineContext.cancelChildren()
+        super.onTerminate()
     }
 
     override fun onTrimMemory(level: Int) {

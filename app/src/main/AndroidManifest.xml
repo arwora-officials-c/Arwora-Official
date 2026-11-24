@@ -65,6 +65,11 @@
             android:foregroundServiceType="dataSync"
             android:exported="false" />
 
+        <service
+            android:name=".feature.system.connect.service.ArworaConnectService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
+
         <activity
             android:name=".SplashActivity"
             android:exported="true"

@@ -32,6 +32,9 @@ object ShizukuBridge {
 
     private val listenersRegistered = AtomicBoolean(false)
     private val hasAutoRequestedForSession = AtomicBoolean(false)
+    private val pendingRequestCodes: MutableSet<Int> = java.util.Collections.synchronizedSet(
+        mutableSetOf(REQUEST_CODE, 4201)
+    )
 
     @Volatile
     private var appContext: Context? = null
@@ -52,6 +55,9 @@ object ShizukuBridge {
 
     private val _isPermissionGranted = MutableStateFlow(false)
     val isPermissionGranted: StateFlow<Boolean> = _isPermissionGranted.asStateFlow()
+
+    private val _isRemoteBinderReady = MutableStateFlow(false)
+    val isRemoteBinderReady: StateFlow<Boolean> = _isRemoteBinderReady.asStateFlow()
 
     private val _shouldShowRationale = MutableStateFlow(false)
     val shouldShowRationale: StateFlow<Boolean> = _shouldShowRationale.asStateFlow()
@@ -93,12 +99,21 @@ object ShizukuBridge {
     }
 
     private fun registerListenersIfNeeded() {
-        if (listenersRegistered.compareAndSet(false, true)) {
+        if (listenersRegistered.get()) return
+        synchronized(this) {
+            if (listenersRegistered.get()) return
             runCatching {
                 Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
                 Shizuku.addBinderDeadListener(binderDeadListener)
                 Shizuku.addRequestPermissionResultListener(permissionResultListener)
+            }.onSuccess {
+                listenersRegistered.set(true)
             }.onFailure { err ->
+                // Clean up any partial listener attachment and keep unregistered so later calls can retry
+                runCatching { Shizuku.removeBinderReceivedListener(binderReceivedListener) }
+                runCatching { Shizuku.removeBinderDeadListener(binderDeadListener) }
+                runCatching { Shizuku.removeRequestPermissionResultListener(permissionResultListener) }
+                listenersRegistered.set(false)
                 Log.d(TAG, "Shizuku listeners unavailable in current environment: ${err.message}")
             }
         }
@@ -113,6 +128,7 @@ object ShizukuBridge {
             }
         }
         hasAutoRequestedForSession.set(false)
+        _isRemoteBinderReady.value = false
     }
 
     internal fun resetTestOverrides() {
@@ -125,6 +141,7 @@ object ShizukuBridge {
         hasAutoRequestedForSession.set(false)
         autoRequestPermissionOnBinder = false
         _lastPermissionResult.value = null
+        _isRemoteBinderReady.value = false
     }
 
     fun isRunning(): Boolean {
@@ -194,6 +211,8 @@ object ShizukuBridge {
         val ctx = context?.applicationContext ?: appContext
         if (ctx != null) appContext = ctx
 
+        registerListenersIfNeeded()
+
         val installed = isShizukuInstalled(ctx)
         val binderAlive = isRunning()
         val granted = if (binderAlive) isPermissionGrantedNow() else false
@@ -215,11 +234,38 @@ object ShizukuBridge {
         _isBinderAlive.value = binderAlive
         _isPermissionGranted.value = granted
         _shouldShowRationale.value = rationale
+        _isRemoteBinderReady.value = if (binderAlive && granted) checkRemoteBinderHealth() else false
         _status.value = resolved
+        ShizukuBridgeManager.syncFromBridgeStatus(resolved)
+        AdbShellExecutor.syncFromShizukuState(binderAlive = binderAlive, granted = granted, context = ctx)
         return resolved
     }
 
+    /**
+     * Verifies and initializes remote binder readiness once Shizuku permission is granted.
+     */
+    fun verifyRemoteBinderConnection(): Boolean {
+        val binderAlive = isRunning()
+        val granted = if (binderAlive) isPermissionGrantedNow() else false
+        val healthy = binderAlive && granted && checkRemoteBinderHealth()
+        _isRemoteBinderReady.value = healthy
+        return healthy
+    }
+
+    private fun checkRemoteBinderHealth(): Boolean {
+        if (binderProbeOverride != null || AdbShellExecutor.shizukuBinderProbeOverride != null) {
+            return true
+        }
+        return try {
+            val binder = Shizuku.getBinder()
+            binder == null || binder.isBinderAlive
+        } catch (_: Throwable) {
+            true
+        }
+    }
+
     fun requestPermission(requestCode: Int = REQUEST_CODE): Boolean {
+        registerListenersIfNeeded()
         if (!isRunning()) {
             refreshState(appContext)
             return false
@@ -231,10 +277,13 @@ object ShizukuBridge {
             _isBinderAlive.value = true
             _isPermissionGranted.value = true
             _shouldShowRationale.value = false
+            _isRemoteBinderReady.value = checkRemoteBinderHealth()
             _status.value = ShizukuBridgeStatus.AUTHORIZED
+            ShizukuBridgeManager.syncFromBridgeStatus(ShizukuBridgeStatus.AUTHORIZED)
             AdbShellExecutor.onShizukuPermissionResolved(granted = true, context = appContext)
             return true
         }
+        pendingRequestCodes.add(requestCode)
         return try {
             val invoker = requestPermissionInvokerOverride
             if (invoker != null) {
@@ -266,19 +315,24 @@ object ShizukuBridge {
         if (granted) {
             _isPermissionGranted.value = true
             _shouldShowRationale.value = false
+            _isRemoteBinderReady.value = checkRemoteBinderHealth()
             _status.value = ShizukuBridgeStatus.AUTHORIZED
+            ShizukuBridgeManager.syncFromBridgeStatus(ShizukuBridgeStatus.AUTHORIZED)
             hasAutoRequestedForSession.set(false)
             AdbShellExecutor.onShizukuPermissionResolved(granted = true, context = appContext)
         } else {
             val rationale = shouldShowRequestPermissionRationaleNow()
             _isPermissionGranted.value = false
             _shouldShowRationale.value = rationale
-            _status.value = if (rationale) {
+            _isRemoteBinderReady.value = false
+            val nextStatus = if (rationale) {
                 ShizukuBridgeStatus.RATIONALE_REQUIRED
             } else {
                 ShizukuBridgeStatus.PERMISSION_REQUIRED
             }
-            AdbShellExecutor.refreshEngineStatus(appContext)
+            _status.value = nextStatus
+            ShizukuBridgeManager.syncFromBridgeStatus(nextStatus)
+            AdbShellExecutor.syncFromShizukuState(binderAlive = true, granted = false, context = appContext)
             if (!rationale) {
                 tryAutoRequestPermissionOnce()
             }
@@ -290,31 +344,40 @@ object ShizukuBridge {
         hasAutoRequestedForSession.set(false)
         _isBinderAlive.value = false
         _isPermissionGranted.value = false
+        _isRemoteBinderReady.value = false
         _shouldShowRationale.value = false
-        _status.value = if (isShizukuInstalled(appContext)) {
+        val deadStatus = if (isShizukuInstalled(appContext)) {
             ShizukuBridgeStatus.BINDER_DEAD
         } else {
             ShizukuBridgeStatus.NOT_INSTALLED
         }
+        _status.value = deadStatus
+        ShizukuBridgeManager.syncFromBridgeStatus(deadStatus)
         AdbShellExecutor.onShizukuPermissionResolved(granted = false, context = appContext)
     }
 
     internal fun onPermissionResult(requestCode: Int, grantResult: Int) {
-        if (requestCode != REQUEST_CODE && requestCode != 4201) {
+        if (requestCode !in pendingRequestCodes && requestCode != REQUEST_CODE && requestCode != 4201) {
             return
         }
         val granted = grantResult == PackageManager.PERMISSION_GRANTED
+        val binderAlive = if (granted) true else isRunning()
         _lastPermissionResult.value = grantResult
-        _isBinderAlive.value = true
-        _isPermissionGranted.value = granted
-        val rationale = if (!granted) shouldShowRequestPermissionRationaleNow() else false
+        _isBinderAlive.value = binderAlive
+        _isPermissionGranted.value = granted && binderAlive
+        val rationale = if (binderAlive && !granted) shouldShowRequestPermissionRationaleNow() else false
         _shouldShowRationale.value = rationale
-        _status.value = when {
-            granted -> ShizukuBridgeStatus.AUTHORIZED
-            rationale -> ShizukuBridgeStatus.RATIONALE_REQUIRED
-            else -> ShizukuBridgeStatus.PERMISSION_REQUIRED
+        _isRemoteBinderReady.value = if (granted && binderAlive) checkRemoteBinderHealth() else false
+        val resolvedStatus = when {
+            granted && binderAlive -> ShizukuBridgeStatus.AUTHORIZED
+            binderAlive && rationale -> ShizukuBridgeStatus.RATIONALE_REQUIRED
+            binderAlive -> ShizukuBridgeStatus.PERMISSION_REQUIRED
+            isShizukuInstalled(appContext) -> ShizukuBridgeStatus.BINDER_DEAD
+            else -> ShizukuBridgeStatus.NOT_INSTALLED
         }
-        Log.i(TAG, "Shizuku permission result (req=$requestCode): granted=$granted")
-        AdbShellExecutor.onShizukuPermissionResolved(granted = granted, context = appContext)
+        _status.value = resolvedStatus
+        ShizukuBridgeManager.syncFromBridgeStatus(resolvedStatus)
+        Log.i(TAG, "Shizuku permission result (req=$requestCode): granted=$granted binderAlive=$binderAlive")
+        AdbShellExecutor.onShizukuPermissionResolved(granted = granted && binderAlive, context = appContext)
     }
 }

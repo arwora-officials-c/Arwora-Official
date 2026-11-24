@@ -103,6 +103,7 @@ val allGlobalTools = listOf(
     GlobalToolItem("Smart Screen-Off Optimizer", "System", "Automated background cleanup routines on device screen-off events", Icons.Default.Bedtime, Screen.ScreenOffOptimizer.route, listOf("screen", "off", "optimizer", "sleep", "battery", "automation", "cleaner")),
     GlobalToolItem("Battery Monitor & Deep Sleep", "System", "Real-time app consumption stats & CPU wake lock diagnostics", Icons.Default.BatteryChargingFull, Screen.BatteryMonitor.route, listOf("battery", "monitor", "deep", "sleep", "wakelock", "power", "consumption")),
     GlobalToolItem("Shell Terminal Console", "System", "Interactive command prompt for ADB, local shell and scripts", Icons.Default.Terminal, Screen.SystemDashboard.route, listOf("shell", "terminal", "bash", "command", "root")),
+    GlobalToolItem("Arwora Connect", "System", "Offline P2P file sharing with trusted auto-accept & multi-device sync", Icons.Default.Hub, Screen.ArworaConnect.route, listOf("connect", "p2p", "share", "transfer", "qr", "offline", "wifi", "peer")),
 
     // Network & Wi-Fi
     GlobalToolItem("Private DNS Changer", "Network", "Switch to Cloudflare, Google, AdGuard, NextDNS or custom DoT", Icons.Default.VpnKey, Screen.DnsChanger.route, listOf("dns", "cloudflare", "adguard", "network", "private", "dot")),
@@ -112,7 +113,6 @@ val allGlobalTools = listOf(
     GlobalToolItem("Network Speed Test", "Network", "Measure download, upload bandwidth, latency and ping jitter", Icons.Default.Speed, Screen.WifiController.route, listOf("speed", "speedtest", "bandwidth", "upload", "download", "ping")),
     GlobalToolItem("Port Scanner & Ping", "Network", "Scan open network ports, trace route and ping remote hosts", Icons.Default.Sensors, Screen.WifiController.route, listOf("port", "ping", "traceroute", "network", "scanner")),
     GlobalToolItem("Reverse DNS & Whois", "Network", "Look up domain registrations, IP ownership and DNS records", Icons.Default.Search, Screen.WifiController.route, listOf("whois", "domain", "dns", "lookup", "reverse")),
-    GlobalToolItem("IP Address Lookup", "Network", "Discover public IP address, ISP, ASN and geolocation details", Icons.Default.Public, Screen.WifiController.route, listOf("ip", "lookup", "isp", "location", "address")),
     GlobalToolItem("Subnet Calculator", "Network", "CIDR network prefix calculations, broadcast, and IP range breakdown", Icons.Default.Calculate, Screen.WifiController.route, listOf("subnet", "cidr", "ip", "network", "mask")),
 
     // Location & Sensors
@@ -134,8 +134,6 @@ val allGlobalTools = listOf(
     GlobalToolItem("Mix Name Combiner", "Generator", "Combine couple names, baby names, or team names together", Icons.Default.Shuffle, Screen.NameMixer.route, listOf("mix", "combine", "couple", "names", "blend")),
     GlobalToolItem("Stylish Font & Fancy Text", "Creative", "Convert plain text to decorative symbols and Unicode styles", Icons.Default.TextFields, Screen.StylishTextGen.route, listOf("font", "fancy", "text", "style", "symbols")),
     GlobalToolItem("Password Generator", "Security", "Generate strong cryptographically secure passwords", Icons.Default.Password, Screen.PasswordGen.route, listOf("password", "generator", "crypto", "secure", "pass")),
-    GlobalToolItem("Fake Data & Identity Generator", "Generator", "Generate realistic addresses, credit cards, profiles and data", Icons.Default.PermIdentity, Screen.FakeDataGenerator.route, listOf("fake", "identity", "data", "profile", "generator")),
-    GlobalToolItem("URL Link Shortener", "Utility", "Shorten long URLs with TinyURL, is.gd, and da.gd", Icons.Default.Link, Screen.SystemDashboard.route, listOf("link", "shortener", "url", "tinyurl")),
     GlobalToolItem("Age & Date Calculator", "Utility", "Calculate precise age, elapsed days, and upcoming birthdays", Icons.Default.Cake, Screen.AgeCalculator.route, listOf("age", "birthday", "date", "calendar", "calculator")),
     GlobalToolItem("Scientific Calculator", "Utility", "Standard and scientific mathematical calculation engine", Icons.Default.Calculate, Screen.Calculator.route, listOf("calculator", "math", "calc", "scientific")),
     GlobalToolItem("Coin Toss & Dice Roller", "Utility", "Fair virtual 3D coin toss and multi-sided dice roll simulator", Icons.Default.Casino, Screen.CoinToss.route, listOf("coin", "toss", "dice", "random", "roll")),

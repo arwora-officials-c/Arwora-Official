@@ -4,8 +4,6 @@ import android.app.Application
 import android.os.Handler
 import android.os.Looper
 import android.view.Choreographer
-import androidx.lifecycle.ProcessLifecycleOwner
-import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -19,8 +17,15 @@ object StartupDefer {
     fun postFirstFrame(task: suspend () -> Unit) = scope.launch { task() }
 
     /**
+     * Marks that MainActivity has completed its first drawn frame and flushes deferred startup tasks.
+     */
+    fun markFirstFrameDrawn() {
+        flushTasks()
+    }
+
+    /**
      * Schedules a block to run strictly after the first frame has rendered.
-     * Uses ProcessLifecycleOwner and Choreographer postFrameCallback on the main thread,
+     * Uses Choreographer postFrameCallback on the main thread,
      * executing tasks on Dispatchers.Default without blocking cold start or UI paint.
      */
     fun schedulePostFirstFrame(app: Application, block: suspend () -> Unit) {
@@ -75,24 +80,12 @@ object StartupDefer {
             copy
         }
 
-        try {
-            ProcessLifecycleOwner.get().lifecycleScope.launch(Dispatchers.Default) {
-                tasks.forEach { task ->
-                    try {
-                        task()
-                    } catch (e: Throwable) {
-                        e.printStackTrace()
-                    }
-                }
-            }
-        } catch (e: Throwable) {
-            scope.launch {
-                tasks.forEach { task ->
-                    try {
-                        task()
-                    } catch (err: Throwable) {
-                        err.printStackTrace()
-                    }
+        scope.launch {
+            tasks.forEach { task ->
+                try {
+                    task()
+                } catch (err: Throwable) {
+                    err.printStackTrace()
                 }
             }
         }

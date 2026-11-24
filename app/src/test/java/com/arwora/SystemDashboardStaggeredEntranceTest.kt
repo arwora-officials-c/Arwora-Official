@@ -136,10 +136,10 @@ class SystemDashboardStaggeredEntranceTest {
             "DNS Changer" to "dashboard_staggered_item_9",
             "App Locker" to "dashboard_staggered_item_10",
             "Permission Inspector" to "dashboard_staggered_item_20",
-            "IP Address Lookup" to "dashboard_staggered_item_21",
-            "Animation Speed" to "dashboard_staggered_item_22",
-            "App Ops" to "dashboard_staggered_item_24",
-            "Html To Apk" to "dashboard_staggered_item_28"
+            "Animation Speed" to "dashboard_staggered_item_21",
+            "App Ops" to "dashboard_staggered_item_23",
+            "Html To Apk" to "dashboard_staggered_item_26",
+            "Arwora Connect" to "dashboard_staggered_item_29"
         )
 
         expectedCardCheckpoints.forEach { (title, wrapperTag) ->

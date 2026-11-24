@@ -142,6 +142,12 @@ class BatteryAlarmService : Service() {
             dismissNotification(NOTIFICATION_ID_ALARM)
             stopSelf()
             return START_NOT_STICKY
+        } else if (action == ACTION_UPDATE_SETTINGS) {
+            serviceScope.launch {
+                val level = com.arwora.feature.system.battery.service.BatteryMonitorManager.batteryLevel.value
+                val charging = com.arwora.feature.system.battery.service.BatteryMonitorManager.isCharging.value
+                checkAlarms(level, charging)
+            }
         }
 
         // Keep service alive in foreground with a clean persistent notification
