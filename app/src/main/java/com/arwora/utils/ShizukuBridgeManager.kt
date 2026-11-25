@@ -10,6 +10,7 @@ import rikka.shizuku.Shizuku
 enum class ShizukuUiStatus(val badgeText: String) {
     ACTIVE_CONNECTED("Active / Connected"),
     PERMISSION_REQUIRED("Permission Required"),
+    PERMISSION_DENIED("Permission Denied"),
     SERVICE_STOPPED("Shizuku Service Stopped")
 }
 
@@ -108,8 +109,8 @@ object ShizukuBridgeManager {
     internal fun syncFromBridgeStatus(bridgeStatus: ShizukuBridgeStatus): ShizukuUiStatus {
         val uiStatus = when (bridgeStatus) {
             ShizukuBridgeStatus.AUTHORIZED -> ShizukuUiStatus.ACTIVE_CONNECTED
-            ShizukuBridgeStatus.PERMISSION_REQUIRED,
-            ShizukuBridgeStatus.RATIONALE_REQUIRED -> ShizukuUiStatus.PERMISSION_REQUIRED
+            ShizukuBridgeStatus.PERMISSION_REQUIRED -> ShizukuUiStatus.PERMISSION_REQUIRED
+            ShizukuBridgeStatus.RATIONALE_REQUIRED -> ShizukuUiStatus.PERMISSION_DENIED
             ShizukuBridgeStatus.BINDER_DEAD,
             ShizukuBridgeStatus.NOT_INSTALLED -> ShizukuUiStatus.SERVICE_STOPPED
         }

@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -32,11 +33,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,26 +49,64 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
+import com.arwora.deviceadmin.AppDeviceAdminReceiver
+import com.arwora.service.AppProtectionAccessibilityService
 import com.arwora.ui.AppManagerViewModel
+import com.arwora.ui.MainViewModel
 import com.arwora.ui.components.ArworaDesignTokens
 import com.arwora.ui.components.PinAuthDialog
 import com.arwora.ui.components.PinSetupDialog
+import com.arwora.utils.AppHiderManager
 import com.arwora.utils.AppLockerManager
 import com.arwora.utils.SoundEffectManager
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+private enum class PendingSecurityAuthAction {
+    OPEN_HIDDEN_VAULT,
+    DISABLE_UNINSTALL_PROTECTION,
+    DISABLE_INSTALL_BLOCK
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppLockerScreen(
     navController: NavController,
-    appManagerViewModel: AppManagerViewModel
+    appManagerViewModel: AppManagerViewModel,
+    mainViewModel: MainViewModel? = null
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val coroutineScope = rememberCoroutineScope()
+
+    var isAccessibilityGuardEnabled by remember {
+        mutableStateOf(AppProtectionAccessibilityService.isAccessibilityEnabled(context))
+    }
+    var isDeviceAdminEnabled by remember {
+        mutableStateOf(AppDeviceAdminReceiver.isDeviceAdminActive(context))
+    }
+
     LaunchedEffect(Unit) {
         AppLockerManager.init(context)
+        AppHiderManager.init(context)
         appManagerViewModel.loadInstalledApps()
+    }
+
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                isAccessibilityGuardEnabled = AppProtectionAccessibilityService.isAccessibilityEnabled(context)
+                isDeviceAdminEnabled = AppDeviceAdminReceiver.isDeviceAdminActive(context)
+                AppHiderManager.refreshPrivilegeMode(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     val isLockerEnabled by AppLockerManager.isLockerEnabled.collectAsStateWithLifecycle()
@@ -76,14 +117,39 @@ fun AppLockerScreen(
     val timeoutMinutes by AppLockerManager.timeoutMinutes.collectAsStateWithLifecycle()
     val vibrateOnError by AppLockerManager.vibrateOnError.collectAsStateWithLifecycle()
     val scrambleKeypad by AppLockerManager.scrambleKeypad.collectAsStateWithLifecycle()
+    val isUninstallProtectionEnabled by AppLockerManager.isUninstallProtectionEnabled.collectAsStateWithLifecycle()
+    val isInstallBlockEnabled by AppLockerManager.isInstallBlockEnabled.collectAsStateWithLifecycle()
+    val isSelfStealthEnabled by AppLockerManager.isSelfStealthEnabled.collectAsStateWithLifecycle()
+    val secretDialerCode by AppLockerManager.secretDialerCode.collectAsStateWithLifecycle()
+    val hiddenPackages by AppHiderManager.hiddenPackages.collectAsStateWithLifecycle()
+    val privilegeMode by AppHiderManager.privilegeMode.collectAsStateWithLifecycle()
     val installedApps by appManagerViewModel.installedApps.collectAsStateWithLifecycle()
+
+    val pendingHiddenVaultNav = mainViewModel?.pendingHiddenVaultNav?.collectAsStateWithLifecycle()?.value ?: false
 
     var selectedTab by remember { mutableIntStateOf(0) } // 0: Tools, 1: Apps, 2: Security
     var searchQuery by remember { mutableStateOf("") }
     var showPinSetupDialog by remember { mutableStateOf(false) }
     var showTestUnlockDialog by remember { mutableStateOf(false) }
+    var showHiddenVaultSheet by remember { mutableStateOf(false) }
+    var pendingSecurityAuth by remember { mutableStateOf<PendingSecurityAuthAction?>(null) }
     var showSuccessBanner by remember { mutableStateOf(false) }
     var bannerMessage by remember { mutableStateOf("") }
+
+    fun requestOpenVault() {
+        if (hasPin) {
+            pendingSecurityAuth = PendingSecurityAuthAction.OPEN_HIDDEN_VAULT
+        } else {
+            showHiddenVaultSheet = true
+        }
+    }
+
+    LaunchedEffect(pendingHiddenVaultNav) {
+        if (pendingHiddenVaultNav) {
+            mainViewModel?.consumePendingHiddenVault()
+            requestOpenVault()
+        }
+    }
 
     val biometricStatus = remember(context) { AppLockerManager.checkBiometricStatus(context) }
 
@@ -125,6 +191,19 @@ fun AppLockerScreen(
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = {
+                            SoundEffectManager.playClick()
+                            requestOpenVault()
+                        },
+                        modifier = Modifier.testTag("top_bar_hidden_vault_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.VisibilityOff,
+                            contentDescription = "Hidden Apps Vault",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                     if (isLockerEnabled) {
                         IconButton(
                             onClick = {
@@ -230,6 +309,12 @@ fun AppLockerScreen(
                         cardBgColor = cardBgColor,
                         installedApps = installedApps,
                         lockedPackages = lockedPackages,
+                        hiddenCount = hiddenPackages.size,
+                        secretDialerCode = secretDialerCode,
+                        onOpenVault = {
+                            SoundEffectManager.playClick()
+                            requestOpenVault()
+                        },
                         searchQuery = searchQuery,
                         onSearchChange = { searchQuery = it },
                         onToggleApp = { pkg ->
@@ -251,6 +336,13 @@ fun AppLockerScreen(
                         vibrateOnError = vibrateOnError,
                         scrambleKeypad = scrambleKeypad,
                         biometricStatus = biometricStatus,
+                        hiddenAppCount = hiddenPackages.size,
+                        secretDialerCode = secretDialerCode,
+                        isSelfStealthEnabled = isSelfStealthEnabled,
+                        isUninstallProtectionEnabled = isUninstallProtectionEnabled,
+                        isInstallBlockEnabled = isInstallBlockEnabled,
+                        isAccessibilityGuardEnabled = isAccessibilityGuardEnabled,
+                        isDeviceAdminEnabled = isDeviceAdminEnabled,
                         onSetupPin = { showPinSetupDialog = true },
                         onToggleBiometric = {
                             SoundEffectManager.playClick()
@@ -271,6 +363,52 @@ fun AppLockerScreen(
                         onTestUnlock = {
                             SoundEffectManager.playClick()
                             showTestUnlockDialog = true
+                        },
+                        onOpenHiddenVault = {
+                            SoundEffectManager.playClick()
+                            requestOpenVault()
+                        },
+                        onToggleUninstallProtection = { checked ->
+                            SoundEffectManager.playClick()
+                            if (checked) {
+                                if (!hasPin) {
+                                    showPinSetupDialog = true
+                                }
+                                AppLockerManager.setUninstallProtectionEnabled(context, true)
+                                bannerMessage = "Uninstall Protection activated"
+                                showSuccessBanner = true
+                            } else if (hasPin) {
+                                pendingSecurityAuth = PendingSecurityAuthAction.DISABLE_UNINSTALL_PROTECTION
+                            } else {
+                                AppLockerManager.setUninstallProtectionEnabled(context, false)
+                                bannerMessage = "Uninstall Protection disabled"
+                                showSuccessBanner = true
+                            }
+                        },
+                        onToggleInstallBlock = { checked ->
+                            SoundEffectManager.playClick()
+                            if (checked) {
+                                if (!hasPin) {
+                                    showPinSetupDialog = true
+                                }
+                                AppLockerManager.setInstallBlockEnabled(context, true)
+                                bannerMessage = "New App Install Block activated"
+                                showSuccessBanner = true
+                            } else if (hasPin) {
+                                pendingSecurityAuth = PendingSecurityAuthAction.DISABLE_INSTALL_BLOCK
+                            } else {
+                                AppLockerManager.setInstallBlockEnabled(context, false)
+                                bannerMessage = "New App Install Block disabled"
+                                showSuccessBanner = true
+                            }
+                        },
+                        onOpenAccessibilitySettings = {
+                            SoundEffectManager.playClick()
+                            AppProtectionAccessibilityService.openAccessibilitySettings(context)
+                        },
+                        onRequestDeviceAdmin = {
+                            SoundEffectManager.playClick()
+                            AppDeviceAdminReceiver.requestDeviceAdminActivation(context)
                         }
                     )
                 }
@@ -305,6 +443,81 @@ fun AppLockerScreen(
                 showTestUnlockDialog = false
                 bannerMessage = "Verification Successful! App Locker is working perfectly."
                 showSuccessBanner = true
+            }
+        )
+    }
+
+    pendingSecurityAuth?.let { action ->
+        val (authTitle, authSubtitle) = when (action) {
+            PendingSecurityAuthAction.OPEN_HIDDEN_VAULT ->
+                "Hidden Apps Vault" to "Verify identity to unlock hidden apps"
+            PendingSecurityAuthAction.DISABLE_UNINSTALL_PROTECTION ->
+                "Disable Uninstall Guard" to "Verify identity before disabling Uninstall Protection"
+            PendingSecurityAuthAction.DISABLE_INSTALL_BLOCK ->
+                "Disable Install Block" to "Verify identity before disabling Install Block"
+        }
+        PinAuthDialog(
+            title = authTitle,
+            subtitle = authSubtitle,
+            onDismiss = { pendingSecurityAuth = null },
+            onSuccess = {
+                pendingSecurityAuth = null
+                when (action) {
+                    PendingSecurityAuthAction.OPEN_HIDDEN_VAULT -> {
+                        showHiddenVaultSheet = true
+                    }
+                    PendingSecurityAuthAction.DISABLE_UNINSTALL_PROTECTION -> {
+                        AppLockerManager.setUninstallProtectionEnabled(context, false)
+                        bannerMessage = "Uninstall Protection disabled"
+                        showSuccessBanner = true
+                    }
+                    PendingSecurityAuthAction.DISABLE_INSTALL_BLOCK -> {
+                        AppLockerManager.setInstallBlockEnabled(context, false)
+                        bannerMessage = "New App Install Block disabled"
+                        showSuccessBanner = true
+                    }
+                }
+            }
+        )
+    }
+
+    if (showHiddenVaultSheet) {
+        HiddenAppsVaultSheet(
+            installedApps = installedApps,
+            hiddenPackages = hiddenPackages,
+            privilegeMode = privilegeMode,
+            isSelfStealthEnabled = isSelfStealthEnabled,
+            secretDialerCode = secretDialerCode,
+            onDismiss = { showHiddenVaultSheet = false },
+            onToggleSelfStealth = { enabled ->
+                SoundEffectManager.playClick()
+                val res = AppHiderManager.setSelfStealthEnabled(context, enabled)
+                bannerMessage = res.message
+                showSuccessBanner = true
+            },
+            onHideApp = { pkg ->
+                SoundEffectManager.playClick()
+                coroutineScope.launch {
+                    val res = AppHiderManager.hideApp(context, pkg)
+                    bannerMessage = res.message
+                    showSuccessBanner = true
+                }
+            },
+            onUnhideApp = { pkg ->
+                SoundEffectManager.playClick()
+                coroutineScope.launch {
+                    val res = AppHiderManager.unhideApp(context, pkg)
+                    bannerMessage = res.message
+                    showSuccessBanner = true
+                }
+            },
+            onLaunchHiddenApp = { pkg ->
+                SoundEffectManager.playClick()
+                coroutineScope.launch {
+                    val res = AppHiderManager.launchHiddenApp(context, pkg)
+                    bannerMessage = res.message
+                    showSuccessBanner = true
+                }
             }
         )
     }

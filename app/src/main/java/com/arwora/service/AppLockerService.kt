@@ -38,6 +38,13 @@ class AppLockerService : Service() {
         const val ACTION_STOP_SERVICE = "com.arwora.service.AppLockerService.STOP"
         var isRunning = false
 
+        private val PACKAGE_INSTALLER_PACKAGES = setOf(
+            "com.android.packageinstaller",
+            "com.google.android.packageinstaller",
+            "com.samsung.android.packageinstaller",
+            "com.miui.packageinstaller"
+        )
+
         fun isSelfPackage(pkg: String?, context: Context? = null): Boolean {
             if (pkg.isNullOrBlank()) return false
             val clean = pkg.trim()
@@ -160,8 +167,11 @@ class AppLockerService : Service() {
 
             while (isActive) {
                 try {
-                    // Check if master App Locker is enabled
-                    if (!AppLockerManager.isLockerEnabled.value) {
+                    val uninstallGuardActive = AppLockerManager.isUninstallProtectionEnabled.value
+                    val installBlockActive = AppLockerManager.isInstallBlockEnabled.value
+
+                    // Check if master App Locker or advanced guards are enabled
+                    if (!AppLockerManager.isLockerEnabled.value && !uninstallGuardActive && !installBlockActive) {
                         lastCheckedPackage = ""
                         lastObservedForeground = null
                         delay(1500L)
@@ -173,7 +183,7 @@ class AppLockerService : Service() {
                         .filterNot { isSelf(it) }
                         .toSet()
 
-                    if (lockedApps.isEmpty()) {
+                    if (lockedApps.isEmpty() && !uninstallGuardActive && !installBlockActive) {
                         lastCheckedPackage = ""
                         lastObservedForeground = null
                         delay(1500L)
@@ -206,11 +216,30 @@ class AppLockerService : Service() {
                         AppLockerManager.onForegroundPackageChanged(currentForeground)
 
                         // Strictly compare foreground package against user's locked apps list
-                        if (lockedApps.contains(currentForeground)) {
+                        if (AppLockerManager.isLockerEnabled.value && lockedApps.contains(currentForeground)) {
                             if (!AppLockerManager.isPackageUnlocked(currentForeground)) {
                                 if (lastCheckedPackage != currentForeground) {
                                     lastCheckedPackage = currentForeground
                                     launchLockScreen(currentForeground)
+                                }
+                            }
+                        } else if (uninstallGuardActive &&
+                            !AppLockerManager.isUninstallAuthorized() &&
+                            currentForeground in PACKAGE_INSTALLER_PACKAGES &&
+                            !AppLockerManager.isInstallAuthorized(AppInstallMonitorService.INSTALLER_PLACEHOLDER_PKG)
+                        ) {
+                            if (lastCheckedPackage != currentForeground) {
+                                lastCheckedPackage = currentForeground
+                                if (installBlockActive) {
+                                    AppInstallMonitorService.handleNewInstallDetected(
+                                        applicationContext,
+                                        AppInstallMonitorService.INSTALLER_PLACEHOLDER_PKG
+                                    )
+                                } else {
+                                    com.arwora.receiver.UninstallReceiver.interceptUninstallIntent(
+                                        applicationContext,
+                                        applicationContext.packageName
+                                    )
                                 }
                             }
                         } else {

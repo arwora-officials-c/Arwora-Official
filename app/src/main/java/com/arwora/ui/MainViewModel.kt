@@ -1033,6 +1033,18 @@ class MainViewModel(
         _pendingArworaConnectNav.value = false
     }
 
+    // === App Locker Hidden Vault Secret Dialer Deep-Link State ===
+    private val _pendingHiddenVaultNav = MutableStateFlow(false)
+    val pendingHiddenVaultNav: StateFlow<Boolean> = _pendingHiddenVaultNav.asStateFlow()
+
+    fun requestOpenHiddenVault() {
+        _pendingHiddenVaultNav.value = true
+    }
+
+    fun consumePendingHiddenVault() {
+        _pendingHiddenVaultNav.value = false
+    }
+
     private fun extractUrl(text: String): String {
         return try {
             val urlRegex = "(https?://[\\w-]+(\\.[\\w-]+)+(/[^\\s]*)?)".toRegex(RegexOption.IGNORE_CASE)

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -19,6 +20,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.test.core.app.ApplicationProvider
 import com.arwora.feature.system.connect.data.ArworaConnectEngine
 import com.arwora.feature.system.connect.data.ArworaConnectManager
@@ -417,6 +419,224 @@ class ArworaConnectTest {
         composeTestRule.onNodeWithTag("connect_forget_peer_peer_hub_1").performClick()
         composeTestRule.waitUntil(3_000L) {
             composeTestRule.onAllNodesWithText("No Trusted Peers Paired").fetchSemanticsNodes().isNotEmpty()
+        }
+    }
+
+    @Test
+    fun connectQrScannerDialogConfiguresCompatibleFillCenterPreviewAndFixedRoundedFrame() {
+        val preview = com.arwora.feature.system.connect.ui.createConnectScannerPreviewView(context)
+        assertEquals(
+            androidx.camera.view.PreviewView.ImplementationMode.COMPATIBLE,
+            preview.implementationMode
+        )
+        assertEquals(
+            androidx.camera.view.PreviewView.ScaleType.FILL_CENTER,
+            preview.scaleType
+        )
+        assertEquals(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+            preview.layoutParams.width
+        )
+        assertEquals(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+            preview.layoutParams.height
+        )
+
+        composeTestRule.setContent {
+            NameGenProTheme(darkTheme = true) {
+                com.arwora.feature.system.connect.ui.ConnectQrScannerDialog(
+                    onQrDetected = {},
+                    onDismiss = {}
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("connect_qr_scanner_dialog").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Scan Arwora Connect QR").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("connect_scanner_camera_frame").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("connect_scanner_preview_view").assertIsDisplayed()
+
+        val frameHeightDp = with(composeTestRule.density) {
+            composeTestRule.onNodeWithTag("connect_scanner_camera_frame")
+                .fetchSemanticsNode()
+                .boundsInRoot
+                .height
+                .toDp()
+                .value
+        }
+        assertTrue(
+            "Scanner camera frame height should be cleanly constrained between 280dp and 320dp (was ${frameHeightDp}dp)",
+            frameHeightDp in 280f..320f
+        )
+    }
+
+    @Test
+    fun connectQrScannerDialogShowsPermissionPromptWhenCameraDenied() {
+        shadowOf(context).denyPermissions(Manifest.permission.CAMERA)
+
+        composeTestRule.setContent {
+            NameGenProTheme(darkTheme = true) {
+                com.arwora.feature.system.connect.ui.ConnectQrScannerDialog(
+                    onQrDetected = {},
+                    onDismiss = {}
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("connect_qr_scanner_dialog").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("connect_scanner_camera_frame").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("connect_scanner_grant_camera_btn").assertIsDisplayed()
+    }
+
+    private fun assertSingleLineNoEllipsis(tag: String) {
+        val node = composeTestRule.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode()
+        val layouts = mutableListOf<TextLayoutResult>()
+        val action = node.config[SemanticsActions.GetTextLayoutResult]
+        assertTrue("Expected GetTextLayoutResult on $tag", action.action?.invoke(layouts) == true)
+        assertTrue("Expected non-empty TextLayoutResult for $tag", layouts.isNotEmpty())
+        val layout = layouts.first()
+        assertEquals("Expected single line for $tag (got ${layout.lineCount})", 1, layout.lineCount)
+        assertFalse("Expected no ellipsis for $tag", layout.isLineEllipsized(0))
+    }
+
+    @Test
+    @Config(sdk = [35], qualifiers = "w360dp-h780dp")
+    fun connectHubDisconnectButtonStaysSingleLineAndRequiresConfirmation() = runBlocking {
+        val remoteDir = File(tempRoot, "remote_hub").apply { mkdirs() }
+        val remoteStore = ConnectSecurityStore(context, "remote_hub_peer").apply {
+            clearAllForTests()
+            setDeviceName("Remote Studio Node")
+        }
+        val remotePort = allocateFreePort()
+        val remoteEngine = ArworaConnectEngine(
+            context,
+            remoteStore,
+            preferredPort = remotePort,
+            overrideReceiveDir = remoteDir
+        )
+        val localEngine = ArworaConnectManager.getEngine(context)
+
+        try {
+            val boundRemotePort = remoteEngine.startServer()
+            localEngine.startServer()
+            val payload = remoteEngine.buildQrPayload().copy(hostIp = "127.0.0.1", port = boundRemotePort)
+            val pairResult = localEngine.pairWithQrPayload(payload)
+            assertTrue("Pairing failed: ${pairResult.exceptionOrNull()}", pairResult.isSuccess)
+            val remoteId = remoteStore.getOrCreateDeviceId()
+
+            waitUntilCondition {
+                localEngine.peers.value.firstOrNull { it.peer.deviceId == remoteId }?.connectionState ==
+                    PeerConnectionState.CONNECTED
+            }
+
+            val vm = ArworaConnectViewModel(context)
+            composeTestRule.setContent {
+                NameGenProTheme(darkTheme = true) {
+                    ArworaConnectScreen(
+                        onBack = {},
+                        vm = vm
+                    )
+                }
+            }
+
+            composeTestRule.onNodeWithTag("connect_hub_list")
+                .performScrollToNode(hasTestTag("connect_peer_card_$remoteId"))
+            composeTestRule.onNodeWithTag("connect_disconnect_peer_$remoteId").assertIsDisplayed()
+
+            // Verify Disconnect stays strictly on 1 line even on compact 360dp width
+            assertSingleLineNoEllipsis("connect_disconnect_label_$remoteId")
+
+            // Tapping Disconnect opens confirmation dialog without disconnecting immediately
+            composeTestRule.onNodeWithTag("connect_disconnect_peer_$remoteId").performClick()
+            composeTestRule.onNodeWithTag("connect_disconnect_confirm_dialog").assertIsDisplayed()
+            composeTestRule.onNodeWithText("Disconnect Device").assertIsDisplayed()
+            composeTestRule.onNodeWithText("Are you sure you want to disconnect from this peer?").assertIsDisplayed()
+            assertEquals(
+                PeerConnectionState.CONNECTED,
+                localEngine.peers.value.first { it.peer.deviceId == remoteId }.connectionState
+            )
+
+            // Cancel preserves active connection
+            composeTestRule.onNodeWithTag("connect_disconnect_cancel_btn").performClick()
+            composeTestRule.waitUntil(3_000L) {
+                composeTestRule.onAllNodesWithTag("connect_disconnect_confirm_dialog").fetchSemanticsNodes().isEmpty()
+            }
+            assertEquals(
+                PeerConnectionState.CONNECTED,
+                localEngine.peers.value.first { it.peer.deviceId == remoteId }.connectionState
+            )
+
+            // Confirming Disconnect terminates session
+            composeTestRule.onNodeWithTag("connect_disconnect_peer_$remoteId").performClick()
+            composeTestRule.onNodeWithTag("connect_disconnect_confirm_dialog").assertIsDisplayed()
+            composeTestRule.onNodeWithTag("connect_disconnect_confirm_btn").performClick()
+
+            waitUntilCondition {
+                localEngine.peers.value.first { it.peer.deviceId == remoteId }.connectionState ==
+                    PeerConnectionState.OFFLINE
+            }
+        } finally {
+            remoteEngine.shutdown()
+        }
+    }
+
+    @Test
+    @Config(sdk = [35], qualifiers = "w360dp-h780dp")
+    fun connectCardDisconnectButtonStaysSingleLineAndRequiresConfirmation() = runBlocking {
+        val remoteDir = File(tempRoot, "remote_card").apply { mkdirs() }
+        val remoteStore = ConnectSecurityStore(context, "remote_card_peer").apply {
+            clearAllForTests()
+            setDeviceName("Dashboard Peer")
+        }
+        val remotePort = allocateFreePort()
+        val remoteEngine = ArworaConnectEngine(
+            context,
+            remoteStore,
+            preferredPort = remotePort,
+            overrideReceiveDir = remoteDir
+        )
+        val localEngine = ArworaConnectManager.getEngine(context)
+
+        try {
+            val boundRemotePort = remoteEngine.startServer()
+            localEngine.startServer()
+            val payload = remoteEngine.buildQrPayload().copy(hostIp = "127.0.0.1", port = boundRemotePort)
+            assertTrue(localEngine.pairWithQrPayload(payload).isSuccess)
+            val remoteId = remoteStore.getOrCreateDeviceId()
+
+            waitUntilCondition {
+                localEngine.peers.value.firstOrNull { it.peer.deviceId == remoteId }?.connectionState ==
+                    PeerConnectionState.CONNECTED
+            }
+
+            composeTestRule.setContent {
+                NameGenProTheme(darkTheme = true) {
+                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                        ArworaConnectCard(onOpenConnectHub = {})
+                    }
+                }
+            }
+
+            composeTestRule.onNodeWithTag("connect_card_disconnect_$remoteId").performScrollTo().assertIsDisplayed()
+            assertSingleLineNoEllipsis("connect_card_disconnect_label_$remoteId")
+
+            composeTestRule.onNodeWithTag("connect_card_disconnect_$remoteId").performClick()
+            composeTestRule.onNodeWithTag("connect_disconnect_confirm_dialog").assertIsDisplayed()
+            composeTestRule.onNodeWithText("Are you sure you want to disconnect from this peer?").assertIsDisplayed()
+            assertEquals(
+                PeerConnectionState.CONNECTED,
+                localEngine.peers.value.first { it.peer.deviceId == remoteId }.connectionState
+            )
+
+            composeTestRule.onNodeWithTag("connect_disconnect_confirm_btn").performClick()
+            waitUntilCondition {
+                localEngine.peers.value.first { it.peer.deviceId == remoteId }.connectionState ==
+                    PeerConnectionState.OFFLINE
+            }
+        } finally {
+            remoteEngine.shutdown()
         }
     }
 }

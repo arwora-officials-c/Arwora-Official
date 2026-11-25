@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.os.Process
+import android.provider.DocumentsContract
 import android.provider.Settings
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -38,6 +39,9 @@ data class ManagedAppPermission(
  * provides runtime permission + Android system settings navigation helpers.
  */
 object AppPermissionsHelper {
+
+    private const val PREFS_PERMISSIONS = "arwora_permissions_prefs"
+    private const val KEY_SAF_TREE_URI = "saf_tree_uri"
 
     fun inspectPermissions(context: Context): List<ManagedAppPermission> {
         val micGranted = isMicrophoneGranted(context)
@@ -161,10 +165,83 @@ object AppPermissionsHelper {
         false
     }
 
-    fun isStorageGranted(context: Context): Boolean = try {
-        val manageAllGranted = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+    fun hasAllFilesAccess(context: Context): Boolean = try {
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
             Environment.isExternalStorageManager()
-        if (manageAllGranted) {
+    } catch (_: Throwable) {
+        false
+    }
+
+    fun hasSafDirectoryGrant(context: Context): Boolean = try {
+        context.contentResolver.persistedUriPermissions.any {
+            it.isReadPermission || it.isWritePermission
+        }
+    } catch (_: Throwable) {
+        false
+    }
+
+    fun getPersistedSafTreeUri(context: Context): Uri? = try {
+        val persisted = context.contentResolver.persistedUriPermissions
+            .firstOrNull { it.isReadPermission || it.isWritePermission }
+            ?.uri
+        if (persisted != null) {
+            persisted
+        } else {
+            val raw = context.getSharedPreferences(PREFS_PERMISSIONS, Context.MODE_PRIVATE)
+                .getString(KEY_SAF_TREE_URI, null)
+            if (!raw.isNullOrBlank() && hasSafDirectoryGrant(context)) Uri.parse(raw) else null
+        }
+    } catch (_: Throwable) {
+        null
+    }
+
+    fun persistSafTreeUri(context: Context, uri: Uri?): Boolean {
+        if (uri == null) return false
+        return try {
+            val readWriteFlags =
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            try {
+                context.contentResolver.takePersistableUriPermission(uri, readWriteFlags)
+            } catch (_: SecurityException) {
+                try {
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                } catch (_: SecurityException) {
+                    return false
+                }
+            }
+            context.getSharedPreferences(PREFS_PERMISSIONS, Context.MODE_PRIVATE)
+                .edit()
+                .putString(KEY_SAF_TREE_URI, uri.toString())
+                .apply()
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    fun clearSafTreeUri(context: Context) {
+        try {
+            val flags =
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            context.contentResolver.persistedUriPermissions.forEach { perm ->
+                try {
+                    context.contentResolver.releasePersistableUriPermission(perm.uri, flags)
+                } catch (_: Throwable) {
+                }
+            }
+            context.getSharedPreferences(PREFS_PERMISSIONS, Context.MODE_PRIVATE)
+                .edit()
+                .remove(KEY_SAF_TREE_URI)
+                .apply()
+        } catch (_: Throwable) {
+        }
+    }
+
+    fun isStorageGranted(context: Context): Boolean = try {
+        if (hasAllFilesAccess(context) || hasSafDirectoryGrant(context)) {
             true
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             ContextCompat.checkSelfPermission(
@@ -313,11 +390,38 @@ object AppPermissionsHelper {
         return permissions.firstOrNull { !it.isGranted }?.category
     }
 
+    fun createManageAllFilesAccessIntent(context: Context): Intent {
+        val packageUri = Uri.parse("package:${context.packageName}")
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, packageUri)
+        } else {
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri)
+        }
+        return intent.apply {
+            if (context !is android.app.Activity) {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        }
+    }
+
+    fun createSafDocumentTreeIntent(initialUri: Uri? = null): Intent =
+        Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+            addFlags(
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
+            )
+            if (initialUri != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                putExtra(DocumentsContract.EXTRA_INITIAL_URI, initialUri)
+            }
+        }
+
     fun createSettingsIntent(context: Context, category: ManagedPermissionCategory): Intent {
         val packageUri = Uri.fromParts("package", context.packageName, null)
         return when (category) {
+            ManagedPermissionCategory.STORAGE -> return createManageAllFilesAccessIntent(context)
             ManagedPermissionCategory.MICROPHONE,
-            ManagedPermissionCategory.STORAGE,
             ManagedPermissionCategory.CAMERA -> Intent(
                 Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                 packageUri
@@ -351,25 +455,62 @@ object AppPermissionsHelper {
         }
     }
 
+    fun openAllFilesAccessWithSafFallback(
+        context: Context,
+        onSafFallback: (() -> Unit)? = null
+    ): Boolean {
+        val candidates = buildList {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                add(createManageAllFilesAccessIntent(context))
+                add(
+                    Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION).apply {
+                        if (context !is android.app.Activity) {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                    }
+                )
+            }
+        }
+        for (intent in candidates) {
+            try {
+                if (intent.resolveActivity(context.packageManager) != null) {
+                    context.startActivity(intent)
+                    return true
+                }
+            } catch (_: Exception) {
+                // Fall back to next candidate
+            }
+        }
+        if (onSafFallback != null) {
+            onSafFallback()
+            return true
+        }
+        return try {
+            val safIntent = createSafDocumentTreeIntent().apply {
+                if (context !is android.app.Activity) {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            }
+            if (safIntent.resolveActivity(context.packageManager) != null) {
+                context.startActivity(safIntent)
+                true
+            } else {
+                openAppDetailsSettings(context)
+            }
+        } catch (_: Exception) {
+            openAppDetailsSettings(context)
+        }
+    }
+
     fun openPermissionSettings(context: Context, category: ManagedPermissionCategory): Boolean {
+        if (category == ManagedPermissionCategory.STORAGE && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            return openAllFilesAccessWithSafFallback(context)
+        }
         return try {
             context.startActivity(createSettingsIntent(context, category))
             true
         } catch (_: Exception) {
-            try {
-                val fallback = Intent(
-                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                    Uri.fromParts("package", context.packageName, null)
-                ).apply {
-                    if (context !is android.app.Activity) {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                }
-                context.startActivity(fallback)
-                true
-            } catch (_: Exception) {
-                false
-            }
+            openAppDetailsSettings(context)
         }
     }
 

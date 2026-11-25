@@ -45,6 +45,10 @@ object AppLockerManager {
     private const val KEY_SECURITY_Q = "locker_security_question"
     private const val KEY_SECURITY_A_HASH = "locker_security_answer_hash"
     private const val KEY_FAILED_ATTEMPTS = "locker_failed_attempts"
+    private const val KEY_UNINSTALL_PROTECTION = "locker_uninstall_protection"
+    private const val KEY_INSTALL_BLOCK = "locker_install_block"
+    private const val KEY_SELF_STEALTH = "locker_self_stealth"
+    private const val KEY_SECRET_DIALER_CODE = "locker_secret_dialer_code"
 
     private var prefs: SharedPreferences? = null
 
@@ -81,8 +85,24 @@ object AppLockerManager {
     private val _failedAttempts = MutableStateFlow(0)
     val failedAttempts: StateFlow<Int> = _failedAttempts.asStateFlow()
 
+    private val _isUninstallProtectionEnabled = MutableStateFlow(false)
+    val isUninstallProtectionEnabled: StateFlow<Boolean> = _isUninstallProtectionEnabled.asStateFlow()
+
+    private val _isInstallBlockEnabled = MutableStateFlow(false)
+    val isInstallBlockEnabled: StateFlow<Boolean> = _isInstallBlockEnabled.asStateFlow()
+
+    private val _isSelfStealthEnabled = MutableStateFlow(false)
+    val isSelfStealthEnabled: StateFlow<Boolean> = _isSelfStealthEnabled.asStateFlow()
+
+    private val _secretDialerCode = MutableStateFlow("2796")
+    val secretDialerCode: StateFlow<String> = _secretDialerCode.asStateFlow()
+
     // Temporary session unlocks (route -> timestamp)
     private val unlockedSessions = mutableMapOf<String, Long>()
+    @Volatile
+    private var uninstallAuthorizedUntilMs: Long = 0L
+    private val authorizedInstallPackages = mutableMapOf<String, Long>()
+    private val temporarilyExemptUninstallPackages = mutableSetOf<String>()
 
     val availableTools = listOf(
         LockableTool("wifi_ctrl", "Wi-Fi Controller", "wifi_controller", "Network", "Diagnostics & connected devices inspector"),
@@ -109,6 +129,16 @@ object AppLockerManager {
         }
     }
 
+    internal fun resetForTests(context: Context) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().clear().commit()
+        prefs = null
+        unlockedSessions.clear()
+        uninstallAuthorizedUntilMs = 0L
+        authorizedInstallPackages.clear()
+        temporarilyExemptUninstallPackages.clear()
+        init(context)
+    }
+
     private fun syncFromPrefs() {
         val p = prefs ?: return
         _isLockerEnabled.value = p.getBoolean(KEY_ENABLED, false)
@@ -124,6 +154,10 @@ object AppLockerManager {
         _persistentNotification.value = p.getBoolean(KEY_PERSISTENT_NOTIF, true)
         _securityQuestion.value = p.getString(KEY_SECURITY_Q, null)
         _failedAttempts.value = p.getInt(KEY_FAILED_ATTEMPTS, 0)
+        _isUninstallProtectionEnabled.value = p.getBoolean(KEY_UNINSTALL_PROTECTION, false)
+        _isInstallBlockEnabled.value = p.getBoolean(KEY_INSTALL_BLOCK, false)
+        _isSelfStealthEnabled.value = p.getBoolean(KEY_SELF_STEALTH, false)
+        _secretDialerCode.value = p.getString(KEY_SECRET_DIALER_CODE, "2796") ?: "2796"
     }
 
     fun isSelfPackageName(packageName: String?): Boolean {
@@ -140,11 +174,98 @@ object AppLockerManager {
         init(context)
         prefs?.edit()?.putBoolean(KEY_ENABLED, enabled)?.apply()
         _isLockerEnabled.value = enabled
-        if (enabled && _lockedPackages.value.isNotEmpty()) {
+        syncBackgroundProtectionServices(context)
+    }
+
+    fun setUninstallProtectionEnabled(context: Context, enabled: Boolean) {
+        init(context)
+        prefs?.edit()?.putBoolean(KEY_UNINSTALL_PROTECTION, enabled)?.apply()
+        _isUninstallProtectionEnabled.value = enabled
+        if (!enabled) {
+            uninstallAuthorizedUntilMs = 0L
+        }
+        runCatching {
+            com.arwora.deviceadmin.AppDeviceAdminReceiver.syncDeviceOwnerUninstallPolicy(context, enabled)
+        }
+        syncBackgroundProtectionServices(context)
+    }
+
+    fun setInstallBlockEnabled(context: Context, enabled: Boolean) {
+        init(context)
+        prefs?.edit()?.putBoolean(KEY_INSTALL_BLOCK, enabled)?.apply()
+        _isInstallBlockEnabled.value = enabled
+        if (!enabled) {
+            authorizedInstallPackages.clear()
+        }
+        syncBackgroundProtectionServices(context)
+    }
+
+    internal fun setSelfStealthState(context: Context, enabled: Boolean) {
+        init(context)
+        prefs?.edit()?.putBoolean(KEY_SELF_STEALTH, enabled)?.apply()
+        _isSelfStealthEnabled.value = enabled
+    }
+
+    fun syncBackgroundProtectionServices(context: Context) {
+        val lockerNeeded = _isLockerEnabled.value &&
+            (_lockedPackages.value.isNotEmpty() || _isUninstallProtectionEnabled.value || _isInstallBlockEnabled.value)
+        if (lockerNeeded) {
             com.arwora.service.AppLockerService.start(context)
-        } else if (!enabled) {
+        } else {
             com.arwora.service.AppLockerService.stop(context)
         }
+        com.arwora.service.AppInstallMonitorService.syncWithPreferences(context)
+    }
+
+    fun grantTemporaryUninstallPass(durationMs: Long = 30_000L) {
+        uninstallAuthorizedUntilMs = System.currentTimeMillis() + durationMs
+    }
+
+    fun isUninstallAuthorized(): Boolean {
+        return System.currentTimeMillis() <= uninstallAuthorizedUntilMs
+    }
+
+    fun revokeUninstallAuthorization() {
+        uninstallAuthorizedUntilMs = 0L
+    }
+
+    fun temporarilyExemptUninstall(packageName: String) {
+        if (packageName.isNotBlank()) {
+            temporarilyExemptUninstallPackages.add(packageName)
+        }
+    }
+
+    fun authorizeInstall(packageName: String, durationMs: Long = 120_000L) {
+        val clean = packageName.trim()
+        if (clean.isNotEmpty()) {
+            authorizedInstallPackages[clean] = System.currentTimeMillis() + durationMs
+            temporarilyExemptUninstallPackages.remove(clean)
+        }
+    }
+
+    fun isInstallAuthorized(packageName: String): Boolean {
+        val clean = packageName.trim()
+        val now = System.currentTimeMillis()
+        val exactUntil = authorizedInstallPackages[clean]
+        if (exactUntil != null && now <= exactUntil) return true
+        val pendingUntil = authorizedInstallPackages[com.arwora.service.AppInstallMonitorService.INSTALLER_PLACEHOLDER_PKG]
+        if (pendingUntil != null && now <= pendingUntil) return true
+        return false
+    }
+
+    fun clearInstallAuthorizations() {
+        authorizedInstallPackages.clear()
+        temporarilyExemptUninstallPackages.clear()
+    }
+
+    fun isPackageProtectedFromUninstall(packageName: String?): Boolean {
+        if (!_isUninstallProtectionEnabled.value) return false
+        val clean = packageName?.trim().orEmpty()
+        if (clean.isNotEmpty() && temporarilyExemptUninstallPackages.contains(clean)) return false
+        if (clean.isEmpty()) return true
+        return isSelfPackageName(clean) ||
+            _lockedPackages.value.contains(clean) ||
+            AppHiderManager.isAppHidden(clean)
     }
 
     fun setPersistentNotification(context: Context, enabled: Boolean) {
@@ -320,11 +441,7 @@ object AppLockerManager {
         if (willLock) current.add(packageName) else current.remove(packageName)
         prefs?.edit()?.putStringSet(KEY_LOCKED_PACKAGES, current)?.apply()
         _lockedPackages.value = current
-        if (_isLockerEnabled.value && current.isNotEmpty()) {
-            com.arwora.service.AppLockerService.start(context)
-        } else if (current.isEmpty()) {
-            com.arwora.service.AppLockerService.stop(context)
-        }
+        syncBackgroundProtectionServices(context)
         return willLock
     }
 

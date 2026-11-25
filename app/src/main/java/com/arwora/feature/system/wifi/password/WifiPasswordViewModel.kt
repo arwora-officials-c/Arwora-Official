@@ -7,8 +7,13 @@ import android.content.Context
 import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.arwora.utils.AdbShellExecutor
 import com.arwora.utils.NativeAdbConnectionState
 import com.arwora.utils.NativeAdbManager
+import com.arwora.utils.PrivilegeEngine
+import com.arwora.utils.ShizukuBridgeManager
+import com.arwora.utils.ShizukuConnectOutcome
+import com.arwora.utils.ShizukuUiStatus
 import com.arwora.utils.WirelessPairingManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -29,7 +34,9 @@ class WifiPasswordViewModel(application: Application) : AndroidViewModel(applica
     private val _revealedPasswordIds = MutableStateFlow<Set<String>>(emptySet())
     val revealedPasswordIds: StateFlow<Set<String>> = _revealedPasswordIds.asStateFlow()
 
-    private val _isGlobalRevealAll = MutableStateFlow(false)
+    private val _individuallyMaskedIds = MutableStateFlow<Set<String>>(emptySet())
+
+    private val _isGlobalRevealAll = MutableStateFlow(true)
     val isGlobalRevealAll: StateFlow<Boolean> = _isGlobalRevealAll.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
@@ -43,6 +50,8 @@ class WifiPasswordViewModel(application: Application) : AndroidViewModel(applica
 
     val isElevatedModeAvailable: StateFlow<Boolean> = repository.isElevatedModeAvailable
     val adbState: StateFlow<NativeAdbConnectionState> = repository.adbState
+    val activeEngine: StateFlow<PrivilegeEngine> = repository.activeEngine
+    val shizukuStatus: StateFlow<ShizukuUiStatus> = ShizukuBridgeManager.connectionStatus
 
     val filteredNetworks: StateFlow<List<SavedWifiNetwork>> = combine(
         repository.networks,
@@ -73,12 +82,38 @@ class WifiPasswordViewModel(application: Application) : AndroidViewModel(applica
                 refreshAdbStatus()
             }
         }
+        viewModelScope.launch {
+            AdbShellExecutor.activeEngine.collectLatest {
+                refreshAdbStatus()
+            }
+        }
+        viewModelScope.launch {
+            ShizukuBridgeManager.connectionStatus.collectLatest {
+                refreshAdbStatus()
+            }
+        }
+        viewModelScope.launch {
+            repository.networks.collectLatest { list ->
+                if (_isGlobalRevealAll.value) {
+                    val masked = _individuallyMaskedIds.value
+                    _revealedPasswordIds.value = list
+                        .map { it.id }
+                        .filterNot { masked.contains(it) }
+                        .toSet()
+                }
+            }
+        }
     }
 
     fun refreshAdbStatus() {
         val prevElevated = isElevatedModeAvailable.value
+        val prevEngine = activeEngine.value
         val state = repository.refreshAdbState()
-        if (!prevElevated && state == NativeAdbConnectionState.CONNECTED) {
+        val nowElevated = isElevatedModeAvailable.value
+        val nowEngine = activeEngine.value
+        if ((!prevElevated && (nowElevated || state == NativeAdbConnectionState.CONNECTED)) ||
+            (nowElevated && prevEngine != nowEngine)
+        ) {
             refresh()
         }
     }
@@ -88,8 +123,16 @@ class WifiPasswordViewModel(application: Application) : AndroidViewModel(applica
             _isLoading.value = true
             try {
                 repository.refreshSavedNetworks()
-                if (revealAfter || _isGlobalRevealAll.value) {
+                if (revealAfter) {
+                    _isGlobalRevealAll.value = true
+                    _individuallyMaskedIds.value = emptySet()
                     _revealedPasswordIds.value = repository.networks.value.map { it.id }.toSet()
+                } else if (_isGlobalRevealAll.value) {
+                    val masked = _individuallyMaskedIds.value
+                    _revealedPasswordIds.value = repository.networks.value
+                        .map { it.id }
+                        .filterNot { masked.contains(it) }
+                        .toSet()
                 }
             } finally {
                 _isLoading.value = false
@@ -102,22 +145,38 @@ class WifiPasswordViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun togglePasswordVisibility(networkId: String) {
-        val current = _revealedPasswordIds.value.toMutableSet()
-        if (current.contains(networkId)) {
-            current.remove(networkId)
+        if (_isGlobalRevealAll.value) {
+            val masked = _individuallyMaskedIds.value.toMutableSet()
+            if (masked.contains(networkId)) {
+                masked.remove(networkId)
+            } else {
+                masked.add(networkId)
+            }
+            _individuallyMaskedIds.value = masked
+            _revealedPasswordIds.value = repository.networks.value
+                .map { it.id }
+                .filterNot { masked.contains(it) }
+                .toSet()
         } else {
-            current.add(networkId)
+            val current = _revealedPasswordIds.value.toMutableSet()
+            if (current.contains(networkId)) {
+                current.remove(networkId)
+            } else {
+                current.add(networkId)
+            }
+            _revealedPasswordIds.value = current
         }
-        _revealedPasswordIds.value = current
     }
 
     fun toggleRevealAll() {
         val newState = !_isGlobalRevealAll.value
         _isGlobalRevealAll.value = newState
+        _individuallyMaskedIds.value = emptySet()
         if (newState) {
-            val allIds = filteredNetworks.value.map { it.id }.toSet()
+            val allIds = repository.networks.value.map { it.id }.toSet()
             _revealedPasswordIds.value = allIds
-            if (repository.networks.value.isEmpty() || repository.refreshAdbState() == NativeAdbConnectionState.CONNECTED) {
+            repository.refreshAdbState()
+            if (repository.networks.value.isEmpty() || isElevatedModeAvailable.value) {
                 refresh(revealAfter = true)
             }
         } else {
@@ -132,7 +191,11 @@ class WifiPasswordViewModel(application: Application) : AndroidViewModel(applica
     val isForgetAllDialogOpen: StateFlow<Boolean> = _isForgetAllDialogOpen.asStateFlow()
 
     fun isPasswordVisible(networkId: String): Boolean {
-        return _isGlobalRevealAll.value || _revealedPasswordIds.value.contains(networkId)
+        return if (_isGlobalRevealAll.value) {
+            !_individuallyMaskedIds.value.contains(networkId)
+        } else {
+            _revealedPasswordIds.value.contains(networkId)
+        }
     }
 
     fun copyPasswordToClipboard(context: Context, network: SavedWifiNetwork) {
@@ -250,6 +313,26 @@ class WifiPasswordViewModel(application: Application) : AndroidViewModel(applica
             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
             if (ok) {
                 refresh()
+            }
+        }
+    }
+
+    fun connectShizuku(context: Context) {
+        val outcome = ShizukuBridgeManager.connectShizuku(context)
+        refreshAdbStatus()
+        when (outcome) {
+            ShizukuConnectOutcome.ALREADY_CONNECTED -> {
+                Toast.makeText(context, "Shizuku connected", Toast.LENGTH_SHORT).show()
+                refresh()
+            }
+            ShizukuConnectOutcome.PERMISSION_REQUESTED -> {
+                Toast.makeText(context, "Waiting for Shizuku authorization...", Toast.LENGTH_SHORT).show()
+            }
+            ShizukuConnectOutcome.SERVICE_STOPPED_OPENED_APP -> {
+                Toast.makeText(context, "Start Shizuku service, then return to view Wi-Fi passwords", Toast.LENGTH_LONG).show()
+            }
+            ShizukuConnectOutcome.SERVICE_STOPPED_UNAVAILABLE -> {
+                Toast.makeText(context, "Shizuku is not installed on this device", Toast.LENGTH_SHORT).show()
             }
         }
     }

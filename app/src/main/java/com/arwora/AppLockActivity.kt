@@ -36,16 +36,21 @@ class AppLockActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_PACKAGE_NAME = "extra_locked_package_name"
+        const val EXTRA_LOCK_MODE = "extra_lock_mode"
+        const val MODE_APP_LOCK = "mode_app_lock"
+        const val MODE_UNINSTALL_GUARD = "mode_uninstall_guard"
+        const val MODE_INSTALL_BLOCK = "mode_install_block"
     }
 
     private var currentTargetPackage: String = ""
+    private var currentMode: String = MODE_APP_LOCK
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                goToHomeScreen()
+                handleDismissOrReject()
             }
         })
 
@@ -68,32 +73,81 @@ class AppLockActivity : ComponentActivity() {
     }
 
     private fun processLockIntent(inIntent: Intent?): Boolean {
+        AppLockerManager.init(applicationContext)
+        val mode = inIntent?.getStringExtra(EXTRA_LOCK_MODE) ?: MODE_APP_LOCK
         val targetPackage = inIntent?.getStringExtra(EXTRA_PACKAGE_NAME) ?: ""
-        if (targetPackage.isBlank() ||
-            AppLockerManager.isSelfPackageName(targetPackage) ||
-            targetPackage == packageName ||
-            targetPackage == applicationContext.packageName ||
-            !AppLockerManager.isAppLocked(targetPackage) ||
-            AppLockerManager.isPackageUnlocked(targetPackage)
-        ) {
-            return false
+
+        currentMode = mode
+        return when (mode) {
+            MODE_UNINSTALL_GUARD -> {
+                if (!AppLockerManager.isUninstallProtectionEnabled.value || AppLockerManager.isUninstallAuthorized()) {
+                    false
+                } else {
+                    currentTargetPackage = targetPackage.ifBlank { packageName }
+                    true
+                }
+            }
+            MODE_INSTALL_BLOCK -> {
+                if (!AppLockerManager.isInstallBlockEnabled.value ||
+                    (targetPackage.isNotBlank() && AppLockerManager.isInstallAuthorized(targetPackage))
+                ) {
+                    false
+                } else {
+                    currentTargetPackage = targetPackage.ifBlank {
+                        com.arwora.service.AppInstallMonitorService.INSTALLER_PLACEHOLDER_PKG
+                    }
+                    true
+                }
+            }
+            else -> {
+                if (targetPackage.isBlank() ||
+                    AppLockerManager.isSelfPackageName(targetPackage) ||
+                    targetPackage == packageName ||
+                    targetPackage == applicationContext.packageName ||
+                    !AppLockerManager.isAppLocked(targetPackage) ||
+                    AppLockerManager.isPackageUnlocked(targetPackage)
+                ) {
+                    false
+                } else {
+                    currentTargetPackage = targetPackage
+                    true
+                }
+            }
         }
-        currentTargetPackage = targetPackage
-        return true
     }
 
     private fun renderUi() {
         val pm = packageManager
         var appName = "Protected Application"
         try {
-            val appInfo = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                pm.getApplicationInfo(currentTargetPackage, PackageManager.ApplicationInfoFlags.of(0L))
+            if (currentTargetPackage != com.arwora.service.AppInstallMonitorService.INSTALLER_PLACEHOLDER_PKG) {
+                val appInfo = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                    pm.getApplicationInfo(currentTargetPackage, PackageManager.ApplicationInfoFlags.of(0L))
+                } else {
+                    @Suppress("DEPRECATION")
+                    pm.getApplicationInfo(currentTargetPackage, 0)
+                }
+                appName = pm.getApplicationLabel(appInfo).toString()
             } else {
-                @Suppress("DEPRECATION")
-                pm.getApplicationInfo(currentTargetPackage, 0)
+                appName = "Package Installer"
             }
-            appName = pm.getApplicationLabel(appInfo).toString()
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+            if (currentMode == MODE_INSTALL_BLOCK && currentTargetPackage.isNotBlank()) {
+                appName = currentTargetPackage
+            }
+        }
+
+        val dialogTitle = when (currentMode) {
+            MODE_UNINSTALL_GUARD -> "Uninstall Blocked: $appName"
+            MODE_INSTALL_BLOCK -> "Install Blocked: $appName"
+            else -> appName
+        }
+
+        val dialogSubtitle = when (currentMode) {
+            MODE_UNINSTALL_GUARD -> "Verify PIN or biometric before uninstalling protected app"
+            MODE_INSTALL_BLOCK -> "Authenticate to allow installing this application"
+            else -> "Enter 4-digit PIN to open application"
+        }
 
         val sharedViewModel = (application as? NameGenApplication)?.sharedViewModel
 
@@ -120,13 +174,23 @@ class AppLockActivity : ComponentActivity() {
                         contentAlignment = Alignment.Center
                     ) {
                         PinAuthDialog(
-                            title = appName,
-                            subtitle = "Enter 4-digit PIN to open application",
+                            title = dialogTitle,
+                            subtitle = dialogSubtitle,
                             onDismiss = {
-                                goToHomeScreen()
+                                handleDismissOrReject()
                             },
                             onSuccess = {
-                                AppLockerManager.unlockSession(currentTargetPackage)
+                                when (currentMode) {
+                                    MODE_UNINSTALL_GUARD -> {
+                                        AppLockerManager.grantTemporaryUninstallPass()
+                                    }
+                                    MODE_INSTALL_BLOCK -> {
+                                        AppLockerManager.authorizeInstall(currentTargetPackage)
+                                    }
+                                    else -> {
+                                        AppLockerManager.unlockSession(currentTargetPackage)
+                                    }
+                                }
                                 finish()
                             }
                         )
@@ -134,6 +198,17 @@ class AppLockActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun handleDismissOrReject() {
+        if (currentMode == MODE_INSTALL_BLOCK) {
+            AppLockerManager.temporarilyExemptUninstall(currentTargetPackage)
+            com.arwora.service.AppInstallMonitorService.rejectAndUninstallAsync(
+                applicationContext,
+                currentTargetPackage
+            )
+        }
+        goToHomeScreen()
     }
 
     private fun goToHomeScreen() {

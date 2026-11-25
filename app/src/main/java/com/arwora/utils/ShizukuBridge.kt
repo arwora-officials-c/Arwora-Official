@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 enum class ShizukuBridgeStatus(val label: String) {
     AUTHORIZED("Authorized"),
     PERMISSION_REQUIRED("Permission Required"),
-    RATIONALE_REQUIRED("Permission Denied — Tap to Grant"),
+    RATIONALE_REQUIRED("Permission Denied"),
     BINDER_DEAD("Service Stopped"),
     NOT_INSTALLED("Not Installed")
 }
@@ -32,6 +32,7 @@ object ShizukuBridge {
 
     private val listenersRegistered = AtomicBoolean(false)
     private val hasAutoRequestedForSession = AtomicBoolean(false)
+    private val permissionDeniedInSession = AtomicBoolean(false)
     private val pendingRequestCodes: MutableSet<Int> = java.util.Collections.synchronizedSet(
         mutableSetOf(REQUEST_CODE, 4201)
     )
@@ -128,6 +129,7 @@ object ShizukuBridge {
             }
         }
         hasAutoRequestedForSession.set(false)
+        permissionDeniedInSession.set(false)
         _isRemoteBinderReady.value = false
     }
 
@@ -139,6 +141,7 @@ object ShizukuBridge {
         installedProbeOverride = null
         requestPermissionInvokerOverride = null
         hasAutoRequestedForSession.set(false)
+        permissionDeniedInSession.set(false)
         autoRequestPermissionOnBinder = false
         _lastPermissionResult.value = null
         _isRemoteBinderReady.value = false
@@ -218,13 +221,14 @@ object ShizukuBridge {
         val granted = if (binderAlive) isPermissionGrantedNow() else false
         val rationale = if (binderAlive && !granted) shouldShowRequestPermissionRationaleNow() else false
 
-        if (granted) {
+        if (granted || !binderAlive) {
             hasAutoRequestedForSession.set(false)
+            permissionDeniedInSession.set(false)
         }
 
         val resolved = when {
             binderAlive && granted -> ShizukuBridgeStatus.AUTHORIZED
-            binderAlive && rationale -> ShizukuBridgeStatus.RATIONALE_REQUIRED
+            binderAlive && (rationale || permissionDeniedInSession.get()) -> ShizukuBridgeStatus.RATIONALE_REQUIRED
             binderAlive -> ShizukuBridgeStatus.PERMISSION_REQUIRED
             installed -> ShizukuBridgeStatus.BINDER_DEAD
             else -> ShizukuBridgeStatus.NOT_INSTALLED
@@ -313,6 +317,7 @@ object ShizukuBridge {
         _isBinderAlive.value = true
         val granted = isPermissionGrantedNow()
         if (granted) {
+            permissionDeniedInSession.set(false)
             _isPermissionGranted.value = true
             _shouldShowRationale.value = false
             _isRemoteBinderReady.value = checkRemoteBinderHealth()
@@ -322,10 +327,11 @@ object ShizukuBridge {
             AdbShellExecutor.onShizukuPermissionResolved(granted = true, context = appContext)
         } else {
             val rationale = shouldShowRequestPermissionRationaleNow()
+            val denied = rationale || permissionDeniedInSession.get()
             _isPermissionGranted.value = false
             _shouldShowRationale.value = rationale
             _isRemoteBinderReady.value = false
-            val nextStatus = if (rationale) {
+            val nextStatus = if (denied) {
                 ShizukuBridgeStatus.RATIONALE_REQUIRED
             } else {
                 ShizukuBridgeStatus.PERMISSION_REQUIRED
@@ -333,7 +339,7 @@ object ShizukuBridge {
             _status.value = nextStatus
             ShizukuBridgeManager.syncFromBridgeStatus(nextStatus)
             AdbShellExecutor.syncFromShizukuState(binderAlive = true, granted = false, context = appContext)
-            if (!rationale) {
+            if (!denied) {
                 tryAutoRequestPermissionOnce()
             }
         }
@@ -342,6 +348,7 @@ object ShizukuBridge {
     internal fun onBinderDead() {
         Log.w(TAG, "Shizuku binder died")
         hasAutoRequestedForSession.set(false)
+        permissionDeniedInSession.set(false)
         _isBinderAlive.value = false
         _isPermissionGranted.value = false
         _isRemoteBinderReady.value = false
@@ -362,6 +369,14 @@ object ShizukuBridge {
         }
         val granted = grantResult == PackageManager.PERMISSION_GRANTED
         val binderAlive = if (granted) true else isRunning()
+        if (granted) {
+            permissionDeniedInSession.set(false)
+            hasAutoRequestedForSession.set(false)
+        } else if (binderAlive) {
+            permissionDeniedInSession.set(true)
+        } else {
+            permissionDeniedInSession.set(false)
+        }
         _lastPermissionResult.value = grantResult
         _isBinderAlive.value = binderAlive
         _isPermissionGranted.value = granted && binderAlive
@@ -370,7 +385,7 @@ object ShizukuBridge {
         _isRemoteBinderReady.value = if (granted && binderAlive) checkRemoteBinderHealth() else false
         val resolvedStatus = when {
             granted && binderAlive -> ShizukuBridgeStatus.AUTHORIZED
-            binderAlive && rationale -> ShizukuBridgeStatus.RATIONALE_REQUIRED
+            binderAlive && (rationale || permissionDeniedInSession.get()) -> ShizukuBridgeStatus.RATIONALE_REQUIRED
             binderAlive -> ShizukuBridgeStatus.PERMISSION_REQUIRED
             isShizukuInstalled(appContext) -> ShizukuBridgeStatus.BINDER_DEAD
             else -> ShizukuBridgeStatus.NOT_INSTALLED

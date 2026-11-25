@@ -8,10 +8,12 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -54,6 +56,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arwora.feature.system.connect.data.ArworaConnectManager
 import com.arwora.feature.system.connect.model.PeerConnectionState
+import com.arwora.feature.system.connect.model.PeerUiState
 import com.arwora.ui.components.ArworaDesignTokens
 import com.arwora.ui.components.ArworaPillBadge
 import com.arwora.ui.components.ArworaTonalIconBadge
@@ -79,6 +82,7 @@ fun ArworaConnectCard(
 
     var showRenameDialog by remember { mutableStateOf(false) }
     var showQrDialog by remember { mutableStateOf(false) }
+    var pendingDisconnectPeer by remember { mutableStateOf<PeerUiState?>(null) }
 
     val notificationLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -288,7 +292,11 @@ fun ArworaConnectCard(
                                     modifier = Modifier.size(20.dp)
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
-                                Column(modifier = Modifier.weight(1f)) {
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(end = 8.dp)
+                                ) {
                                     Text(
                                         text = item.peer.deviceName,
                                         style = MaterialTheme.typography.bodyMedium,
@@ -303,16 +311,21 @@ fun ArworaConnectCard(
                                             "${item.peer.lastKnownIp} • Offline"
                                         },
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = if (isConnected) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = if (isConnected) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                                 if (isConnected) {
                                     TextButton(
                                         onClick = {
                                             SoundEffectManager.playClick()
-                                            engine.disconnectPeer(item.peer.deviceId, userInitiated = true)
+                                            pendingDisconnectPeer = item
                                         },
-                                        modifier = Modifier.testTag("connect_card_disconnect_${item.peer.deviceId}")
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                        modifier = Modifier
+                                            .heightIn(min = 48.dp)
+                                            .testTag("connect_card_disconnect_${item.peer.deviceId}")
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.LinkOff,
@@ -321,7 +334,15 @@ fun ArworaConnectCard(
                                             modifier = Modifier.size(16.dp)
                                         )
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Disconnect", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            text = "Disconnect",
+                                            color = MaterialTheme.colorScheme.error,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            modifier = Modifier.testTag("connect_card_disconnect_label_${item.peer.deviceId}")
+                                        )
                                     }
                                 } else {
                                     IconButton(
@@ -416,6 +437,18 @@ fun ArworaConnectCard(
             payload = engine.buildQrPayload(),
             onRegenerateCode = { engine.regeneratePairingCode() },
             onDismiss = { showQrDialog = false }
+        )
+    }
+
+    pendingDisconnectPeer?.let { targetPeer ->
+        DisconnectPeerConfirmationDialog(
+            peerName = targetPeer.peer.deviceName,
+            onConfirm = {
+                val peerId = targetPeer.peer.deviceId
+                pendingDisconnectPeer = null
+                engine.disconnectPeer(peerId, userInitiated = true)
+            },
+            onDismiss = { pendingDisconnectPeer = null }
         )
     }
 }

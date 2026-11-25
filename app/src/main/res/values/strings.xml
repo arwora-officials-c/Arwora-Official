@@ -4,4 +4,6 @@
     <string name="auto_clicker_service_description">Automates screen taps and swipe gestures at configured intervals for games and productivity tasks.</string>
     <string name="auto_scroll_service_name">Auto Video Scroll Service</string>
     <string name="auto_scroll_service_description">Automatically scrolls short video feeds (TikTok, Instagram Reels, Facebook Reels, YouTube Shorts) using time-based or playback completion detection.</string>
+    <string name="app_protection_service_name">App Locker Protection Guard</string>
+    <string name="app_protection_service_description">Detects uninstall attempts on protected apps and blocks unauthorized new app installations until App Locker PIN or biometric verification succeeds.</string>
 </resources>

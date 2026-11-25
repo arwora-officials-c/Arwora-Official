@@ -634,6 +634,9 @@ fun AppsLockerTab(
     cardBgColor: Color,
     installedApps: List<AppItem>,
     lockedPackages: Set<String>,
+    hiddenCount: Int = 0,
+    secretDialerCode: String = "2796",
+    onOpenVault: () -> Unit = {},
     searchQuery: String,
     onSearchChange: (String) -> Unit,
     onToggleApp: (String) -> Unit
@@ -674,6 +677,17 @@ fun AppsLockerTab(
                     focusedBorderColor = MaterialTheme.colorScheme.primary,
                     unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
                 )
+            )
+        }
+
+        item {
+            AppsTabHiddenVaultBanner(
+                cardShape = cardShape,
+                cardBorder = cardBorder,
+                cardBgColor = cardBgColor,
+                hiddenCount = hiddenCount,
+                secretCode = secretDialerCode,
+                onOpenVault = onOpenVault
             )
         }
 
@@ -795,12 +809,24 @@ fun SecuritySettingsTab(
     vibrateOnError: Boolean,
     scrambleKeypad: Boolean,
     biometricStatus: BiometricStatus,
+    hiddenAppCount: Int = 0,
+    secretDialerCode: String = "2796",
+    isSelfStealthEnabled: Boolean = false,
+    isUninstallProtectionEnabled: Boolean = false,
+    isInstallBlockEnabled: Boolean = false,
+    isAccessibilityGuardEnabled: Boolean = false,
+    isDeviceAdminEnabled: Boolean = false,
     onSetupPin: () -> Unit,
     onToggleBiometric: (Boolean) -> Unit,
     onTimeoutSelect: (Int) -> Unit,
     onToggleVibrate: (Boolean) -> Unit,
     onToggleScramble: (Boolean) -> Unit,
-    onTestUnlock: () -> Unit
+    onTestUnlock: () -> Unit,
+    onOpenHiddenVault: () -> Unit = {},
+    onToggleUninstallProtection: (Boolean) -> Unit = {},
+    onToggleInstallBlock: (Boolean) -> Unit = {},
+    onOpenAccessibilitySettings: () -> Unit = {},
+    onRequestDeviceAdmin: () -> Unit = {}
 ) {
     val elevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
 
@@ -1063,6 +1089,27 @@ fun SecuritySettingsTab(
                     }
                 }
             }
+        }
+
+        item {
+            AdvancedSecuritySection(
+                cardShape = cardShape,
+                cardBorder = cardBorder,
+                cardBgColor = cardBgColor,
+                elevation = elevation,
+                hiddenAppCount = hiddenAppCount,
+                secretDialerCode = secretDialerCode,
+                isSelfStealthEnabled = isSelfStealthEnabled,
+                isUninstallProtectionEnabled = isUninstallProtectionEnabled,
+                isInstallBlockEnabled = isInstallBlockEnabled,
+                isAccessibilityGuardEnabled = isAccessibilityGuardEnabled,
+                isDeviceAdminEnabled = isDeviceAdminEnabled,
+                onOpenHiddenVault = onOpenHiddenVault,
+                onToggleUninstallProtection = onToggleUninstallProtection,
+                onToggleInstallBlock = onToggleInstallBlock,
+                onOpenAccessibilitySettings = onOpenAccessibilitySettings,
+                onRequestDeviceAdmin = onRequestDeviceAdmin
+            )
         }
     }
 }

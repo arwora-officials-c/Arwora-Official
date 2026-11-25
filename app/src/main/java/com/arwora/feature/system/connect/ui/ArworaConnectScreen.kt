@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -70,6 +71,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.arwora.feature.system.connect.data.ArworaConnectManager
@@ -106,6 +108,7 @@ fun ArworaConnectScreen(
     var showScannerDialog by remember { mutableStateOf(false) }
     var showPairCodeDialog by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
+    var pendingDisconnectPeer by remember { mutableStateOf<PeerUiState?>(null) }
 
     val notificationLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -133,11 +136,18 @@ fun ArworaConnectScreen(
         }
     }
 
-    BackHandler(enabled = showQrModal || showScannerDialog || showPairCodeDialog || showRenameDialog) {
+    BackHandler(
+        enabled = showQrModal ||
+            showScannerDialog ||
+            showPairCodeDialog ||
+            showRenameDialog ||
+            pendingDisconnectPeer != null
+    ) {
         showQrModal = false
         showScannerDialog = false
         showPairCodeDialog = false
         showRenameDialog = false
+        pendingDisconnectPeer = null
     }
 
     val activeOnline = identity.isServerRunning || isServiceRunning
@@ -501,7 +511,7 @@ fun ArworaConnectScreen(
                     PeerSessionCard(
                         peerUi = peerUi,
                         onToggleSelect = { vm.togglePeerSelection(peerUi.peer.deviceId) },
-                        onDisconnect = { vm.disconnectPeer(peerUi.peer.deviceId) },
+                        onDisconnect = { pendingDisconnectPeer = peerUi },
                         onReconnect = { vm.reconnectPeer(peerUi.peer.deviceId) },
                         onForget = { vm.forgetPeer(peerUi.peer.deviceId) }
                     )
@@ -569,6 +579,18 @@ fun ArworaConnectScreen(
                 vm.renameLocalDevice(newName)
             },
             onDismiss = { showRenameDialog = false }
+        )
+    }
+
+    pendingDisconnectPeer?.let { targetPeer ->
+        DisconnectPeerConfirmationDialog(
+            peerName = targetPeer.peer.deviceName,
+            onConfirm = {
+                val peerId = targetPeer.peer.deviceId
+                pendingDisconnectPeer = null
+                vm.disconnectPeer(peerId)
+            },
+            onDismiss = { pendingDisconnectPeer = null }
         )
     }
 }
@@ -653,7 +675,12 @@ private fun PeerSessionCard(
                 Text(
                     text = if (peerUi.peer.trustedAutoAccept) "Trusted Cert • Auto-Accept On" else "Manual Accept",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp)
                 )
 
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -678,14 +705,22 @@ private fun PeerSessionCard(
                                 onDisconnect()
                             },
                             shape = ArworaDesignTokens.PillShape,
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
                             modifier = Modifier
-                                .height(48.dp)
+                                .heightIn(min = 48.dp)
                                 .testTag("connect_disconnect_peer_${peerUi.peer.deviceId}")
                         ) {
                             Icon(Icons.Default.LinkOff, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Disconnect", fontWeight = FontWeight.Bold)
+                            Text(
+                                text = "Disconnect",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                softWrap = false,
+                                modifier = Modifier.testTag("connect_disconnect_label_${peerUi.peer.deviceId}")
+                            )
                         }
                     } else {
                         Button(
@@ -694,11 +729,18 @@ private fun PeerSessionCard(
                                 onReconnect()
                             },
                             shape = ArworaDesignTokens.PillShape,
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                             modifier = Modifier
-                                .height(48.dp)
+                                .heightIn(min = 48.dp)
                                 .testTag("connect_reconnect_peer_${peerUi.peer.deviceId}")
                         ) {
-                            Text("Reconnect", fontWeight = FontWeight.Bold)
+                            Text(
+                                text = "Reconnect",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                softWrap = false
+                            )
                         }
                     }
                 }

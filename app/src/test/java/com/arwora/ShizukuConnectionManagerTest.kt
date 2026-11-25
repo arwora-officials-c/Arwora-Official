@@ -180,4 +180,111 @@ class ShizukuConnectionManagerTest {
         composeTestRule.onNodeWithText("Shizuku Service Stopped", useUnmergedTree = true).assertIsDisplayed()
         composeTestRule.onNodeWithText("Connect Shizuku", useUnmergedTree = true).assertIsDisplayed()
     }
+
+    @Test
+    fun privilegeCardShowsPermissionDeniedOnDenyAndRecoversToActiveOnRetryGrant() {
+        var granted = false
+        val requestedCodes = mutableListOf<Int>()
+
+        ShizukuBridge.binderProbeOverride = { true }
+        ShizukuBridge.permissionProbeOverride = { granted }
+        ShizukuBridge.rationaleProbeOverride = { false }
+        ShizukuBridge.installedProbeOverride = { true }
+        AdbShellExecutor.adbReadyProbeOverride = { false }
+        ShizukuBridge.requestPermissionInvokerOverride = { code ->
+            requestedCodes.add(code)
+            if (requestedCodes.size == 1) {
+                // First tap: user taps "Deny" in the official Shizuku pop-up dialog
+                ShizukuBridge.onPermissionResult(code, PackageManager.PERMISSION_DENIED)
+            } else {
+                // Second tap: user taps "Always allow" / "Allow once"
+                granted = true
+                ShizukuBridge.onPermissionResult(code, PackageManager.PERMISSION_GRANTED)
+            }
+        }
+
+        ShizukuBridgeManager.initialize(context)
+
+        composeTestRule.setContent {
+            NameGenProTheme(darkTheme = true) {
+                val engine by AdbShellExecutor.activeEngine.collectAsStateWithLifecycle()
+                val shizukuStatus by ShizukuBridgeManager.connectionStatus.collectAsStateWithLifecycle()
+                Column {
+                    PrivilegeEngineBridgeCard(
+                        engine = engine,
+                        shizukuUiStatus = shizukuStatus,
+                        onConnectShizukuClick = {
+                            ShizukuBridgeManager.connectShizuku(context)
+                        },
+                        onClick = {}
+                    )
+                }
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNode(
+            hasAnyAncestor(hasTestTag("shizuku_status_badge")) and hasText("Permission Required"),
+            useUnmergedTree = true
+        ).assertIsDisplayed()
+
+        // 1. Tap Connect Shizuku -> user selects Deny -> badge shows "Permission Denied"
+        composeTestRule.onNodeWithTag("connect_shizuku_button", useUnmergedTree = true).performClick()
+        composeTestRule.waitForIdle()
+
+        assertEquals(listOf(ShizukuBridgeManager.REQUEST_CODE), requestedCodes)
+        assertEquals(ShizukuUiStatus.PERMISSION_DENIED, ShizukuBridgeManager.connectionStatus.value)
+        assertFalse(ShizukuBridgeManager.isRemoteBinderInitialized.value)
+        assertEquals(PrivilegeEngine.NONE, AdbShellExecutor.activeEngine.value)
+        composeTestRule.onNode(
+            hasAnyAncestor(hasTestTag("shizuku_status_badge")) and hasText("Permission Denied"),
+            useUnmergedTree = true
+        ).assertIsDisplayed()
+        composeTestRule.onNodeWithText("Connect Shizuku", useUnmergedTree = true).assertIsDisplayed()
+
+        // Refreshing status preserves Permission Denied while ungranted
+        assertEquals(ShizukuUiStatus.PERMISSION_DENIED, ShizukuBridgeManager.checkShizukuStatus(context))
+
+        // 2. Retry Connect Shizuku -> user selects Allow -> badge updates to "Active / Connected"
+        composeTestRule.onNodeWithTag("connect_shizuku_button", useUnmergedTree = true).performClick()
+        composeTestRule.waitForIdle()
+
+        assertEquals(
+            listOf(ShizukuBridgeManager.REQUEST_CODE, ShizukuBridgeManager.REQUEST_CODE),
+            requestedCodes
+        )
+        assertEquals(ShizukuUiStatus.ACTIVE_CONNECTED, ShizukuBridgeManager.connectionStatus.value)
+        assertTrue(ShizukuBridgeManager.isRemoteBinderInitialized.value)
+        assertEquals(PrivilegeEngine.SHIZUKU, AdbShellExecutor.activeEngine.value)
+        composeTestRule.onNodeWithText("Active / Connected", useUnmergedTree = true).assertIsDisplayed()
+        composeTestRule.onNodeWithText("Connected", useUnmergedTree = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun manifestDeclaresShizukuProviderWithCorrectPermissionAndBindUserService() {
+        val pm = context.packageManager
+        val pkgInfo = pm.getPackageInfo(
+            context.packageName,
+            PackageManager.GET_PROVIDERS or PackageManager.GET_PERMISSIONS
+        )
+
+        val requestedPermissions = pkgInfo.requestedPermissions?.toSet().orEmpty()
+        assertTrue(
+            "BIND_USER_SERVICE permission must be declared in AndroidManifest.xml",
+            requestedPermissions.contains("moe.shizuku.privileged.api.v2.permission.BIND_USER_SERVICE")
+        )
+
+        val shizukuProvider = pkgInfo.providers?.firstOrNull {
+            it.name == "rikka.shizuku.ShizukuProvider"
+        }
+        assertTrue("ShizukuProvider must be registered in manifest", shizukuProvider != null)
+        assertEquals("${context.packageName}.shizuku", shizukuProvider?.authority)
+        assertEquals("android.permission.INTERACT_ACROSS_USERS_FULL", shizukuProvider?.readPermission)
+        assertEquals("android.permission.INTERACT_ACROSS_USERS_FULL", shizukuProvider?.writePermission)
+        assertTrue("ShizukuProvider must be exported", shizukuProvider?.exported == true)
+        assertFalse(
+            "ShizukuProvider must not be multiprocess",
+            shizukuProvider?.multiprocess == true
+        )
+    }
 }

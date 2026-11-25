@@ -124,6 +124,46 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
     val shizukuBinderAlive by ShizukuBridge.isBinderAlive.collectAsStateWithLifecycle()
     val shizukuPermissionGranted by ShizukuBridge.isPermissionGranted.collectAsStateWithLifecycle()
 
+    var showSafFallbackDialog by remember { mutableStateOf(false) }
+
+    val safTreeLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { treeUri ->
+        if (treeUri != null) {
+            val saved = AppPermissionsHelper.persistSafTreeUri(context, treeUri)
+            coroutineScope.launch {
+                val loaded = withContext(Dispatchers.IO) {
+                    AppPermissionsHelper.inspectPermissions(context)
+                }
+                appPermissions = loaded
+                permissionsLoaded = true
+                Toast.makeText(
+                    context,
+                    if (saved) "Folder access granted via Scoped Storage (SAF)" else "Unable to persist folder permission",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+    }
+
+    val allFilesAccessSettingsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) {
+        coroutineScope.launch {
+            val loaded = withContext(Dispatchers.IO) {
+                AppPermissionsHelper.inspectPermissions(context)
+            }
+            appPermissions = loaded
+            permissionsLoaded = true
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R &&
+                !AppPermissionsHelper.hasAllFilesAccess(context) &&
+                !AppPermissionsHelper.hasSafDirectoryGrant(context)
+            ) {
+                showSafFallbackDialog = true
+            }
+        }
+    }
+
     val singleCategoryRuntimeLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
@@ -142,7 +182,21 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
                     ActivityCompat.shouldShowRequestPermissionRationale(activity, perm)
                 }
                 if (!canShowRationale) {
-                    AppPermissionsHelper.openPermissionSettings(context, category)
+                    if (category == ManagedPermissionCategory.STORAGE &&
+                        android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R
+                    ) {
+                        val ok = AppPermissionsHelper.openAllFilesAccessWithSafFallback(
+                            context = context,
+                            onSafFallback = {
+                                safTreeLauncher.launch(AppPermissionsHelper.getPersistedSafTreeUri(context))
+                            }
+                        )
+                        if (!ok) {
+                            showSafFallbackDialog = true
+                        }
+                    } else {
+                        AppPermissionsHelper.openPermissionSettings(context, category)
+                    }
                 }
             }
         }
@@ -219,6 +273,49 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
             },
             dismissButton = {
                 TextButton(onClick = { showPermissionDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showSafFallbackDialog) {
+        AlertDialog(
+            onDismissRequest = { showSafFallbackDialog = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.FolderOpen,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            },
+            title = { Text("Folder Access Fallback (SAF)") },
+            text = {
+                Text(
+                    "If \"All files access\" is restricted or unavailable on your device (common on sideloaded builds), select a working directory with Android Scoped Storage instead."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    modifier = Modifier.testTag("settings_saf_fallback_button"),
+                    onClick = {
+                        showSafFallbackDialog = false
+                        try {
+                            safTreeLauncher.launch(AppPermissionsHelper.getPersistedSafTreeUri(context))
+                        } catch (_: Exception) {
+                            AppPermissionsHelper.openAppDetailsSettings(context)
+                        }
+                    }
+                ) { Text("Select Folder (SAF)") }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(
+                        onClick = {
+                            showSafFallbackDialog = false
+                            AppPermissionsHelper.openAppDetailsSettings(context)
+                        }
+                    ) { Text("App Info") }
+                    TextButton(onClick = { showSafFallbackDialog = false }) { Text("Cancel") }
+                }
             }
         )
     }
@@ -881,25 +978,65 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
                                 permission = permission,
                                 onOpenSettings = {
                                     com.arwora.utils.SoundEffectManager.playClick()
-                                    val runtimePerms = if (!permission.isGranted) {
-                                        AppPermissionsHelper.runtimePermissionsForCategory(permission.category)
+                                    if (permission.category == ManagedPermissionCategory.STORAGE &&
+                                        android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R &&
+                                        !AppPermissionsHelper.hasAllFilesAccess(context)
+                                    ) {
+                                        val manageIntent = AppPermissionsHelper.createManageAllFilesAccessIntent(context).apply {
+                                            flags = flags and Intent.FLAG_ACTIVITY_NEW_TASK.inv()
+                                        }
+                                        val launched = try {
+                                            if (manageIntent.resolveActivity(context.packageManager) != null) {
+                                                allFilesAccessSettingsLauncher.launch(manageIntent)
+                                                true
+                                            } else {
+                                                false
+                                            }
+                                        } catch (_: Exception) {
+                                            false
+                                        }
+                                        if (!launched) {
+                                            val fallbackLaunched = AppPermissionsHelper.openAllFilesAccessWithSafFallback(
+                                                context = context,
+                                                onSafFallback = {
+                                                    try {
+                                                        safTreeLauncher.launch(
+                                                            AppPermissionsHelper.getPersistedSafTreeUri(context)
+                                                        )
+                                                    } catch (_: Exception) {
+                                                        Toast.makeText(
+                                                            context,
+                                                            "Unable to open folder picker",
+                                                            Toast.LENGTH_SHORT
+                                                        ).show()
+                                                    }
+                                                }
+                                            )
+                                            if (!fallbackLaunched) {
+                                                showSafFallbackDialog = true
+                                            }
+                                        }
                                     } else {
-                                        emptyList()
-                                    }
-                                    if (runtimePerms.isNotEmpty()) {
-                                        pendingPermissionCategory = permission.category
-                                        singleCategoryRuntimeLauncher.launch(runtimePerms.toTypedArray())
-                                    } else {
-                                        val opened = AppPermissionsHelper.openPermissionSettings(
-                                            context,
-                                            permission.category
-                                        )
-                                        if (!opened) {
-                                            Toast.makeText(
+                                        val runtimePerms = if (!permission.isGranted) {
+                                            AppPermissionsHelper.runtimePermissionsForCategory(permission.category)
+                                        } else {
+                                            emptyList()
+                                        }
+                                        if (runtimePerms.isNotEmpty()) {
+                                            pendingPermissionCategory = permission.category
+                                            singleCategoryRuntimeLauncher.launch(runtimePerms.toTypedArray())
+                                        } else {
+                                            val opened = AppPermissionsHelper.openPermissionSettings(
                                                 context,
-                                                "Unable to open system settings",
-                                                Toast.LENGTH_SHORT
-                                            ).show()
+                                                permission.category
+                                            )
+                                            if (!opened) {
+                                                Toast.makeText(
+                                                    context,
+                                                    "Unable to open system settings",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
                                         }
                                     }
                                 }

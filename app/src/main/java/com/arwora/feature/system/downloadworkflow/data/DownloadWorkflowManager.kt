@@ -23,6 +23,7 @@ import com.arwora.feature.system.downloadworkflow.model.DownloadWorkflowConfig
 import com.arwora.feature.system.downloadworkflow.model.KnownDownloadSignature
 import com.arwora.feature.system.downloadworkflow.model.ProcessedDownloadEvent
 import com.arwora.feature.system.downloadworkflow.service.DownloadWorkflowService
+import com.arwora.utils.AppPermissionsHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -95,11 +96,8 @@ object DownloadWorkflowManager {
 
     fun hasStorageAccess(context: Context): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            try {
-                Environment.isExternalStorageManager()
-            } catch (_: Throwable) {
-                false
-            }
+            AppPermissionsHelper.hasAllFilesAccess(context) ||
+                AppPermissionsHelper.hasSafDirectoryGrant(context)
         } else {
             ContextCompat.checkSelfPermission(
                 context,
@@ -108,7 +106,8 @@ object DownloadWorkflowManager {
                 ContextCompat.checkSelfPermission(
                     context,
                     Manifest.permission.READ_EXTERNAL_STORAGE
-                ) == PackageManager.PERMISSION_GRANTED
+                ) == PackageManager.PERMISSION_GRANTED ||
+                AppPermissionsHelper.hasSafDirectoryGrant(context)
         }
     }
 
@@ -120,31 +119,22 @@ object DownloadWorkflowManager {
             ) == PackageManager.PERMISSION_GRANTED
     }
 
-    fun openStorageAccessSettings(context: Context): Boolean {
-        val intents = mutableListOf<Intent>()
+    fun openStorageAccessSettings(
+        context: Context,
+        onSafFallback: (() -> Unit)? = null
+    ): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            intents.add(
-                Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-                    data = Uri.parse("package:${context.packageName}")
-                }
+            return AppPermissionsHelper.openAllFilesAccessWithSafFallback(
+                context = context,
+                onSafFallback = onSafFallback
             )
-            intents.add(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
         }
-        intents.add(
-            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                data = Uri.parse("package:${context.packageName}")
-            }
-        )
-        for (intent in intents) {
-            try {
-                if (context !is android.app.Activity) {
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(intent)
-                return true
-            } catch (_: Exception) {
-                // Try fallback
-            }
+        if (AppPermissionsHelper.openAppDetailsSettings(context)) {
+            return true
+        }
+        if (onSafFallback != null) {
+            onSafFallback()
+            return true
         }
         return false
     }

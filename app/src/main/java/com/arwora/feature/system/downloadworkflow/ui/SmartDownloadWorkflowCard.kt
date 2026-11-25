@@ -1,6 +1,7 @@
 package com.arwora.feature.system.downloadworkflow.ui
 
 import android.Manifest
+import android.content.Intent
 import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -23,6 +24,7 @@ import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -34,6 +36,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -57,6 +60,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arwora.feature.system.downloadworkflow.data.DownloadWorkflowManager
+import com.arwora.utils.AppPermissionsHelper
 import com.arwora.utils.SoundEffectManager
 import com.arwora.ui.components.ArworaDesignTokens
 import com.arwora.ui.components.ArworaPillBadge
@@ -83,11 +87,35 @@ fun SmartDownloadWorkflowCard(
 
     var hasStorageAccess by remember { mutableStateOf(DownloadWorkflowManager.hasStorageAccess(context)) }
     var hasNotifPerm by remember { mutableStateOf(DownloadWorkflowManager.hasNotificationPermission(context)) }
+    var showSafFallbackDialog by remember { mutableStateOf(false) }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
         hasNotifPerm = granted
+    }
+
+    val safTreeLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { treeUri ->
+        if (treeUri != null) {
+            val saved = AppPermissionsHelper.persistSafTreeUri(context, treeUri)
+            hasStorageAccess = DownloadWorkflowManager.hasStorageAccess(context)
+            Toast.makeText(
+                context,
+                if (saved) "Downloads folder access granted via SAF" else "Unable to save folder permission",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    val allFilesAccessLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) {
+        hasStorageAccess = DownloadWorkflowManager.hasStorageAccess(context)
+        if (!hasStorageAccess && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            showSafFallbackDialog = true
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -237,7 +265,43 @@ fun SmartDownloadWorkflowCard(
                 Surface(
                     onClick = {
                         SoundEffectManager.playClick()
-                        DownloadWorkflowManager.openStorageAccessSettings(context)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            val manageIntent = AppPermissionsHelper.createManageAllFilesAccessIntent(context).apply {
+                                flags = flags and Intent.FLAG_ACTIVITY_NEW_TASK.inv()
+                            }
+                            val launched = try {
+                                if (manageIntent.resolveActivity(context.packageManager) != null) {
+                                    allFilesAccessLauncher.launch(manageIntent)
+                                    true
+                                } else {
+                                    false
+                                }
+                            } catch (_: Exception) {
+                                false
+                            }
+                            if (!launched) {
+                                val fallbackOpened = DownloadWorkflowManager.openStorageAccessSettings(
+                                    context = context,
+                                    onSafFallback = {
+                                        try {
+                                            safTreeLauncher.launch(AppPermissionsHelper.getPersistedSafTreeUri(context))
+                                        } catch (_: Exception) {
+                                            showSafFallbackDialog = true
+                                        }
+                                    }
+                                )
+                                if (!fallbackOpened) {
+                                    showSafFallbackDialog = true
+                                }
+                            }
+                        } else {
+                            DownloadWorkflowManager.openStorageAccessSettings(
+                                context = context,
+                                onSafFallback = {
+                                    safTreeLauncher.launch(AppPermissionsHelper.getPersistedSafTreeUri(context))
+                                }
+                            )
+                        }
                     },
                     shape = ArworaDesignTokens.InnerTileShape,
                     color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.20f),
@@ -265,6 +329,33 @@ fun SmartDownloadWorkflowCard(
                         )
                     }
                 }
+            }
+
+            if (showSafFallbackDialog) {
+                AlertDialog(
+                    onDismissRequest = { showSafFallbackDialog = false },
+                    title = { Text("Folder Access Fallback (SAF)") },
+                    text = {
+                        Text(
+                            "If All Files Access is restricted on this build or sideloaded APK, choose your Downloads folder using Android Scoped Storage (SAF)."
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                showSafFallbackDialog = false
+                                try {
+                                    safTreeLauncher.launch(AppPermissionsHelper.getPersistedSafTreeUri(context))
+                                } catch (_: Exception) {
+                                    AppPermissionsHelper.openAppDetailsSettings(context)
+                                }
+                            }
+                        ) { Text("Select Folder (SAF)") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showSafFallbackDialog = false }) { Text("Cancel") }
+                    }
+                )
             }
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.22f))

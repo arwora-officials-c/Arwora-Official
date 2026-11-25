@@ -101,6 +101,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.arwora.ui.components.ExpressiveWavyLinearProgressIndicator
 import com.arwora.utils.NativeAdbConnectionState
 import com.arwora.utils.NativeAdbManager
+import com.arwora.utils.PrivilegeEngine
+import com.arwora.utils.ShizukuBridgeManager
+import com.arwora.utils.ShizukuUiStatus
 import kotlinx.coroutines.launch
 
 /**
@@ -162,6 +165,9 @@ fun WifiPasswordScreen(
     val isGlobalRevealAll by viewModel.isGlobalRevealAll.collectAsStateWithLifecycle()
     val isElevatedMode by viewModel.isElevatedModeAvailable.collectAsStateWithLifecycle()
     val adbState by viewModel.adbState.collectAsStateWithLifecycle()
+    val activeEngine by viewModel.activeEngine.collectAsStateWithLifecycle()
+    val shizukuStatus by viewModel.shizukuStatus.collectAsStateWithLifecycle()
+    val revealedPasswordIds by viewModel.revealedPasswordIds.collectAsStateWithLifecycle()
     val nativeAdbConnected by NativeAdbManager.isConnected.collectAsStateWithLifecycle()
     val requiresDevOptionsGuidance by NativeAdbManager.requiresDevOptionsGuidance.collectAsStateWithLifecycle()
     val adbStatusMessage by NativeAdbManager.statusMessage.collectAsStateWithLifecycle()
@@ -175,14 +181,16 @@ fun WifiPasswordScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    androidx.compose.runtime.LaunchedEffect(nativeAdbConnected) {
+    androidx.compose.runtime.LaunchedEffect(nativeAdbConnected, activeEngine, shizukuStatus) {
         viewModel.refreshAdbStatus()
     }
 
     DisposableEffect(lifecycleOwner) {
+        ShizukuBridgeManager.checkShizukuStatus(context)
         viewModel.refreshAdbStatus()
         val lifecycleObserver = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
+                ShizukuBridgeManager.checkShizukuStatus(context)
                 viewModel.refreshAdbStatus()
             }
         }
@@ -294,6 +302,8 @@ fun WifiPasswordScreen(
                     isGlobalReveal = isGlobalRevealAll,
                     isElevated = isElevatedMode,
                     adbState = adbState,
+                    activeEngine = activeEngine,
+                    shizukuStatus = shizukuStatus,
                     isLoading = isLoading,
                     onToggleRevealAll = { viewModel.toggleRevealAll() }
                 )
@@ -328,14 +338,16 @@ fun WifiPasswordScreen(
                 }
             }
 
-            // 1c. Wireless ADB Warning Banner when ADB is not connected
-            if (adbState != NativeAdbConnectionState.CONNECTED) {
+            // 1c. Privilege Warning Banner when neither Shizuku nor Wireless ADB is connected
+            if (!isElevatedMode && adbState != NativeAdbConnectionState.CONNECTED && activeEngine == PrivilegeEngine.NONE) {
                 item {
                     WirelessAdbWarningBanner(
                         adbState = adbState,
+                        shizukuStatus = shizukuStatus,
                         requiresDevOptionsGuidance = requiresDevOptionsGuidance,
                         statusMessage = adbStatusMessage,
                         onConnectAdb = { viewModel.connectAdb(context) },
+                        onConnectShizuku = { viewModel.connectShizuku(context) },
                         onOpenDeveloperOptions = {
                             try {
                                 context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
@@ -357,7 +369,7 @@ fun WifiPasswordScreen(
 
             // 3. Network List
             if (networks.isEmpty() && !isLoading) {
-                if (searchQuery.isNotBlank() || adbState == NativeAdbConnectionState.CONNECTED) {
+                if (searchQuery.isNotBlank() || isElevatedMode || adbState == NativeAdbConnectionState.CONNECTED) {
                     item {
                         WifiEmptyState(
                             hasQuery = searchQuery.isNotBlank(),
@@ -371,10 +383,12 @@ fun WifiPasswordScreen(
                     items = networks,
                     key = { it.id }
                 ) { network ->
-                    val isRevealed = viewModel.isPasswordVisible(network.id)
+                    val isRevealed = revealedPasswordIds.contains(network.id) ||
+                        (isGlobalRevealAll && viewModel.isPasswordVisible(network.id))
                     WifiNetworkCard(
                         network = network,
                         isRevealed = isRevealed,
+                        isElevated = isElevatedMode || activeEngine != PrivilegeEngine.NONE,
                         onToggleReveal = { viewModel.togglePasswordVisibility(network.id) },
                         onCopyPassword = { viewModel.copyPasswordToClipboard(context, network) },
                         onCopySsid = { viewModel.copySsidToClipboard(context, network.ssid) },
@@ -444,6 +458,8 @@ private fun WifiOverviewCard(
     isGlobalReveal: Boolean,
     isElevated: Boolean,
     adbState: NativeAdbConnectionState,
+    activeEngine: PrivilegeEngine,
+    shizukuStatus: ShizukuUiStatus,
     isLoading: Boolean,
     onToggleRevealAll: () -> Unit
 ) {
@@ -505,30 +521,38 @@ private fun WifiOverviewCard(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Action Row: Reveal All Toggle & Privileges Status
+            // Action Row: Mask / Unmask All Toggle & Privilege Status
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                val badgeColor = when (adbState) {
-                    NativeAdbConnectionState.CONNECTED -> Color(0xFF10B981)
-                    NativeAdbConnectionState.CONNECTING -> Color(0xFFF59E0B)
-                    NativeAdbConnectionState.WIFI_REQUIRED -> MaterialTheme.colorScheme.error
-                    NativeAdbConnectionState.DISCONNECTED -> MaterialTheme.colorScheme.onSurfaceVariant
+                val connected = isElevated ||
+                    activeEngine != PrivilegeEngine.NONE ||
+                    adbState == NativeAdbConnectionState.CONNECTED
+                val badgeColor = when {
+                    connected -> Color(0xFF10B981)
+                    adbState == NativeAdbConnectionState.CONNECTING -> Color(0xFFF59E0B)
+                    shizukuStatus == ShizukuUiStatus.PERMISSION_REQUIRED -> Color(0xFFF59E0B)
+                    adbState == NativeAdbConnectionState.WIFI_REQUIRED -> MaterialTheme.colorScheme.error
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
                 }
                 val badgeLabel = when {
-                    isElevated || adbState == NativeAdbConnectionState.CONNECTED -> "ADB Connected"
+                    activeEngine == PrivilegeEngine.SHIZUKU || shizukuStatus == ShizukuUiStatus.ACTIVE_CONNECTED ->
+                        "Shizuku Connected"
+                    connected -> "ADB Connected"
                     adbState == NativeAdbConnectionState.CONNECTING -> "Connecting..."
+                    shizukuStatus == ShizukuUiStatus.PERMISSION_REQUIRED -> "Shizuku Permission"
                     adbState == NativeAdbConnectionState.WIFI_REQUIRED -> "Wi-Fi Offline"
-                    else -> "ADB Offline"
+                    else -> "ADB / Shizuku Offline"
                 }
 
                 // Status Badge
                 Surface(
                     shape = RoundedCornerShape(8.dp),
-                    color = if (isElevated) Color(0xFF10B981).copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    border = BorderStroke(1.dp, if (isElevated) Color(0xFF10B981).copy(alpha = 0.3f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                    color = if (connected) Color(0xFF10B981).copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    border = BorderStroke(1.dp, if (connected) Color(0xFF10B981).copy(alpha = 0.3f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                    modifier = Modifier.testTag("wifi_privilege_status_badge")
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -550,7 +574,7 @@ private fun WifiOverviewCard(
                     }
                 }
 
-                // Global Reveal / Mask Button
+                // Global Mask / Unmask All Button
                 OutlinedButton(
                     onClick = onToggleRevealAll,
                     shape = RoundedCornerShape(12.dp),
@@ -568,7 +592,7 @@ private fun WifiOverviewCard(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (isGlobalReveal) "Mask All" else "Reveal All",
+                        text = if (isGlobalReveal) "Mask All" else "Unmask All",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -580,32 +604,34 @@ private fun WifiOverviewCard(
 }
 
 /**
- * Clean warning banner shown when built-in Wireless ADB is offline or Wi-Fi is disconnected,
- * offering a direct "Connect Now" CTA instead of leaving users stuck on an empty state.
+ * Clean warning banner shown when both Shizuku and built-in Wireless ADB are inactive,
+ * offering direct Connect Shizuku and Connect ADB CTAs.
  */
 @Composable
 private fun WirelessAdbWarningBanner(
     adbState: NativeAdbConnectionState,
+    shizukuStatus: ShizukuUiStatus,
     requiresDevOptionsGuidance: Boolean,
     statusMessage: String,
     onConnectAdb: () -> Unit,
+    onConnectShizuku: () -> Unit,
     onOpenDeveloperOptions: () -> Unit
 ) {
-    val headline = when (adbState) {
-        NativeAdbConnectionState.WIFI_REQUIRED -> "Wi-Fi Connection Required"
-        NativeAdbConnectionState.CONNECTING -> "Connecting Wireless ADB..."
-        NativeAdbConnectionState.DISCONNECTED ->
-            if (requiresDevOptionsGuidance) "Wireless Debugging Not Detected" else "Wireless ADB Required for System Sync"
-        NativeAdbConnectionState.CONNECTED -> "Active / Connected"
+    val headline = when {
+        adbState == NativeAdbConnectionState.CONNECTING -> "Connecting Wireless ADB..."
+        requiresDevOptionsGuidance && adbState == NativeAdbConnectionState.DISCONNECTED ->
+            "Wireless Debugging Not Detected"
+        else -> "Connect ADB or Shizuku to view saved Wi-Fi passwords"
     }
-    val description = when (adbState) {
-        NativeAdbConnectionState.WIFI_REQUIRED ->
-            "Connect to a Wi-Fi network with Wireless Debugging enabled to read saved Wi-Fi networks, or tap + to add manually."
-        NativeAdbConnectionState.CONNECTING -> statusMessage
-        NativeAdbConnectionState.DISCONNECTED ->
-            if (requiresDevOptionsGuidance) statusMessage
-            else "Enable Wireless Debugging in Developer Options and tap Connect Now to bind directly to the local ADB daemon."
-        NativeAdbConnectionState.CONNECTED -> ""
+    val description = when {
+        adbState == NativeAdbConnectionState.CONNECTING -> statusMessage
+        requiresDevOptionsGuidance && adbState == NativeAdbConnectionState.DISCONNECTED -> statusMessage
+        shizukuStatus == ShizukuUiStatus.PERMISSION_REQUIRED ->
+            "Shizuku service is running. Grant Shizuku permission or connect Wireless ADB to read saved Wi-Fi PSKs directly without root."
+        adbState == NativeAdbConnectionState.WIFI_REQUIRED ->
+            "Authorize Shizuku or connect to Wi-Fi with Wireless Debugging to extract saved Wi-Fi passwords without root."
+        else ->
+            "Authorize Shizuku or connect Wireless ADB to extract saved Wi-Fi passwords directly from system config without root."
     }
 
     WifiContainerCard(
@@ -666,19 +692,47 @@ private fun WirelessAdbWarningBanner(
                 )
             }
 
-            Button(
-                onClick = onConnectAdb,
-                enabled = adbState != NativeAdbConnectionState.CONNECTING,
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .testTag("connect_adb_button")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text(
-                    text = if (adbState == NativeAdbConnectionState.CONNECTING) "Connecting..." else "Connect Now",
-                    fontWeight = FontWeight.Bold
-                )
+                Button(
+                    onClick = onConnectShizuku,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                        .testTag("wifi_connect_shizuku_button")
+                ) {
+                    Text(
+                        text = if (shizukuStatus == ShizukuUiStatus.PERMISSION_REQUIRED) {
+                            "Authorize Shizuku"
+                        } else {
+                            "Connect Shizuku"
+                        },
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = onConnectAdb,
+                    enabled = adbState != NativeAdbConnectionState.CONNECTING,
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                        .testTag("connect_adb_button")
+                ) {
+                    Text(
+                        text = if (adbState == NativeAdbConnectionState.CONNECTING) "Connecting..." else "Connect ADB",
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
 
             if (requiresDevOptionsGuidance && adbState == NativeAdbConnectionState.DISCONNECTED) {
@@ -755,6 +809,7 @@ private fun WifiSearchBar(
 private fun WifiNetworkCard(
     network: SavedWifiNetwork,
     isRevealed: Boolean,
+    isElevated: Boolean,
     onToggleReveal: () -> Unit,
     onCopyPassword: () -> Unit,
     onCopySsid: () -> Unit,
@@ -956,7 +1011,11 @@ private fun WifiNetworkCard(
                             )
                         } else if (!hasStoredPassword) {
                             Text(
-                                text = "Protected by system keystore (Root needed for PSK)",
+                                text = if (isElevated) {
+                                    "No PSK saved for this profile"
+                                } else {
+                                    "Connect ADB or Shizuku to view saved Wi-Fi passwords"
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant

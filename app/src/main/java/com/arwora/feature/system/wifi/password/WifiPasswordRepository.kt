@@ -8,9 +8,10 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
-import com.arwora.feature.system.shell.ShellExecutor
+import com.arwora.utils.AdbShellExecutor
 import com.arwora.utils.NativeAdbConnectionState
 import com.arwora.utils.NativeAdbManager
+import com.arwora.utils.PrivilegeEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -37,6 +38,9 @@ class WifiPasswordRepository(private val context: Context) {
     private val _adbState = MutableStateFlow(NativeAdbManager.connectionState.value)
     val adbState: StateFlow<NativeAdbConnectionState> = _adbState.asStateFlow()
 
+    private val _activeEngine = MutableStateFlow(AdbShellExecutor.activeEngine.value)
+    val activeEngine: StateFlow<PrivilegeEngine> = _activeEngine.asStateFlow()
+
     companion object {
         private const val TAG = "WifiPasswordRepo"
         private const val PREFS_KEY_SAVED_NETWORKS = "saved_networks_json"
@@ -49,8 +53,10 @@ class WifiPasswordRepository(private val context: Context) {
     fun refreshAdbState(): NativeAdbConnectionState {
         NativeAdbManager.refreshConnectionStatus(appContext)
         val state = NativeAdbManager.connectionState.value
+        val engine = AdbShellExecutor.refreshEngineStatus(appContext)
         _adbState.value = state
-        _isElevatedModeAvailable.value = (state == NativeAdbConnectionState.CONNECTED)
+        _activeEngine.value = engine
+        _isElevatedModeAvailable.value = (engine != PrivilegeEngine.NONE) || (state == NativeAdbConnectionState.CONNECTED)
         return state
     }
 
@@ -109,24 +115,29 @@ class WifiPasswordRepository(private val context: Context) {
             Log.w(TAG, "Cannot read configuredNetworks directly: ${e.message}")
         }
 
-        // 4. Query elevated system Wi-Fi stores and dumps via Wireless ADB
+        // 4. Query elevated system Wi-Fi stores and dumps via Shizuku or Wireless ADB (no root required)
         try {
-            val connectionState = refreshAdbState()
-            if (connectionState == NativeAdbConnectionState.CONNECTED) {
+            refreshAdbState()
+            val hasElevatedShell = _isElevatedModeAvailable.value || AdbShellExecutor.isPrivilegedShellReady(appContext)
+            if (hasElevatedShell) {
                 var parsedXmlOrSupplicant = false
                 val storePaths = listOf(
-                    "/data/misc/wifi/WifiConfigStore.xml",
                     "/data/misc/apexdata/com.android.wifi/WifiConfigStore.xml",
+                    "/data/misc/wifi/WifiConfigStore.xml",
                     "/data/misc/wifi/wpa_supplicant.conf"
                 )
                 for (path in storePaths) {
-                    var cmdResult = ShellExecutor.executeCommand("cat $path 2>/dev/null")
-                    if (cmdResult.exitCode != 0 || cmdResult.stdout.isBlank()) {
-                        // On rooted devices, attempt su fallback
-                        cmdResult = ShellExecutor.executeCommand("su -c 'cat $path' 2>/dev/null")
-                    }
-                    if (cmdResult.exitCode == 0 && cmdResult.stdout.isNotBlank()) {
-                        val content = cmdResult.stdout
+                    val cmdResult = AdbShellExecutor.execute(
+                        command = "cat $path 2>/dev/null",
+                        timeoutMs = 15_000L,
+                        context = appContext
+                    )
+                    val content = cmdResult.output
+                    val looksLikeConfig = cmdResult.success ||
+                        content.contains("<WifiConfigStoreData") ||
+                        content.contains("<NetworkList") ||
+                        content.contains("network={")
+                    if (looksLikeConfig && content.isNotBlank()) {
                         val parsedCount = if (path.endsWith(".xml")) {
                             parseWifiConfigStoreXml(content, results, currentSsid)
                         } else {
@@ -134,28 +145,64 @@ class WifiPasswordRepository(private val context: Context) {
                         }
                         if (parsedCount > 0) {
                             parsedXmlOrSupplicant = true
-                            break
                         }
                     }
                 }
 
-                // ADB shell (UID 2000) fallback/supplement: cmd wifi list-networks & dumpsys wifi
-                val listNetworksResult = ShellExecutor.executeCommand("cmd wifi list-networks 2>/dev/null")
-                if (listNetworksResult.stdout.isNotBlank()) {
-                    parseCmdWifiListNetworks(listNetworksResult.stdout, results, currentSsid)
+                // Silent su fallback only if direct shell reads returned nothing and su binary exists
+                if (!parsedXmlOrSupplicant) {
+                    val suCheck = AdbShellExecutor.execute(
+                        command = "command -v su 2>/dev/null",
+                        timeoutMs = 5_000L,
+                        context = appContext
+                    )
+                    if (suCheck.success && suCheck.output.isNotBlank()) {
+                        for (path in storePaths) {
+                            val suResult = AdbShellExecutor.execute(
+                                command = "su -c 'cat $path' 2>/dev/null",
+                                timeoutMs = 15_000L,
+                                context = appContext
+                            )
+                            if (suResult.success && suResult.output.isNotBlank()) {
+                                val parsedCount = if (path.endsWith(".xml")) {
+                                    parseWifiConfigStoreXml(suResult.output, results, currentSsid)
+                                } else {
+                                    parseWpaSupplicantConf(suResult.output, results, currentSsid)
+                                }
+                                if (parsedCount > 0) {
+                                    parsedXmlOrSupplicant = true
+                                    break
+                                }
+                            }
+                        }
+                    }
                 }
 
-                val dumpsysResult = ShellExecutor.executeCommand("dumpsys wifi 2>/dev/null")
-                if (dumpsysResult.stdout.isNotBlank()) {
-                    parseDumpsysWifi(dumpsysResult.stdout, results, currentSsid)
+                // Shell (UID 2000 / Shizuku) supplement: cmd wifi list-networks & dumpsys wifi
+                val listNetworksResult = AdbShellExecutor.execute(
+                    command = "cmd wifi list-networks 2>/dev/null",
+                    timeoutMs = 10_000L,
+                    context = appContext
+                )
+                if (listNetworksResult.output.isNotBlank()) {
+                    parseCmdWifiListNetworks(listNetworksResult.output, results, currentSsid)
+                }
+
+                val dumpsysResult = AdbShellExecutor.execute(
+                    command = "dumpsys wifi 2>/dev/null",
+                    timeoutMs = 15_000L,
+                    context = appContext
+                )
+                if (dumpsysResult.output.isNotBlank()) {
+                    parseDumpsysWifi(dumpsysResult.output, results, currentSsid)
                 }
 
                 if (!parsedXmlOrSupplicant) {
-                    Log.d(TAG, "WifiConfigStore.xml restricted in ADB shell; populated from cmd wifi / dumpsys wifi")
+                    Log.d(TAG, "WifiConfigStore.xml unavailable via shell; supplemented from cmd wifi / dumpsys wifi")
                 }
             }
         } catch (e: Throwable) {
-            Log.w(TAG, "Wireless ADB inspection error: ${e.message}")
+            Log.w(TAG, "Privileged shell Wi-Fi inspection error: ${e.message}")
         }
 
         // Clean any legacy synthetic placeholder password labels from old vault entries
@@ -271,6 +318,21 @@ class WifiPasswordRepository(private val context: Context) {
                                 currentAttrName.equals("HiddenSSID", ignoreCase = true) -> {
                                 hiddenSsid = parser.getAttributeValue(null, "value")
                                     ?.equals("true", ignoreCase = true) == true
+                            }
+                            tagName.equals("int", ignoreCase = true) &&
+                                currentAttrName.equals("SecurityType", ignoreCase = true) -> {
+                                val secVal = parser.getAttributeValue(null, "value")?.toIntOrNull()
+                                val mappedHint = when (secVal) {
+                                    0 -> "NONE"
+                                    1 -> "WEP"
+                                    2 -> "WPA2"
+                                    3, 9 -> "EAP"
+                                    4 -> "SAE"
+                                    else -> null
+                                }
+                                if (mappedHint != null) {
+                                    keyMgmtHint = (keyMgmtHint ?: "") + " " + mappedHint
+                                }
                             }
                         }
                     }
@@ -607,10 +669,10 @@ class WifiPasswordRepository(private val context: Context) {
             Log.w(TAG, "Failed to remove network from WifiManager: ${e.message}")
         }
 
-        // Also try shell command if Wireless ADB is active
+        // Also try shell command if Shizuku or Wireless ADB is active
         try {
             if (_isElevatedModeAvailable.value) {
-                ShellExecutor.executeCommand("cmd -w wifi forget-network \"${network.ssid}\"")
+                AdbShellExecutor.execute("cmd -w wifi forget-network \"${network.ssid}\"", context = appContext)
             }
         } catch (_: Exception) {}
 
@@ -745,8 +807,8 @@ class WifiPasswordRepository(private val context: Context) {
         // Try elevated shell connect if available
         if (!success && _isElevatedModeAvailable.value) {
             try {
-                val res = ShellExecutor.executeCommand("cmd -w wifi connect-network \"${network.ssid}\"")
-                if (res.exitCode == 0) success = true
+                val res = AdbShellExecutor.execute("cmd -w wifi connect-network \"${network.ssid}\"", context = appContext)
+                if (res.success) success = true
             } catch (_: Exception) {}
         }
 

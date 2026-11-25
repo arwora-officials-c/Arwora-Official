@@ -149,7 +149,10 @@ class ArworaConnectEngine(
 
         val bound = withContext(Dispatchers.IO) {
             try {
-                ServerSocket(preferredPort)
+                ServerSocket().apply {
+                    reuseAddress = true
+                    bind(InetSocketAddress(preferredPort))
+                }
             } catch (_: Exception) {
                 ServerSocket(0)
             }

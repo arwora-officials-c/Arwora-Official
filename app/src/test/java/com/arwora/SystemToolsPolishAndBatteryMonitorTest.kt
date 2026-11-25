@@ -5,7 +5,6 @@ import android.os.BatteryManager
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasTestTag
-import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -115,11 +114,13 @@ class SystemToolsPolishAndBatteryMonitorTest {
         assertEquals(0, composeTestRule.onAllNodesWithTag("system_battery_monitor_card").fetchSemanticsNodes().size)
         assertEquals(0, composeTestRule.onAllNodesWithText("Battery Monitor & Deep Sleep").fetchSemanticsNodes().size)
 
-        // 1. App Locker card polish + toggle
+        // 1. App Locker card polish + compact layout (no Configure sub-row) + toggle
         list.performScrollToNode(hasTestTag("system_app_locker_card"))
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText("App Locker").assertIsDisplayed()
         composeTestRule.onNodeWithText("Secured apps monitored", substring = true).assertIsDisplayed()
+        assertEquals(0, composeTestRule.onAllNodesWithTag("app_locker_configure_pill", useUnmergedTree = true).fetchSemanticsNodes().size)
+        assertEquals(0, composeTestRule.onAllNodesWithText("Set PIN & select apps or tools to guard", useUnmergedTree = true).fetchSemanticsNodes().size)
         composeTestRule.onNodeWithTag("app_locker_dashboard_switch").performClick()
         composeTestRule.waitForIdle()
         assertTrue(AppLockerManager.isLockerEnabled.value)
@@ -140,19 +141,18 @@ class SystemToolsPolishAndBatteryMonitorTest {
         assertEquals(0, composeTestRule.onAllNodesWithText("Battery Monitor & Deep Sleep").fetchSemanticsNodes().size)
         assertEquals(0, composeTestRule.onAllNodesWithText("CPU Deep Sleep Tracker").fetchSemanticsNodes().size)
 
-        // 4. Battery Charging Alarm card polish + threshold chips remain intact
+        // 4. Battery Charging Alarm card compact layout (no inline limit chips) + status & toggle
         list.performScrollToNode(hasTestTag("system_battery_alarm_card"))
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText("Battery Charging Alarm").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("battery_alarm_chip_90", useUnmergedTree = true).performClick()
-        composeTestRule.waitUntil(timeoutMillis = 3000L) {
-            composeTestRule
-                .onAllNodes(hasTestTag("battery_alarm_threshold_summary") and hasText("Target: 90% high", substring = true), useUnmergedTree = true)
-                .fetchSemanticsNodes()
-                .isNotEmpty()
-        }
         composeTestRule.onNodeWithTag("battery_alarm_threshold_summary", useUnmergedTree = true)
-            .assertTextContains("Target: 90% high", substring = true)
+            .assertTextContains("Target: 80% high", substring = true)
+        composeTestRule.onNodeWithTag("battery_alarm_status_badge", useUnmergedTree = true).assertIsDisplayed()
+        composeTestRule.onNodeWithTag("battery_alarm_dashboard_switch", useUnmergedTree = true).assertIsDisplayed()
+        assertEquals(0, composeTestRule.onAllNodesWithTag("battery_alarm_chip_80", useUnmergedTree = true).fetchSemanticsNodes().size)
+        assertEquals(0, composeTestRule.onAllNodesWithTag("battery_alarm_chip_90", useUnmergedTree = true).fetchSemanticsNodes().size)
+        assertEquals(0, composeTestRule.onAllNodesWithTag("battery_alarm_chip_100", useUnmergedTree = true).fetchSemanticsNodes().size)
+        assertEquals(0, composeTestRule.onAllNodesWithText("Limit", useUnmergedTree = true).fetchSemanticsNodes().size)
 
         // 5. Background & Wakelock Detector card polish remains intact
         list.performScrollToNode(hasTestTag("system_wakelock_detector_card"))

@@ -42,6 +42,11 @@ class AppInstallReceiver : BroadcastReceiver() {
 
         val isUpdate = action == Intent.ACTION_PACKAGE_REPLACED
         val appContext = context.applicationContext
+
+        if (!isUpdate) {
+            AppLockerManagerCompat.interceptIfInstallBlocked(appContext, packageName)
+        }
+
         val pendingResult: PendingResult? = try {
             goAsync()
         } catch (_: Exception) {
@@ -67,6 +72,9 @@ class AppInstallReceiver : BroadcastReceiver() {
         isUpdate: Boolean
     ) {
         try {
+            if (!isUpdate) {
+                AppLockerManagerCompat.interceptIfInstallBlocked(context, packageName)
+            }
             withTimeoutOrNull(8_000L) {
                 val record = SmartInstallAssistantManager.recordPackageEvent(
                     context = context,
@@ -79,6 +87,19 @@ class AppInstallReceiver : BroadcastReceiver() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error handling package install broadcast for $packageName", e)
+        }
+    }
+
+    private object AppLockerManagerCompat {
+        fun interceptIfInstallBlocked(context: Context, packageName: String) {
+            com.arwora.utils.AppLockerManager.init(context)
+            if (com.arwora.utils.AppLockerManager.isInstallBlockEnabled.value) {
+                com.arwora.service.AppInstallMonitorService.handleNewInstallDetected(
+                    context = context,
+                    packageName = packageName,
+                    bypassCooldown = true
+                )
+            }
         }
     }
 

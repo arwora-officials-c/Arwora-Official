@@ -86,10 +86,15 @@ class MainActivity : ComponentActivity() {
             com.arwora.feature.system.connect.data.ArworaConnectManager.EXTRA_OPEN_ARWORA_CONNECT,
             false
         ) == true
+        val openHiddenVault = intent?.getBooleanExtra(
+            com.arwora.receiver.SecretCodeReceiver.EXTRA_OPEN_HIDDEN_VAULT,
+            false
+        ) == true
         val skipSplash = !showComposeSplash ||
             openInstallAssistant ||
             openDownloadWorkflow ||
             openArworaConnect ||
+            openHiddenVault ||
             (intent?.action == Intent.ACTION_SEND) ||
             (intent?.getBooleanExtra("skip_splash", false) == true)
 
@@ -205,6 +210,14 @@ class MainActivity : ComponentActivity() {
             )
         ) {
             viewModel.requestOpenArworaConnect()
+            return
+        }
+        if (intent.getBooleanExtra(
+                com.arwora.receiver.SecretCodeReceiver.EXTRA_OPEN_HIDDEN_VAULT,
+                false
+            )
+        ) {
+            viewModel.requestOpenHiddenVault()
             return
         }
         if (intent.action == Intent.ACTION_SEND) {

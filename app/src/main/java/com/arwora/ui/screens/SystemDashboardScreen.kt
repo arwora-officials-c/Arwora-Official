@@ -224,18 +224,20 @@ fun SystemDashboardScreen(
         when (ShizukuBridgeManager.connectShizuku(context)) {
             ShizukuConnectOutcome.ALREADY_CONNECTED -> {
                 Toast.makeText(context, "Shizuku permission is active", Toast.LENGTH_SHORT).show()
+                refreshDashboardStatuses()
             }
             ShizukuConnectOutcome.PERMISSION_REQUESTED -> {
                 Toast.makeText(context, "Authorizing Shizuku permission...", Toast.LENGTH_SHORT).show()
             }
             ShizukuConnectOutcome.SERVICE_STOPPED_OPENED_APP -> {
                 Toast.makeText(context, "Start Shizuku service and return to connect", Toast.LENGTH_SHORT).show()
+                refreshDashboardStatuses()
             }
             ShizukuConnectOutcome.SERVICE_STOPPED_UNAVAILABLE -> {
                 Toast.makeText(context, "Shizuku app not installed", Toast.LENGTH_SHORT).show()
+                refreshDashboardStatuses()
             }
         }
-        refreshDashboardStatuses()
     }
 
     DisposableEffect(lifecycleOwner, context) {
@@ -1042,24 +1044,6 @@ fun SystemDashboardScreen(
                                 }
                             }
                         },
-                        onSelectThreshold = { selectedPct ->
-                            SoundEffectManager.playClick(context)
-                            coroutineScope.launch {
-                                settingsRepository.setBatteryAlarmThreshold(selectedPct)
-                                if (chargingAlarmEnabled) {
-                                    val serviceIntent = Intent(context, com.arwora.service.BatteryAlarmService::class.java).apply {
-                                        action = com.arwora.service.BatteryAlarmService.ACTION_UPDATE_SETTINGS
-                                    }
-                                    runCatching {
-                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                            context.startForegroundService(serviceIntent)
-                                        } else {
-                                            context.startService(serviceIntent)
-                                        }
-                                    }
-                                }
-                            }
-                        },
                         onOpenDetails = {
                             SoundEffectManager.playClick(context)
                             navigateGuarded(Screen.BatteryAlarm.route) {
@@ -1516,10 +1500,11 @@ fun SystemDashboardScreen(
                                     text = when (shizukuUiStatus) {
                                         ShizukuUiStatus.ACTIVE_CONNECTED -> ShizukuUiStatus.ACTIVE_CONNECTED.badgeText
                                         ShizukuUiStatus.PERMISSION_REQUIRED -> if (shizukuShouldShowRationale) {
-                                            "Permission Required (Denied)"
+                                            ShizukuUiStatus.PERMISSION_DENIED.badgeText
                                         } else {
                                             ShizukuUiStatus.PERMISSION_REQUIRED.badgeText
                                         }
+                                        ShizukuUiStatus.PERMISSION_DENIED -> ShizukuUiStatus.PERMISSION_DENIED.badgeText
                                         ShizukuUiStatus.SERVICE_STOPPED -> if (shizukuInstalled) {
                                             ShizukuUiStatus.SERVICE_STOPPED.badgeText
                                         } else {
@@ -1531,6 +1516,7 @@ fun SystemDashboardScreen(
                                     color = when (shizukuUiStatus) {
                                         ShizukuUiStatus.ACTIVE_CONNECTED -> Color(0xFF10B981)
                                         ShizukuUiStatus.PERMISSION_REQUIRED -> Color(0xFFF59E0B)
+                                        ShizukuUiStatus.PERMISSION_DENIED,
                                         ShizukuUiStatus.SERVICE_STOPPED -> MaterialTheme.colorScheme.error
                                     }
                                 )
@@ -2469,6 +2455,7 @@ internal fun PrivilegeEngineBridgeCard(
                 val shizukuColor = when (shizukuUiStatus) {
                     ShizukuUiStatus.ACTIVE_CONNECTED -> Color(0xFF10B981)
                     ShizukuUiStatus.PERMISSION_REQUIRED -> Color(0xFFF59E0B)
+                    ShizukuUiStatus.PERMISSION_DENIED,
                     ShizukuUiStatus.SERVICE_STOPPED -> Color(0xFFDC2626)
                 }
 

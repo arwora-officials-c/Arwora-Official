@@ -451,13 +451,18 @@ fun PinSetupDialog(
         }
     }
 
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
         Surface(
             shape = RoundedCornerShape(26.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 6.dp,
             border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
-            modifier = Modifier.fillMaxWidth(0.92f)
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .wrapContentHeight()
         ) {
             Column(
                 modifier = Modifier
@@ -586,12 +591,17 @@ fun PinRecoveryDialog(
     var newPin by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
         Surface(
             shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 6.dp,
-            modifier = Modifier.fillMaxWidth(0.92f)
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .wrapContentHeight()
         ) {
             Column(
                 modifier = Modifier

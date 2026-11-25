@@ -222,4 +222,79 @@ class AppPermissionsHelperTest {
         com.arwora.service.NotificationHistoryService.setListenerPaused(context, false)
         assertFalse(com.arwora.service.NotificationHistoryService.isListenerPaused(context))
     }
+
+    @Test
+    fun storageSettingsIntentTargetsPackageAllFilesAccessOnApi30Plus() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val storageIntent = AppPermissionsHelper.createSettingsIntent(
+            context,
+            ManagedPermissionCategory.STORAGE
+        )
+        assertEquals(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, storageIntent.action)
+        assertEquals("package:${context.packageName}", storageIntent.dataString)
+
+        val explicitAllFilesIntent = AppPermissionsHelper.createManageAllFilesAccessIntent(context)
+        assertEquals(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, explicitAllFilesIntent.action)
+        assertEquals("package:${context.packageName}", explicitAllFilesIntent.dataString)
+    }
+
+    @Test
+    fun safDocumentTreeIntentAndFallbackWorkWhenAllFilesSettingsUnavailable() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val safIntent = AppPermissionsHelper.createSafDocumentTreeIntent()
+        assertEquals(android.content.Intent.ACTION_OPEN_DOCUMENT_TREE, safIntent.action)
+        assertTrue(
+            (safIntent.flags and android.content.Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION) != 0
+        )
+
+        // In bare Robolectric environment with no Settings activities registered,
+        // openAllFilesAccessWithSafFallback invokes the SAF fallback callback cleanly.
+        var safFallbackTriggered = false
+        val handled = AppPermissionsHelper.openAllFilesAccessWithSafFallback(
+            context = context,
+            onSafFallback = { safFallbackTriggered = true }
+        )
+        assertTrue(handled)
+        assertTrue(safFallbackTriggered)
+
+        // Persisting a tree URI marks storage as granted cleanly
+        val sampleUri = android.net.Uri.parse("content://com.android.externalstorage.documents/tree/primary%3ADownload")
+        val persisted = AppPermissionsHelper.persistSafTreeUri(context, sampleUri)
+        assertTrue(persisted)
+        assertTrue(AppPermissionsHelper.hasSafDirectoryGrant(context))
+        assertTrue(AppPermissionsHelper.isStorageGranted(context))
+        assertEquals(sampleUri, AppPermissionsHelper.getPersistedSafTreeUri(context))
+
+        AppPermissionsHelper.clearSafTreeUri(context)
+        assertFalse(AppPermissionsHelper.hasSafDirectoryGrant(context))
+    }
+
+    @Test
+    fun manifestDeclaresManageExternalStorageAndSdkBoundedLegacyPermissions() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val pkgInfo = context.packageManager.getPackageInfo(
+            context.packageName,
+            android.content.pm.PackageManager.GET_PERMISSIONS
+        )
+        val requested = pkgInfo.requestedPermissions?.toList().orEmpty()
+        assertTrue(requested.contains(Manifest.permission.MANAGE_EXTERNAL_STORAGE))
+        assertTrue(requested.contains(Manifest.permission.READ_MEDIA_IMAGES))
+        assertTrue(requested.contains(Manifest.permission.READ_MEDIA_VIDEO))
+        // maxSdkVersion=32 and maxSdkVersion=29 exclude legacy permissions on SDK 35
+        assertFalse(requested.contains(Manifest.permission.READ_EXTERNAL_STORAGE))
+        assertFalse(requested.contains(Manifest.permission.WRITE_EXTERNAL_STORAGE))
+    }
+
+    @Test
+    @Config(sdk = [29])
+    fun manifestIncludesLegacyStoragePermissionsWithinMaxSdkBounds() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val pkgInfo = context.packageManager.getPackageInfo(
+            context.packageName,
+            android.content.pm.PackageManager.GET_PERMISSIONS
+        )
+        val requested = pkgInfo.requestedPermissions?.toList().orEmpty()
+        assertTrue(requested.contains(Manifest.permission.READ_EXTERNAL_STORAGE))
+        assertTrue(requested.contains(Manifest.permission.WRITE_EXTERNAL_STORAGE))
+    }
 }

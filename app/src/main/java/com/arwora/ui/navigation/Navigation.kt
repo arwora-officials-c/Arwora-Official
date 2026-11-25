@@ -184,6 +184,7 @@ fun MainAppScreen(
     val pendingInstallAssistantPkg by viewModel.pendingInstallAssistantPackage.collectAsStateWithLifecycle()
     val pendingDownloadWorkflowNav by viewModel.pendingDownloadWorkflowNav.collectAsStateWithLifecycle()
     val pendingArworaConnectNav by viewModel.pendingArworaConnectNav.collectAsStateWithLifecycle()
+    val pendingHiddenVaultNav by viewModel.pendingHiddenVaultNav.collectAsStateWithLifecycle()
     val appContext = androidx.compose.ui.platform.LocalContext.current
 
     LaunchedEffect(pendingInstallAssistantPkg) {
@@ -228,6 +229,16 @@ fun MainAppScreen(
             onSplashDismissed()
             viewModel.consumePendingArworaConnect()
             navController.navigate(Screen.ArworaConnect.route) {
+                launchSingleTop = true
+            }
+        }
+    }
+
+    LaunchedEffect(pendingHiddenVaultNav) {
+        if (pendingHiddenVaultNav) {
+            showSplashOverlay = false
+            onSplashDismissed()
+            navController.navigate(Screen.AppLocker.route) {
                 launchSingleTop = true
             }
         }
@@ -842,7 +853,11 @@ fun NameGenNavHost(
         }
         composable(Screen.AppLocker.route) {
             val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as com.arwora.NameGenApplication
-            AppLockerScreen(navController = navController, appManagerViewModel = app.appManagerViewModel)
+            AppLockerScreen(
+                navController = navController,
+                appManagerViewModel = app.appManagerViewModel,
+                mainViewModel = viewModel
+            )
         }
         composable(Screen.AppBooster.route) {
             com.arwora.feature.system.booster.ui.AppBoosterScreen(navController = navController)

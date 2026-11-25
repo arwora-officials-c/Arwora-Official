@@ -121,6 +121,9 @@ class NameGenApplication : Application() {
                     runCatching { com.arwora.utils.ShizukuBridge.init(appCtx, autoRequestIfNeeded = false) }
                     runCatching { com.arwora.utils.AdbShellExecutor.init(appCtx) }
                     runCatching { com.arwora.utils.WirelessPairingManager.init(appCtx) }
+                    runCatching { com.arwora.utils.AppLockerManager.init(appCtx) }
+                    runCatching { com.arwora.utils.AppHiderManager.init(appCtx) }
+                    runCatching { com.arwora.utils.AppLockerManager.syncBackgroundProtectionServices(appCtx) }
                     runCatching { com.arwora.service.WifiAutoPairMonitor.syncWithPreference(appCtx) }
                     runCatching {
                         val adbCreds = com.arwora.utils.EncryptedAdbCredentialStore.loadState(appCtx)
