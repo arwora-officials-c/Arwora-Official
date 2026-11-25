@@ -59,7 +59,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun SocialScreen(
     navController: NavController,
-    viewModel: MainViewModel
+    viewModel: MainViewModel,
+    isVisible: Boolean = true
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -176,7 +177,8 @@ fun SocialScreen(
         // ==================== AUTO VIDEO SCROLL CARD ====================
         item {
             AutoVideoScrollCard(
-                onToastMessage = { msg -> viewModel.showFloatingToast(msg) }
+                onToastMessage = { msg -> viewModel.showFloatingToast(msg) },
+                isVisible = isVisible
             )
         }
 

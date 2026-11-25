@@ -114,7 +114,6 @@ fun SystemDashboardScreen(
         ShizukuBridgeManager.initialize(context, autoRequestIfNeeded = false)
         AdbShellExecutor.init(context)
         com.arwora.utils.AppLockerManager.init(context)
-        com.arwora.feature.system.battery.service.BatteryMonitorManager.init(context)
     }
 
     val settingsRepository = remember(context) {
@@ -210,7 +209,6 @@ fun SystemDashboardScreen(
             NativeAdbManager.refreshConnectionStatus(context)
             ShizukuBridgeManager.checkShizukuStatus(context)
             AdbShellExecutor.refreshEngineStatus(context)
-            com.arwora.feature.system.battery.service.BatteryMonitorManager.refreshStats(context, emitLog = false)
             val (scale, dns) = withContext(Dispatchers.IO) {
                 AnimationTweakManager.getCurrentAnimationScale(context) to
                     DnsManager.getSelectedDns(context)
@@ -218,12 +216,6 @@ fun SystemDashboardScreen(
             animScale = scale
             selectedDnsProvider = dns
             shellViewModel.refreshStatus()
-        }
-    }
-
-    LaunchedEffect(isVisible) {
-        if (isVisible) {
-            com.arwora.feature.system.battery.service.BatteryMonitorManager.refreshStats(context, emitLog = false)
         }
     }
 
@@ -983,24 +975,6 @@ fun SystemDashboardScreen(
                             SoundEffectManager.playClick(context)
                             navigateGuarded(Screen.ScreenOffOptimizer.route) {
                                 navController.navigate(Screen.ScreenOffOptimizer.route)
-                            }
-                        }
-                    )
-                }
-            }
-
-            // BATTERY MONITOR & DEEP SLEEP CARD
-            item {
-                DashboardStaggeredItem(
-                    index = 16,
-                    triggerAnimation = canPlayCardEntrance,
-                    isInitialLoadBurst = isInitialStaggerWindowActive
-                ) {
-                    com.arwora.feature.system.battery.ui.BatteryMonitorDashboardCard(
-                        onOpenDetails = {
-                            SoundEffectManager.playClick(context)
-                            navigateGuarded(Screen.BatteryMonitor.route) {
-                                navController.navigate(Screen.BatteryMonitor.route)
                             }
                         }
                     )

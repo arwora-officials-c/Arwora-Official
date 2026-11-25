@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.rememberCoroutineScope
@@ -114,39 +115,137 @@ fun AccessibilityGuidanceDialog(
     title: String = "Accessibility Service Required",
     description: String = "Auto Clicker requires Android Accessibility Service permission to perform automatic screen tap gestures and swipe macros on your behalf.",
     serviceName: String = "Auto Clicker Service",
+    isEnabled: Boolean = false,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val statusAccent = if (isEnabled) Color(0xFF10B981) else Color(0xFFF59E0B)
 
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = {
             Icon(
-                imageVector = Icons.Default.Accessibility,
+                imageVector = if (isEnabled) Icons.Default.CheckCircle else Icons.Default.Accessibility,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
+                tint = if (isEnabled) Color(0xFF10B981) else MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(32.dp)
             )
         },
         title = {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Surface(
+                    shape = ArworaDesignTokens.PillShape,
+                    color = statusAccent.copy(alpha = 0.14f),
+                    border = BorderStroke(1.dp, statusAccent.copy(alpha = 0.38f)),
+                    modifier = Modifier.testTag("accessibility_dialog_status_pill")
+                ) {
+                    Text(
+                        text = if (isEnabled) "Accessibility Ready" else "Permission Required",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = statusAccent,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+            }
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
                     text = description,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
+                // Visual Settings Toggle Preview Card
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = ArworaDesignTokens.InnerTileShape,
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+                    border = ArworaDesignTokens.innerTileBorder(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("accessibility_settings_preview_card")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Settings › Accessibility › Installed apps",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 9.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Accessibility,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Column {
+                                        Text(
+                                            text = serviceName,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = "Switch Use service to ON",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                Surface(
+                                    shape = ArworaDesignTokens.PillShape,
+                                    color = Color(0xFF10B981).copy(alpha = 0.16f),
+                                    border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.45f)),
+                                    modifier = Modifier.testTag("accessibility_preview_toggle_badge")
+                                ) {
+                                    Text(
+                                        text = "ON",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color(0xFF10B981),
+                                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Surface(
+                    shape = ArworaDesignTokens.InnerTileShape,
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text(
@@ -157,7 +256,7 @@ fun AccessibilityGuidanceDialog(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "1. Tap 'Open Accessibility' below\n2. Find '$serviceName' (or 'Arwora Hyper Toolkit')\n3. Switch the service toggle to ON",
+                            text = "1. Tap 'Open Accessibility Settings' below\n2. Open 'Installed apps' or 'Downloaded services'\n3. Select '$serviceName' & toggle ON\n4. Return to Arwora — status updates to Ready",
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -176,14 +275,15 @@ fun AccessibilityGuidanceDialog(
                     } catch (_: Exception) {
                         Toast.makeText(context, "Could not open Accessibility settings", Toast.LENGTH_SHORT).show()
                     }
-                }
+                },
+                modifier = Modifier.testTag("accessibility_open_settings_btn")
             ) {
-                Text("Open Accessibility")
+                Text("Open Accessibility Settings", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(if (isEnabled) "Done" else "Cancel")
             }
         }
     )

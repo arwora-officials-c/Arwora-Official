@@ -3,6 +3,7 @@ package com.arwora.service
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.Context
+import android.content.Intent
 import android.graphics.Path
 import android.os.Build
 import android.os.Handler
@@ -40,7 +41,8 @@ class AutoScrollAccessibilityService : AccessibilityService() {
         private const val TAG = "AutoScrollService"
         private const val SWIPE_DURATION_MS = 340L
         private const val COMPLETION_COOLDOWN_MS = 2_500L
-        private const val EVENT_INSPECT_THROTTLE_MS = 400L
+        private const val EVENT_INSPECT_THROTTLE_MS = 350L
+        private const val COMPLETION_POLL_INTERVAL_MS = 500L
 
         @Volatile
         var instance: AutoScrollAccessibilityService? = null
@@ -65,6 +67,7 @@ class AutoScrollAccessibilityService : AccessibilityService() {
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val mainHandler = Handler(Looper.getMainLooper())
     private val reusablePath = Path()
+    private val inspectionLock = Any()
 
     private var tickerJob: Job? = null
     private var observationJob: Job? = null
@@ -79,12 +82,16 @@ class AutoScrollAccessibilityService : AccessibilityService() {
     private var previousVideoRatio: Float? = null
 
     @Volatile
+    private var previousElapsedSeconds: Int? = null
+
+    @Volatile
     private var lastObservedWindowPackage: String? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
         AutoVideoScrollManager.init(this)
+        AutoVideoScrollManager.setAccessibilityServiceRunning(true)
         observeAutoScrollState()
         Log.d(TAG, "AutoScrollAccessibilityService connected")
     }
@@ -97,44 +104,21 @@ class AutoScrollAccessibilityService : AccessibilityService() {
 
         val eventPkg = event.packageName?.toString()
         if (!eventPkg.isNullOrBlank()) {
-            lastObservedWindowPackage = eventPkg
-            val platform = VideoCompletionDetector.recognizePlatformLabel(eventPkg)
-            AutoVideoScrollManager.updateDetectedPlatform(platform)
+            val isWindowChange = event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+            if (eventPkg != packageName || isWindowChange) {
+                lastObservedWindowPackage = eventPkg
+                if (eventPkg != packageName) {
+                    val platform = VideoCompletionDetector.recognizePlatformLabel(eventPkg)
+                    AutoVideoScrollManager.updateDetectedPlatform(platform)
+                }
+            }
         }
 
         if (AutoVideoScrollManager.mode.value != AutoScrollMode.COMPLETION_BASED) {
             return
         }
 
-        val now = System.currentTimeMillis()
-        if (now - lastEventInspectMs < EVENT_INSPECT_THROTTLE_MS) return
-        if (now - lastSwipeTimestampMs < COMPLETION_COOLDOWN_MS) return
-        lastEventInspectMs = now
-
-        val activePkg = lastObservedWindowPackage
-        if (activePkg == packageName) return
-
-        val rootNode = runCatching { rootInActiveWindow }.getOrNull() ?: return
-        val snapshot = try {
-            extractVideoProgress(rootNode)
-        } finally {
-            recycleSafely(rootNode)
-        }
-
-        if (VideoCompletionDetector.isPlaybackCompletedOrLooped(previousVideoRatio, snapshot)) {
-            previousVideoRatio = null
-            AutoVideoScrollManager.updateStatusDetail("Playback ended • Scrolling next")
-            triggerAutoScrollSwipe()
-        } else {
-            val currentRatio = snapshot.ratio ?: run {
-                val e = snapshot.elapsedSeconds
-                val t = snapshot.totalSeconds
-                if (e != null && t != null && t > 0) e.toFloat() / t.toFloat() else null
-            }
-            if (currentRatio != null) {
-                previousVideoRatio = currentRatio
-            }
-        }
+        inspectActiveWindowForCompletion(force = false)
     }
 
     override fun onInterrupt() {
@@ -142,14 +126,25 @@ class AutoScrollAccessibilityService : AccessibilityService() {
         stopAutoScrollLoop()
     }
 
+    override fun onUnbind(intent: Intent?): Boolean {
+        stopAutoScrollLoop()
+        observationJob?.cancel()
+        if (instance === this) {
+            instance = null
+        }
+        AutoVideoScrollManager.setAccessibilityServiceRunning(false)
+        return super.onUnbind(intent)
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         stopAutoScrollLoop()
         observationJob?.cancel()
         serviceScope.cancel()
-        if (instance == this) {
+        if (instance === this) {
             instance = null
         }
+        AutoVideoScrollManager.setAccessibilityServiceRunning(false)
     }
 
     private fun observeAutoScrollState() {
@@ -174,7 +169,10 @@ class AutoScrollAccessibilityService : AccessibilityService() {
     private fun stopAutoScrollLoop() {
         tickerJob?.cancel()
         tickerJob = null
-        previousVideoRatio = null
+        synchronized(inspectionLock) {
+            previousVideoRatio = null
+            previousElapsedSeconds = null
+        }
     }
 
     private fun startAutoScrollLoop(mode: AutoScrollMode, intervalSeconds: Int) {
@@ -182,7 +180,7 @@ class AutoScrollAccessibilityService : AccessibilityService() {
         tickerJob = serviceScope.launch {
             when (mode) {
                 AutoScrollMode.TIME_BASED -> runTimeBasedTicker(safeInterval)
-                AutoScrollMode.COMPLETION_BASED -> runCompletionMonitorLoop(safeInterval)
+                AutoScrollMode.COMPLETION_BASED -> runCompletionMonitorLoop()
             }
         }
     }
@@ -190,7 +188,10 @@ class AutoScrollAccessibilityService : AccessibilityService() {
     private suspend fun runTimeBasedTicker(intervalSeconds: Int) {
         var remaining = intervalSeconds
         AutoVideoScrollManager.updateCountdown(remaining)
-        while (currentCoroutineContext().isActive && AutoVideoScrollManager.isServiceActive.value && !AutoVideoScrollManager.isPaused.value) {
+        while (currentCoroutineContext().isActive &&
+            AutoVideoScrollManager.isServiceActive.value &&
+            !AutoVideoScrollManager.isPaused.value
+        ) {
             val inToolkit = isForegroundAppToolkit()
             if (inToolkit) {
                 AutoVideoScrollManager.updateStatusDetail("Open TikTok, Reels, or Shorts")
@@ -213,39 +214,127 @@ class AutoScrollAccessibilityService : AccessibilityService() {
         }
     }
 
-    private suspend fun runCompletionMonitorLoop(fallbackIntervalSeconds: Int) {
-        var elapsedFallbackSec = 0
-        val adaptiveWindow = fallbackIntervalSeconds.coerceIn(8, 90)
-        AutoVideoScrollManager.updateCountdown(adaptiveWindow)
-        while (currentCoroutineContext().isActive && AutoVideoScrollManager.isServiceActive.value && !AutoVideoScrollManager.isPaused.value) {
+    private suspend fun runCompletionMonitorLoop() {
+        AutoVideoScrollManager.updateCountdown(0)
+        while (currentCoroutineContext().isActive &&
+            AutoVideoScrollManager.isServiceActive.value &&
+            !AutoVideoScrollManager.isPaused.value
+        ) {
             if (isForegroundAppToolkit()) {
                 AutoVideoScrollManager.updateStatusDetail("Open TikTok, Reels, or Shorts")
                 delay(1_000L)
                 continue
             }
 
-            val sinceLastSwipeMs = System.currentTimeMillis() - lastSwipeTimestampMs
-            if (lastSwipeTimestampMs > 0L && sinceLastSwipeMs < 1_200L) {
-                elapsedFallbackSec = 0
-            }
-
             val platform = VideoCompletionDetector.recognizePlatformLabel(lastObservedWindowPackage)
             val prefix = if (platform != null) "$platform • " else ""
-            val remainingFallback = (adaptiveWindow - elapsedFallbackSec).coerceAtLeast(1)
-            AutoVideoScrollManager.updateCountdown(remainingFallback)
-            AutoVideoScrollManager.updateStatusDetail("${prefix}Monitoring playback loop")
+            AutoVideoScrollManager.updateCountdown(0)
+            AutoVideoScrollManager.updateStatusDetail("${prefix}Waiting for video completion")
 
-            delay(1_000L)
-            elapsedFallbackSec++
-            if (elapsedFallbackSec >= adaptiveWindow) {
-                elapsedFallbackSec = 0
-                triggerAutoScrollSwipe()
-            }
+            inspectActiveWindowForCompletion(force = true)
+            delay(COMPLETION_POLL_INTERVAL_MS)
         }
     }
 
+    private fun inspectActiveWindowForCompletion(force: Boolean) {
+        if (!AutoVideoScrollManager.isServiceActive.value ||
+            AutoVideoScrollManager.isPaused.value ||
+            AutoVideoScrollManager.mode.value != AutoScrollMode.COMPLETION_BASED
+        ) {
+            return
+        }
+
+        synchronized(inspectionLock) {
+            val now = System.currentTimeMillis()
+            if (!force && now - lastEventInspectMs < EVENT_INSPECT_THROTTLE_MS) return
+            if (now - lastSwipeTimestampMs < COMPLETION_COOLDOWN_MS) return
+
+            val rootNode = runCatching { rootInActiveWindow }.getOrNull() ?: return
+            val rootPkg = rootNode.packageName?.toString()
+            if (rootPkg == packageName) {
+                recycleSafely(rootNode)
+                return
+            }
+            if (!rootPkg.isNullOrBlank()) {
+                lastObservedWindowPackage = rootPkg
+                AutoVideoScrollManager.updateDetectedPlatform(
+                    VideoCompletionDetector.recognizePlatformLabel(rootPkg)
+                )
+            }
+
+            lastEventInspectMs = now
+            val snapshot = try {
+                extractVideoProgress(rootNode)
+            } finally {
+                recycleSafely(rootNode)
+            }
+
+            processCompletionSnapshotLocked(snapshot)
+        }
+    }
+
+    internal fun evaluateCompletionSnapshotForTest(
+        snapshot: VideoProgressSnapshot,
+        targetPackageName: String? = null,
+        dispatchGesture: Boolean = false
+    ): Boolean {
+        if (!targetPackageName.isNullOrBlank()) {
+            lastObservedWindowPackage = targetPackageName
+            AutoVideoScrollManager.updateDetectedPlatform(
+                VideoCompletionDetector.recognizePlatformLabel(targetPackageName)
+            )
+        }
+        synchronized(inspectionLock) {
+            return processCompletionSnapshotLocked(snapshot, dispatchGesture = dispatchGesture)
+        }
+    }
+
+    private fun processCompletionSnapshotLocked(
+        snapshot: VideoProgressSnapshot,
+        dispatchGesture: Boolean = true
+    ): Boolean {
+        val completed = VideoCompletionDetector.isPlaybackCompletedOrLooped(
+            previousRatio = previousVideoRatio,
+            current = snapshot,
+            previousElapsedSeconds = previousElapsedSeconds
+        )
+        if (completed) {
+            previousVideoRatio = null
+            previousElapsedSeconds = null
+            val platform = VideoCompletionDetector.recognizePlatformLabel(lastObservedWindowPackage)
+            val prefix = if (platform != null) "$platform • " else ""
+            AutoVideoScrollManager.updateStatusDetail("${prefix}Playback ended • Scrolling next")
+            if (dispatchGesture) {
+                triggerAutoScrollSwipe()
+            }
+            return true
+        }
+
+        val currentRatio = snapshot.ratio ?: run {
+            val e = snapshot.elapsedSeconds
+            val t = snapshot.totalSeconds
+            if (e != null && t != null && t > 0) e.toFloat() / t.toFloat() else null
+        }
+        if (currentRatio != null) {
+            previousVideoRatio = currentRatio
+        }
+        if (snapshot.elapsedSeconds != null) {
+            previousElapsedSeconds = snapshot.elapsedSeconds
+        }
+        return false
+    }
+
     private fun isForegroundAppToolkit(): Boolean {
-        val rootPkg = runCatching { rootInActiveWindow?.packageName?.toString() }.getOrNull()
+        val root = runCatching { rootInActiveWindow }.getOrNull()
+        val rootPkg = if (root != null) {
+            try {
+                root.packageName?.toString()
+            } finally {
+                recycleSafely(root)
+            }
+        } else {
+            null
+        }
         val pkg = rootPkg ?: lastObservedWindowPackage
         return pkg == packageName
     }
@@ -311,7 +400,8 @@ class AutoScrollAccessibilityService : AccessibilityService() {
     }
 
     private fun extractVideoProgress(root: AccessibilityNodeInfo): VideoProgressSnapshot {
-        var ratio: Float? = null
+        var preferredSeekRatio: Float? = null
+        var fallbackRangeRatio: Float? = null
         var elapsed: Int? = null
         var total: Int? = null
         var replayCue = false
@@ -319,17 +409,31 @@ class AutoScrollAccessibilityService : AccessibilityService() {
         val queue = ArrayDeque<Pair<AccessibilityNodeInfo, Int>>()
         queue.add(root to 0)
         var visited = 0
-        val maxNodes = 90
-        val maxDepth = 9
+        val maxNodes = 100
+        val maxDepth = 10
 
         while (queue.isNotEmpty() && visited < maxNodes) {
             val (node, depth) = queue.removeFirst()
             visited++
 
+            val className = node.className?.toString().orEmpty()
+            val viewId = node.viewIdResourceName?.lowercase().orEmpty()
+            val isSeekOrProgressNode = className.contains("SeekBar", ignoreCase = true) ||
+                className.contains("ProgressBar", ignoreCase = true) ||
+                className.contains("Slider", ignoreCase = true) ||
+                viewId.contains("seek") ||
+                viewId.contains("progress") ||
+                viewId.contains("scrubber") ||
+                viewId.contains("timeline")
+
             val range = node.rangeInfo
             if (range != null && range.max > range.min) {
                 val normalized = ((range.current - range.min) / (range.max - range.min)).coerceIn(0f, 1f)
-                ratio = normalized
+                if (isSeekOrProgressNode) {
+                    preferredSeekRatio = normalized
+                } else if (fallbackRangeRatio == null) {
+                    fallbackRangeRatio = normalized
+                }
             }
 
             val text = node.text
@@ -345,7 +449,7 @@ class AutoScrollAccessibilityService : AccessibilityService() {
                 total = parsed.second
             }
 
-            if (replayCue || (ratio != null && ratio >= 0.96f)) {
+            if (replayCue || (preferredSeekRatio != null && preferredSeekRatio >= 0.96f)) {
                 if (node !== root) recycleSafely(node)
                 break
             }
@@ -371,7 +475,7 @@ class AutoScrollAccessibilityService : AccessibilityService() {
         }
 
         return VideoProgressSnapshot(
-            ratio = ratio,
+            ratio = preferredSeekRatio ?: fallbackRangeRatio,
             elapsedSeconds = elapsed,
             totalSeconds = total,
             hasReplayCue = replayCue

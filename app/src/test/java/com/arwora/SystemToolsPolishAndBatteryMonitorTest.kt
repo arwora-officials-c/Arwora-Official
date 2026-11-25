@@ -1,21 +1,20 @@
 package com.arwora
 
 import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
 import android.os.BatteryManager
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.navigation.compose.rememberNavController
 import androidx.test.core.app.ApplicationProvider
-import com.arwora.feature.system.battery.model.CpuState
 import com.arwora.feature.system.battery.service.BatteryMonitorManager
 import com.arwora.feature.system.battery.service.BatteryTelemetrySnapshot
 import com.arwora.feature.system.optimizer.service.ScreenOffOptimizerManager
@@ -62,37 +61,16 @@ class SystemToolsPolishAndBatteryMonitorTest {
     }
 
     @Test
-    fun batteryMonitorManagerComputesDeepSleepHealthAndCurrentRateAccurately() {
+    fun batteryMonitorManagerRetainsCoreTelemetryForBatteryChargingAlarm() {
         assertEquals("Good", BatteryMonitorManager.parseBatteryHealth(BatteryManager.BATTERY_HEALTH_GOOD))
         assertEquals("Overheat", BatteryMonitorManager.parseBatteryHealth(BatteryManager.BATTERY_HEALTH_OVERHEAT))
         assertEquals("Cold", BatteryMonitorManager.parseBatteryHealth(BatteryManager.BATTERY_HEALTH_COLD))
         assertEquals("Over Voltage", BatteryMonitorManager.parseBatteryHealth(BatteryManager.BATTERY_HEALTH_OVER_VOLTAGE))
         assertEquals("Unknown", BatteryMonitorManager.parseBatteryHealth(BatteryManager.BATTERY_HEALTH_UNKNOWN))
+        assertEquals("AC", BatteryMonitorManager.parsePlugType(BatteryManager.BATTERY_PLUGGED_AC))
+        assertEquals("USB", BatteryMonitorManager.parsePlugType(BatteryManager.BATTERY_PLUGGED_USB))
+        assertEquals("Battery", BatteryMonitorManager.parsePlugType(0))
 
-        // Negative discharge microamperes & positive microamperes normalize identically to mAh/h
-        assertEquals(420, BatteryMonitorManager.normalizeCurrentMahPerHour(-420_000L))
-        assertEquals(1850, BatteryMonitorManager.normalizeCurrentMahPerHour(1_850_000L))
-        assertEquals(0, BatteryMonitorManager.normalizeCurrentMahPerHour(Int.MIN_VALUE.toLong()))
-        assertEquals(0, BatteryMonitorManager.normalizeCurrentMahPerHour(0L))
-
-        val diag = BatteryMonitorManager.computeSleepDiagnostics(
-            elapsedMs = 10_000_000L,
-            uptimeMs = 2_500_000L,
-            isDozeActive = true,
-            activeWakeLocksCount = 1,
-            pendingAlarmsCount = 4
-        )
-        assertEquals(75, diag.deepSleepPercentage)
-        assertEquals(7_500_000L, diag.deepSleepMs)
-        assertEquals(2_500_000L, diag.awakeUptimeMs)
-        assertEquals(CpuState.DEEP_SLEEP, diag.cpuState)
-        assertTrue(diag.isDozeModeActive)
-
-        assertEquals("2h 5m", BatteryMonitorManager.formatDurationCompact(7_500_000L))
-    }
-
-    @Test
-    fun batteryMonitorManagerRefreshStatsReadsStickyIntentAndClockOverrides() {
         BatteryMonitorManager.batteryTelemetryOverride = {
             BatteryTelemetrySnapshot(
                 level = 76,
@@ -100,46 +78,23 @@ class SystemToolsPolishAndBatteryMonitorTest {
                 temperatureCelsius = 33.4f,
                 voltageMv = 4080,
                 healthLabel = "Good",
-                plugTypeLabel = "Battery",
-                dischargeRateMahPerHour = 365,
-                isCurrentAvailable = true
+                plugTypeLabel = "Battery"
             )
         }
-        BatteryMonitorManager.clockProviderOverride = {
-            14_400_000L to 3_600_000L // 4h elapsed, 1h awake -> 3h deep sleep (75%)
-        }
 
-        BatteryMonitorManager.refreshStats(context, emitLog = false)
+        BatteryMonitorManager.refreshStats(context)
 
         assertEquals(76, BatteryMonitorManager.batteryLevel.value)
         assertFalse(BatteryMonitorManager.isCharging.value)
         assertEquals(33.4f, BatteryMonitorManager.batteryTemperature.value, 0.01f)
         assertEquals(4080, BatteryMonitorManager.batteryVoltage.value)
         assertEquals("Good", BatteryMonitorManager.batteryHealth.value)
-        assertEquals(365, BatteryMonitorManager.dischargeRateMahPerHour.value)
-        assertTrue(BatteryMonitorManager.isCurrentAvailable.value)
-        assertEquals(75, BatteryMonitorManager.deepSleepDiagnostics.value.deepSleepPercentage)
-        assertEquals(10_800_000L, BatteryMonitorManager.deepSleepDiagnostics.value.deepSleepMs)
+        assertEquals("Battery", BatteryMonitorManager.batteryPlugType.value)
     }
 
     @Test
-    fun systemDashboardRendersPolishedCardsAndBatteryMonitorDeepSleepCard() {
+    fun systemDashboardExcludesBatteryMonitorDeepSleepCardWhileKeepingPolishedSystemTools() {
         val app = ApplicationProvider.getApplicationContext<NameGenApplication>()
-        BatteryMonitorManager.batteryTelemetryOverride = {
-            BatteryTelemetrySnapshot(
-                level = 64,
-                isCharging = false,
-                temperatureCelsius = 32.5f,
-                voltageMv = 3950,
-                healthLabel = "Good",
-                plugTypeLabel = "Battery",
-                dischargeRateMahPerHour = 290,
-                isCurrentAvailable = true
-            )
-        }
-        BatteryMonitorManager.clockProviderOverride = {
-            7_200_000L to 1_800_000L // 2h elapsed, 30m awake -> 1h 30m deep sleep (75%)
-        }
         AppLockerManager.setPin(context, "1234")
 
         composeTestRule.setContent {
@@ -155,6 +110,10 @@ class SystemToolsPolishAndBatteryMonitorTest {
         composeTestRule.waitForIdle()
 
         val list = composeTestRule.onNodeWithTag("system_dashboard_lazy_column")
+
+        // Ensure Battery Monitor & Deep Sleep is not rendered initially
+        assertEquals(0, composeTestRule.onAllNodesWithTag("system_battery_monitor_card").fetchSemanticsNodes().size)
+        assertEquals(0, composeTestRule.onAllNodesWithText("Battery Monitor & Deep Sleep").fetchSemanticsNodes().size)
 
         // 1. App Locker card polish + toggle
         list.performScrollToNode(hasTestTag("system_app_locker_card"))
@@ -173,22 +132,15 @@ class SystemToolsPolishAndBatteryMonitorTest {
         composeTestRule.waitForIdle()
         assertTrue(ScreenOffOptimizerManager.isServiceActive.value)
 
-        // 3. Battery Monitor & Deep Sleep card
-        list.performScrollToNode(hasTestTag("system_battery_monitor_card"))
+        // 3. Notification History Log follows Smart Screen-Off directly without Battery Monitor card
+        list.performScrollToNode(hasTestTag("system_notification_history_card"))
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithText("Battery Monitor & Deep Sleep").assertIsDisplayed()
-        composeTestRule.onNodeWithText(
-            "Real-time power drain, battery health & CPU deep sleep tracking"
-        ).assertIsDisplayed()
-        composeTestRule.onNodeWithText("64%", useUnmergedTree = true).assertIsDisplayed()
-        composeTestRule.onNodeWithText("32.5°C", useUnmergedTree = true).assertIsDisplayed()
-        composeTestRule.onNodeWithText("3.95V", useUnmergedTree = true).assertIsDisplayed()
-        composeTestRule.onNodeWithTag("battery_stat_health", useUnmergedTree = true).assertIsDisplayed()
-        composeTestRule.onNodeWithText("75% Deep Sleep", useUnmergedTree = true).assertIsDisplayed()
-        composeTestRule.onNodeWithText("1h 30m", substring = true, useUnmergedTree = true).assertIsDisplayed()
-        composeTestRule.onNodeWithTag("battery_drain_rate_value", useUnmergedTree = true).assertTextContains("290 mAh/h")
+        composeTestRule.onNodeWithText("Notification History Log").assertIsDisplayed()
+        assertEquals(0, composeTestRule.onAllNodesWithTag("system_battery_monitor_card").fetchSemanticsNodes().size)
+        assertEquals(0, composeTestRule.onAllNodesWithText("Battery Monitor & Deep Sleep").fetchSemanticsNodes().size)
+        assertEquals(0, composeTestRule.onAllNodesWithText("CPU Deep Sleep Tracker").fetchSemanticsNodes().size)
 
-        // 4. Battery Charging Alarm card polish + threshold chips
+        // 4. Battery Charging Alarm card polish + threshold chips remain intact
         list.performScrollToNode(hasTestTag("system_battery_alarm_card"))
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText("Battery Charging Alarm").assertIsDisplayed()
@@ -202,10 +154,11 @@ class SystemToolsPolishAndBatteryMonitorTest {
         composeTestRule.onNodeWithTag("battery_alarm_threshold_summary", useUnmergedTree = true)
             .assertTextContains("Target: 90% high", substring = true)
 
-        // 5. Background & Wakelock Detector card polish
+        // 5. Background & Wakelock Detector card polish remains intact
         list.performScrollToNode(hasTestTag("system_wakelock_detector_card"))
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText("Background & Wakelock Detector").assertIsDisplayed()
         composeTestRule.onNodeWithTag("wakelock_status_badge", useUnmergedTree = true).assertIsDisplayed()
+        assertEquals(0, composeTestRule.onAllNodesWithTag("system_battery_monitor_card").fetchSemanticsNodes().size)
     }
 }

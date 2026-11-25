@@ -1,9 +1,12 @@
 package com.arwora.utils
 
+import android.accessibilityservice.AccessibilityServiceInfo
+import android.content.ComponentName
 import android.content.Context
 import android.content.SharedPreferences
 import android.provider.Settings
 import android.text.TextUtils
+import android.view.accessibility.AccessibilityManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,8 +26,9 @@ data class VideoProgressSnapshot(
 
 object VideoCompletionDetector {
 
-    private val TIME_PAIR_REGEX = Regex("""(\d{1,2}):(\d{2})\s*/\s*(\d{1,2}):(\d{2})""")
-    private val REPLAY_CUES = listOf("watch again", "replay")
+    private val TIME_PAIR_REGEX = Regex("""(\d{1,2}):(\d{2})\s*(?:/|of|-)\s*(\d{1,2}):(\d{2})""", RegexOption.IGNORE_CASE)
+    private val SECONDS_PAIR_REGEX = Regex("""(\d{1,3})s\s*/\s*(\d{1,3})s""", RegexOption.IGNORE_CASE)
+    private val REPLAY_CUES = listOf("watch again", "replay", "play again", "rewatch")
 
     fun recognizePlatformLabel(packageName: String?): String? {
         if (packageName.isNullOrBlank()) return null
@@ -45,26 +49,40 @@ object VideoCompletionDetector {
 
     fun parseElapsedAndTotalSeconds(text: CharSequence?): Pair<Int, Int>? {
         if (text.isNullOrBlank()) return null
-        val match = TIME_PAIR_REGEX.find(text) ?: return null
-        val eMin = match.groupValues[1].toIntOrNull() ?: return null
-        val eSec = match.groupValues[2].toIntOrNull() ?: return null
-        val tMin = match.groupValues[3].toIntOrNull() ?: return null
-        val tSec = match.groupValues[4].toIntOrNull() ?: return null
-        val elapsed = (eMin * 60) + eSec
-        val total = (tMin * 60) + tSec
-        if (total <= 0 || elapsed < 0 || elapsed > total) return null
-        return elapsed to total
+        TIME_PAIR_REGEX.find(text)?.let { match ->
+            val eMin = match.groupValues[1].toIntOrNull() ?: return@let
+            val eSec = match.groupValues[2].toIntOrNull() ?: return@let
+            val tMin = match.groupValues[3].toIntOrNull() ?: return@let
+            val tSec = match.groupValues[4].toIntOrNull() ?: return@let
+            if (eSec in 0..59 && tSec in 0..59) {
+                val elapsed = (eMin * 60) + eSec
+                val total = (tMin * 60) + tSec
+                if (total > 0 && elapsed in 0..total) {
+                    return elapsed to total
+                }
+            }
+        }
+        SECONDS_PAIR_REGEX.find(text)?.let { match ->
+            val elapsed = match.groupValues[1].toIntOrNull() ?: return@let
+            val total = match.groupValues[2].toIntOrNull() ?: return@let
+            if (total > 0 && elapsed in 0..total) {
+                return elapsed to total
+            }
+        }
+        return null
     }
 
     fun hasReplayCue(text: CharSequence?): Boolean {
-        if (text.isNullOrBlank()) return false
-        val lower = text.toString().lowercase()
+        if (text.isNullOrBlank() || text.length > 48) return false
+        val lower = text.toString().trim().lowercase()
         return REPLAY_CUES.any { lower.contains(it) }
     }
 
+    @JvmOverloads
     fun isPlaybackCompletedOrLooped(
         previousRatio: Float?,
-        current: VideoProgressSnapshot
+        current: VideoProgressSnapshot,
+        previousElapsedSeconds: Int? = null
     ): Boolean {
         if (current.hasReplayCue) return true
 
@@ -78,6 +96,13 @@ object VideoCompletionDetector {
             val total = current.totalSeconds
             val elapsed = current.elapsedSeconds
             if (total >= 3 && elapsed >= (total - 1)) {
+                return true
+            }
+            if (previousElapsedSeconds != null &&
+                total >= 4 &&
+                previousElapsedSeconds >= (total - 2) &&
+                elapsed <= 2
+            ) {
                 return true
             }
         }
@@ -127,6 +152,9 @@ object AutoVideoScrollManager {
     private val _detectedPlatform = MutableStateFlow<String?>(null)
     val detectedPlatform: StateFlow<String?> = _detectedPlatform.asStateFlow()
 
+    private val _isAccessibilityRunning = MutableStateFlow(false)
+    val isAccessibilityRunning: StateFlow<Boolean> = _isAccessibilityRunning.asStateFlow()
+
     fun init(context: Context) {
         if (!initialized.compareAndSet(false, true)) return
         val appPrefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -139,18 +167,22 @@ object AutoVideoScrollManager {
         val savedSeconds = appPrefs.getInt(KEY_INTERVAL_SECONDS, DEFAULT_INTERVAL_SECONDS)
             .coerceIn(5, 180)
         _intervalSeconds.value = savedSeconds
-        _countdownSecondsRemaining.value = savedSeconds
+        _countdownSecondsRemaining.value = if (_mode.value == AutoScrollMode.COMPLETION_BASED) 0 else savedSeconds
     }
 
     fun setMode(newMode: AutoScrollMode) {
         _mode.value = newMode
-        _countdownSecondsRemaining.value = _intervalSeconds.value
+        _countdownSecondsRemaining.value = if (newMode == AutoScrollMode.COMPLETION_BASED) {
+            0
+        } else {
+            _intervalSeconds.value
+        }
         prefs?.edit()?.putString(KEY_MODE, newMode.name)?.apply()
         if (_isServiceActive.value && !_isPaused.value) {
             _statusDetail.value = if (newMode == AutoScrollMode.TIME_BASED) {
                 "Next scroll in ${_intervalSeconds.value}s"
             } else {
-                "Monitoring video playback..."
+                "Waiting for video completion..."
             }
         }
     }
@@ -158,7 +190,9 @@ object AutoVideoScrollManager {
     fun setIntervalSeconds(seconds: Int) {
         val safe = seconds.coerceIn(5, 180)
         _intervalSeconds.value = safe
-        _countdownSecondsRemaining.value = safe
+        if (_mode.value == AutoScrollMode.TIME_BASED) {
+            _countdownSecondsRemaining.value = safe
+        }
         prefs?.edit()?.putInt(KEY_INTERVAL_SECONDS, safe)?.apply()
     }
 
@@ -166,16 +200,24 @@ object AutoVideoScrollManager {
         _isServiceActive.value = active
         if (!active) {
             _isPaused.value = false
-            _countdownSecondsRemaining.value = _intervalSeconds.value
+            _countdownSecondsRemaining.value = if (_mode.value == AutoScrollMode.COMPLETION_BASED) {
+                0
+            } else {
+                _intervalSeconds.value
+            }
             _detectedPlatform.value = null
             _statusDetail.value = "Idle"
         } else {
             _scrollCount.value = 0
-            _countdownSecondsRemaining.value = _intervalSeconds.value
+            _countdownSecondsRemaining.value = if (_mode.value == AutoScrollMode.COMPLETION_BASED) {
+                0
+            } else {
+                _intervalSeconds.value
+            }
             _statusDetail.value = if (_mode.value == AutoScrollMode.TIME_BASED) {
                 "Running • ${_intervalSeconds.value}s timer"
             } else {
-                "Running • Monitoring playback"
+                "Running • Waiting for video completion"
             }
         }
     }
@@ -188,7 +230,7 @@ object AutoVideoScrollManager {
             } else if (_mode.value == AutoScrollMode.TIME_BASED) {
                 "Next scroll in ${_countdownSecondsRemaining.value}s"
             } else {
-                "Monitoring playback..."
+                "Waiting for video completion..."
             }
         }
     }
@@ -213,23 +255,55 @@ object AutoVideoScrollManager {
         _scrollCount.value += 1
     }
 
+    fun setAccessibilityServiceRunning(running: Boolean) {
+        _isAccessibilityRunning.value = running
+    }
+
     fun isAccessibilityServiceEnabled(context: Context): Boolean {
-        if (com.arwora.service.AutoScrollAccessibilityService.isRunning) return true
+        if (com.arwora.service.AutoScrollAccessibilityService.isRunning) {
+            return true
+        }
         return runCatching {
-            val serviceName =
-                "${context.packageName}/${com.arwora.service.AutoScrollAccessibilityService::class.java.canonicalName}"
+            val expectedComponent = ComponentName(
+                context.packageName,
+                com.arwora.service.AutoScrollAccessibilityService::class.java.name
+            )
+            val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
+            if (am != null && am.isEnabled) {
+                val enabledList = am.getEnabledAccessibilityServiceList(
+                    AccessibilityServiceInfo.FEEDBACK_ALL_MASK
+                ).orEmpty()
+                val matchedInManager = enabledList.any { info ->
+                    val serviceInfo = info.resolveInfo?.serviceInfo ?: return@any false
+                    serviceInfo.packageName == expectedComponent.packageName &&
+                        serviceInfo.name == expectedComponent.className
+                }
+                if (matchedInManager) {
+                    return@runCatching true
+                }
+            }
+
+            val accessibilityMasterEnabled = Settings.Secure.getInt(
+                context.contentResolver,
+                Settings.Secure.ACCESSIBILITY_ENABLED,
+                0
+            ) == 1
+            if (!accessibilityMasterEnabled && am?.isEnabled != true) {
+                return@runCatching false
+            }
+
             val enabledServices = Settings.Secure.getString(
                 context.contentResolver,
                 Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-            ) ?: return false
+            ) ?: return@runCatching false
+
             val colonSplitter = TextUtils.SimpleStringSplitter(':')
             colonSplitter.setString(enabledServices)
             while (colonSplitter.hasNext()) {
-                val componentName = colonSplitter.next()
-                if (componentName.equals(serviceName, ignoreCase = true) ||
-                    componentName.contains("AutoScrollAccessibilityService", ignoreCase = true)
-                ) {
-                    return true
+                val componentString = colonSplitter.next()
+                val parsed = ComponentName.unflattenFromString(componentString)
+                if (parsed == expectedComponent) {
+                    return@runCatching true
                 }
             }
             false

@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.view.accessibility.AccessibilityManager
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -83,14 +85,11 @@ import com.arwora.utils.SoundEffectManager
 @Composable
 fun AutoVideoScrollCard(
     onToastMessage: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isVisible: Boolean = true
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-
-    LaunchedEffect(Unit) {
-        AutoVideoScrollManager.init(context)
-    }
 
     val selectedMode by AutoVideoScrollManager.mode.collectAsStateWithLifecycle()
     val intervalSeconds by AutoVideoScrollManager.intervalSeconds.collectAsStateWithLifecycle()
@@ -99,15 +98,29 @@ fun AutoVideoScrollCard(
     val scrollCount by AutoVideoScrollManager.scrollCount.collectAsStateWithLifecycle()
     val countdownRemaining by AutoVideoScrollManager.countdownSecondsRemaining.collectAsStateWithLifecycle()
     val statusDetail by AutoVideoScrollManager.statusDetail.collectAsStateWithLifecycle()
+    val isAccessibilityServiceRunning by AutoVideoScrollManager.isAccessibilityRunning.collectAsStateWithLifecycle()
 
     var isAccessibilityReady by remember {
-        mutableStateOf(
-            AutoVideoScrollManager.isAccessibilityServiceEnabled(context) ||
-                AutoScrollAccessibilityService.isRunning
-        )
+        mutableStateOf(AutoVideoScrollManager.isAccessibilityServiceEnabled(context))
     }
     var canDrawOverlays by remember {
         mutableStateOf(AutoVideoScrollManager.canDrawOverlays(context))
+    }
+
+    fun updatePermissionStatusUI() {
+        isAccessibilityReady = AutoVideoScrollManager.isAccessibilityServiceEnabled(context)
+        canDrawOverlays = AutoVideoScrollManager.canDrawOverlays(context)
+    }
+
+    LaunchedEffect(Unit) {
+        AutoVideoScrollManager.init(context)
+        updatePermissionStatusUI()
+    }
+
+    LaunchedEffect(isVisible, isServiceActive, isAccessibilityServiceRunning) {
+        if (isVisible) {
+            updatePermissionStatusUI()
+        }
     }
 
     var showOverlayHelpDialog by remember { mutableStateOf(false) }
@@ -119,24 +132,42 @@ fun AutoVideoScrollCard(
         // Foreground service still runs safely regardless of notification grant on Android 13+
     }
 
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner, context) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                isAccessibilityReady = AutoVideoScrollManager.isAccessibilityServiceEnabled(context) ||
-                    AutoScrollAccessibilityService.isRunning
-                canDrawOverlays = AutoVideoScrollManager.canDrawOverlays(context)
+            if (event == Lifecycle.Event.ON_START || event == Lifecycle.Event.ON_RESUME) {
+                updatePermissionStatusUI()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
+
+        val accessibilityManager =
+            context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
+        val stateListener = AccessibilityManager.AccessibilityStateChangeListener {
+            updatePermissionStatusUI()
+        }
+        accessibilityManager?.addAccessibilityStateChangeListener(stateListener)
+
+        val servicesStateListener = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            AccessibilityManager.AccessibilityServicesStateChangeListener {
+                updatePermissionStatusUI()
+            }.also { listener ->
+                accessibilityManager?.addAccessibilityServicesStateChangeListener(listener)
+            }
+        } else {
+            null
+        }
+
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+            accessibilityManager?.removeAccessibilityStateChangeListener(stateListener)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && servicesStateListener != null) {
+                accessibilityManager?.removeAccessibilityServicesStateChangeListener(servicesStateListener)
+            }
         }
     }
 
     fun startAutoScrollService() {
-        canDrawOverlays = AutoVideoScrollManager.canDrawOverlays(context)
-        isAccessibilityReady = AutoVideoScrollManager.isAccessibilityServiceEnabled(context) ||
-            AutoScrollAccessibilityService.isRunning
+        updatePermissionStatusUI()
 
         if (!canDrawOverlays) {
             showOverlayHelpDialog = true
@@ -180,6 +211,7 @@ fun AutoVideoScrollCard(
             title = "Auto Scroll Accessibility Required",
             description = "Auto Video Scroll needs Android Accessibility Service permission to swipe up to the next video on TikTok, Reels, and Shorts.",
             serviceName = "Auto Video Scroll Service",
+            isEnabled = isAccessibilityReady,
             onDismiss = { showAccessibilityHelpDialog = false }
         )
     }
@@ -547,30 +579,82 @@ fun AutoVideoScrollCard(
                 )
             }
 
-            // Permission Check Chips (Quick 1-tap access if not yet granted)
-            if (!isAccessibilityReady || !canDrawOverlays) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+            // Permission Status Chips (Strictly reflect live system state)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                PermissionTileButton(
+                    label = if (isAccessibilityReady) "Accessibility Ready" else "Enable Accessibility",
+                    granted = isAccessibilityReady,
+                    icon = Icons.Default.Accessibility,
+                    onClick = { showAccessibilityHelpDialog = true },
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("auto_scroll_accessibility_btn")
+                )
+                PermissionTileButton(
+                    label = if (canDrawOverlays) "Overlay Ready" else "Allow Overlay",
+                    granted = canDrawOverlays,
+                    icon = Icons.Default.PictureInPictureAlt,
+                    onClick = { showOverlayHelpDialog = true },
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("auto_scroll_overlay_btn")
+                )
+            }
+
+            AnimatedVisibility(visible = !isAccessibilityReady) {
+                Surface(
+                    shape = ArworaDesignTokens.InnerTileShape,
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+                    border = ArworaDesignTokens.innerTileBorder(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("auto_scroll_accessibility_helper")
                 ) {
-                    PermissionTileButton(
-                        label = if (isAccessibilityReady) "Accessibility Ready" else "Enable Accessibility",
-                        granted = isAccessibilityReady,
-                        icon = Icons.Default.Accessibility,
-                        onClick = { showAccessibilityHelpDialog = true },
+                    Row(
                         modifier = Modifier
-                            .weight(1f)
-                            .testTag("auto_scroll_accessibility_btn")
-                    )
-                    PermissionTileButton(
-                        label = if (canDrawOverlays) "Overlay Ready" else "Allow Overlay",
-                        granted = canDrawOverlays,
-                        icon = Icons.Default.PictureInPictureAlt,
-                        onClick = { showOverlayHelpDialog = true },
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("auto_scroll_overlay_btn")
-                    )
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Accessibility,
+                            contentDescription = null,
+                            tint = Color(0xFFF59E0B),
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = "Enable 'Auto Video Scroll Service' under Installed apps",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Surface(
+                            shape = ArworaDesignTokens.PillShape,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)),
+                            modifier = Modifier
+                                .clip(ArworaDesignTokens.PillShape)
+                                .clickable {
+                                    SoundEffectManager.playClick()
+                                    showAccessibilityHelpDialog = true
+                                }
+                                .testTag("auto_scroll_accessibility_guide_btn")
+                        ) {
+                            Text(
+                                text = "View Guide",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
                 }
             }
 
@@ -654,8 +738,9 @@ private fun PermissionTileButton(
         color = accent.copy(alpha = 0.1f),
         border = BorderStroke(1.dp, accent.copy(alpha = 0.32f)),
         modifier = modifier
+            .heightIn(min = 48.dp)
             .clip(ArworaDesignTokens.InnerTileShape)
-            .clickable(enabled = !granted, onClick = onClick)
+            .clickable(onClick = onClick)
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),

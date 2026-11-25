@@ -133,7 +133,6 @@ sealed class Screen(val route: String) {
     object AppLocker : Screen("app_locker")
     object AppBooster : Screen("app_booster")
     object ScreenOffOptimizer : Screen("screen_off_optimizer")
-    object BatteryMonitor : Screen("battery_monitor")
     object WakelockDetector : Screen("wakelock_detector")
     object AppOps : Screen("app_ops")
     object AppOpsPackage : Screen("app_ops_pkg/{packageName}") {
@@ -627,7 +626,14 @@ fun NameGenNavHost(
                     when (page) {
                         0 -> HomeScreen(navController = navController, viewModel = viewModel)
                         1 -> GenerateDashboardScreen(navController = navController, viewModel = viewModel)
-                        2 -> SocialScreen(navController = navController, viewModel = viewModel)
+                        2 -> {
+                            val isSocialTabVisible = pagerState.currentPage == 2 || pagerState.targetPage == 2
+                            SocialScreen(
+                                navController = navController,
+                                viewModel = viewModel,
+                                isVisible = isSocialTabVisible
+                            )
+                        }
                         3 -> {
                             val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as com.arwora.NameGenApplication
                             val isSystemDashboardVisible = pagerState.currentPage == 3 || pagerState.targetPage == 3
@@ -843,9 +849,6 @@ fun NameGenNavHost(
         }
         composable(Screen.ScreenOffOptimizer.route) {
             com.arwora.feature.system.optimizer.ui.ScreenOffOptimizerScreen(navController = navController)
-        }
-        composable(Screen.BatteryMonitor.route) {
-            com.arwora.feature.system.battery.ui.BatteryMonitorScreen(navController = navController)
         }
         composable(Screen.WakelockDetector.route) {
             com.arwora.feature.system.process.WakelockDetectorScreen(navController = navController)
