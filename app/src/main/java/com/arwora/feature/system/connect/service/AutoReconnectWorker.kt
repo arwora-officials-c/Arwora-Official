@@ -15,10 +15,11 @@ class AutoReconnectWorker(
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
+        val engine = ArworaConnectManager.getEngine(applicationContext)
+        engine.chatManager.pruneExpiredMessages()
         if (!ArworaConnectManager.autoReconnectEnabled.value) {
             return Result.success()
         }
-        val engine = ArworaConnectManager.getEngine(applicationContext)
         engine.probeAndAutoReconnectDisconnectedPeers()
         return Result.success()
     }

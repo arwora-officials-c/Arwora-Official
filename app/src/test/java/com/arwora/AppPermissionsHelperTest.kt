@@ -21,7 +21,7 @@ import org.robolectric.annotation.Config
 class AppPermissionsHelperTest {
 
     @Test
-    fun buildPermissionListIncludesAllEightExpectedPermissions() {
+    fun buildPermissionListIncludesAllNineExpectedPermissions() {
         val permissions = AppPermissionsHelper.buildPermissionList(
             sdkInt = Build.VERSION_CODES.UPSIDE_DOWN_CAKE,
             micGranted = true,
@@ -31,10 +31,11 @@ class AppPermissionsHelperTest {
             overlayGranted = true,
             cameraGranted = true,
             wirelessAdbGranted = false,
-            usageStatsGranted = true
+            usageStatsGranted = true,
+            nearbyDevicesGranted = true
         )
 
-        assertEquals(8, permissions.size)
+        assertEquals(9, permissions.size)
         assertEquals(
             listOf(
                 ManagedPermissionCategory.MICROPHONE,
@@ -44,7 +45,8 @@ class AppPermissionsHelperTest {
                 ManagedPermissionCategory.OVERLAY,
                 ManagedPermissionCategory.CAMERA,
                 ManagedPermissionCategory.WIRELESS_ADB,
-                ManagedPermissionCategory.USAGE_STATS
+                ManagedPermissionCategory.USAGE_STATS,
+                ManagedPermissionCategory.NEARBY_DEVICES
             ),
             permissions.map { it.category }
         )
@@ -52,6 +54,14 @@ class AppPermissionsHelperTest {
         assertTrue(permissions.any { it.id == "camera" && it.permissionKey == "CAMERA" && it.isGranted })
         assertTrue(permissions.any { it.id == "wireless_adb" && it.permissionKey == "WIRELESS_ADB" && !it.isGranted })
         assertTrue(permissions.any { it.id == "usage_stats" && it.permissionKey == "PACKAGE_USAGE_STATS" && it.isGranted })
+        assertTrue(
+            permissions.any {
+                it.id == "nearby_devices" &&
+                    it.title == "Nearby Devices" &&
+                    it.permissionKey == "NEARBY_WIFI_DEVICES / BLUETOOTH_SCAN / BLUETOOTH_CONNECT" &&
+                    it.isGranted
+            }
+        )
     }
 
     @Test
@@ -129,9 +139,15 @@ class AppPermissionsHelperTest {
             ManagedPermissionCategory.USAGE_STATS
         )
 
+        val nearbyIntent = AppPermissionsHelper.createSettingsIntent(
+            context,
+            ManagedPermissionCategory.NEARBY_DEVICES
+        )
+
         assertEquals(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, cameraIntent.action)
         assertEquals(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS, wirelessAdbIntent.action)
         assertEquals(Settings.ACTION_USAGE_ACCESS_SETTINGS, usageStatsIntent.action)
+        assertEquals(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, nearbyIntent.action)
     }
 
     @Test
@@ -145,7 +161,8 @@ class AppPermissionsHelperTest {
             overlayGranted = false,
             cameraGranted = false,
             wirelessAdbGranted = false,
-            usageStatsGranted = false
+            usageStatsGranted = false,
+            nearbyDevicesGranted = false
         )
 
         val missingRuntime = AppPermissionsHelper.buildMissingRuntimePermissions(
@@ -157,7 +174,10 @@ class AppPermissionsHelperTest {
                 Manifest.permission.READ_MEDIA_IMAGES,
                 Manifest.permission.READ_MEDIA_VIDEO,
                 Manifest.permission.POST_NOTIFICATIONS,
-                Manifest.permission.CAMERA
+                Manifest.permission.CAMERA,
+                Manifest.permission.NEARBY_WIFI_DEVICES,
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.BLUETOOTH_CONNECT
             ),
             missingRuntime
         )
@@ -176,7 +196,8 @@ class AppPermissionsHelperTest {
             overlayGranted = true,
             cameraGranted = true,
             wirelessAdbGranted = true,
-            usageStatsGranted = true
+            usageStatsGranted = true,
+            nearbyDevicesGranted = true
         )
         assertTrue(
             AppPermissionsHelper.buildMissingRuntimePermissions(
@@ -197,6 +218,9 @@ class AppPermissionsHelperTest {
         assertTrue(grantApi34.contains("pm grant $pkg ${Manifest.permission.READ_MEDIA_IMAGES}"))
         assertTrue(grantApi34.contains("pm grant $pkg ${Manifest.permission.READ_MEDIA_VIDEO}"))
         assertTrue(grantApi34.contains("pm grant $pkg ${Manifest.permission.POST_NOTIFICATIONS}"))
+        assertTrue(grantApi34.contains("pm grant $pkg ${Manifest.permission.NEARBY_WIFI_DEVICES}"))
+        assertTrue(grantApi34.contains("pm grant $pkg ${Manifest.permission.BLUETOOTH_SCAN}"))
+        assertTrue(grantApi34.contains("pm grant $pkg ${Manifest.permission.BLUETOOTH_CONNECT}"))
         assertTrue(grantApi34.contains("appops set $pkg SYSTEM_ALERT_WINDOW allow"))
         assertTrue(grantApi34.contains("appops set $pkg GET_USAGE_STATS allow"))
         assertTrue(grantApi34.contains("cmd notification allow_listener $pkg/com.arwora.service.NotificationHistoryService"))
@@ -205,13 +229,19 @@ class AppPermissionsHelperTest {
         assertTrue(revokeApi34.contains("pm revoke $pkg ${Manifest.permission.CAMERA}"))
         assertTrue(revokeApi34.contains("pm revoke $pkg ${Manifest.permission.RECORD_AUDIO}"))
         assertTrue(revokeApi34.contains("pm revoke $pkg ${Manifest.permission.POST_NOTIFICATIONS}"))
+        assertTrue(revokeApi34.contains("pm revoke $pkg ${Manifest.permission.NEARBY_WIFI_DEVICES}"))
+        assertTrue(revokeApi34.contains("pm revoke $pkg ${Manifest.permission.BLUETOOTH_SCAN}"))
+        assertTrue(revokeApi34.contains("pm revoke $pkg ${Manifest.permission.BLUETOOTH_CONNECT}"))
         assertTrue(revokeApi34.contains("appops set $pkg SYSTEM_ALERT_WINDOW ignore"))
         assertTrue(revokeApi34.contains("appops set $pkg GET_USAGE_STATS ignore"))
         assertTrue(revokeApi34.contains("cmd notification disallow_listener $pkg/com.arwora.service.NotificationHistoryService"))
 
         val grantLegacy = AppPermissionsHelper.buildAdbGrantCommands(pkg, Build.VERSION_CODES.S)
         assertTrue(grantLegacy.contains("pm grant $pkg ${Manifest.permission.READ_EXTERNAL_STORAGE}"))
+        assertTrue(grantLegacy.contains("pm grant $pkg ${Manifest.permission.BLUETOOTH_SCAN}"))
+        assertTrue(grantLegacy.contains("pm grant $pkg ${Manifest.permission.BLUETOOTH_CONNECT}"))
         assertFalse(grantLegacy.any { it.contains("POST_NOTIFICATIONS") })
+        assertFalse(grantLegacy.any { it.contains("NEARBY_WIFI_DEVICES") })
     }
 
     @Test
@@ -296,5 +326,65 @@ class AppPermissionsHelperTest {
         val requested = pkgInfo.requestedPermissions?.toList().orEmpty()
         assertTrue(requested.contains(Manifest.permission.READ_EXTERNAL_STORAGE))
         assertTrue(requested.contains(Manifest.permission.WRITE_EXTERNAL_STORAGE))
+    }
+
+    @Test
+    fun manifestDeclaresNearbyWifiAndBluetoothRuntimePermissions() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val pkgInfo = context.packageManager.getPackageInfo(
+            context.packageName,
+            android.content.pm.PackageManager.GET_PERMISSIONS
+        )
+        val requested = pkgInfo.requestedPermissions?.toList().orEmpty()
+        assertTrue(requested.contains(Manifest.permission.NEARBY_WIFI_DEVICES))
+        assertTrue(requested.contains(Manifest.permission.BLUETOOTH_SCAN))
+        assertTrue(requested.contains(Manifest.permission.BLUETOOTH_CONNECT))
+    }
+
+    @Test
+    fun nearbyDevicesRuntimePermissionsAndEvaluationMatchApiTiers() {
+        assertEquals(
+            listOf(
+                Manifest.permission.NEARBY_WIFI_DEVICES,
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.BLUETOOTH_CONNECT
+            ),
+            AppPermissionsHelper.runtimePermissionsForCategory(
+                ManagedPermissionCategory.NEARBY_DEVICES,
+                Build.VERSION_CODES.TIRAMISU
+            )
+        )
+        assertEquals(
+            listOf(
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.BLUETOOTH_CONNECT
+            ),
+            AppPermissionsHelper.runtimePermissionsForCategory(
+                ManagedPermissionCategory.NEARBY_DEVICES,
+                Build.VERSION_CODES.S
+            )
+        )
+        assertEquals(
+            listOf(Manifest.permission.ACCESS_FINE_LOCATION),
+            AppPermissionsHelper.runtimePermissionsForCategory(
+                ManagedPermissionCategory.NEARBY_DEVICES,
+                Build.VERSION_CODES.R
+            )
+        )
+
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        assertFalse(AppPermissionsHelper.isNearbyDevicesGranted(app))
+
+        org.robolectric.Shadows.shadowOf(app).grantPermissions(
+            Manifest.permission.NEARBY_WIFI_DEVICES,
+            Manifest.permission.BLUETOOTH_SCAN
+        )
+        // Requires BLUETOOTH_CONNECT too on API 33+
+        assertFalse(AppPermissionsHelper.isNearbyDevicesGranted(app))
+
+        org.robolectric.Shadows.shadowOf(app).grantPermissions(
+            Manifest.permission.BLUETOOTH_CONNECT
+        )
+        assertTrue(AppPermissionsHelper.isNearbyDevicesGranted(app))
     }
 }

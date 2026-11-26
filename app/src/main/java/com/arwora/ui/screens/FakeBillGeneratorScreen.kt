@@ -5,10 +5,10 @@ import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -28,6 +28,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.arwora.ui.components.AppCard
+import com.arwora.ui.components.ArworaPrimaryPillButton
 import com.arwora.utils.SoundEffectManager
 import java.text.SimpleDateFormat
 import java.util.*
@@ -118,16 +120,14 @@ fun FakeBillGeneratorScreen(
                 ) {
                     // Template Selector
                     item {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-                        ) {
+                        AppCard(modifier = Modifier.fillMaxWidth()) {
                             Column(modifier = Modifier.padding(16.dp)) {
                                 Text("Select Receipt Template", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                                 Spacer(modifier = Modifier.height(10.dp))
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     platforms.forEach { plat ->
@@ -147,11 +147,7 @@ fun FakeBillGeneratorScreen(
 
                     // Form Fields
                     item {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-                        ) {
+                        AppCard(modifier = Modifier.fillMaxWidth()) {
                             Column(
                                 modifier = Modifier.padding(16.dp),
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -244,20 +240,13 @@ fun FakeBillGeneratorScreen(
                     }
 
                     item {
-                        Button(
+                        ArworaPrimaryPillButton(
+                            text = "Generate & Preview Receipt",
                             onClick = {
                                 selectedTab = 1
                                 SoundEffectManager.playClick()
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(52.dp),
-                            shape = RoundedCornerShape(14.dp)
-                        ) {
-                            Icon(Icons.Default.Receipt, contentDescription = null, modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Generate & Preview Receipt", fontWeight = FontWeight.Bold)
-                        }
+                            }
+                        )
                     }
                 }
             } else {

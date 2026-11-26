@@ -1,9 +1,11 @@
 package com.arwora.ui.screens
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
-import android.provider.Settings
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
 import androidx.compose.animation.fadeIn
@@ -51,11 +53,14 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import android.os.SystemClock
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.arwora.feature.home.weather.HomeWeatherCard
+import com.arwora.feature.home.weather.HomeWeatherViewModel
 import com.arwora.ui.components.AppLogo
 import com.arwora.ui.components.ArworaDesignTokens
 import com.arwora.ui.components.ArworaPillBadge
@@ -63,10 +68,7 @@ import com.arwora.ui.components.ArworaTonalIconBadge
 import com.arwora.ui.MainViewModel
 import com.arwora.ui.navigation.LocalMainTabNavigator
 import com.arwora.ui.navigation.Screen
-import com.arwora.utils.HighRiskApp
 import com.arwora.utils.SoundEffectManager
-import com.arwora.utils.SystemScanResult
-import com.arwora.utils.SystemScannerManager
 
 data class CompactFeature(
     val title: String,
@@ -145,19 +147,25 @@ val allGlobalTools = listOf(
 @Composable
 fun HomeScreen(
     viewModel: MainViewModel,
-    navController: NavController
+    navController: NavController,
+    weatherViewModel: HomeWeatherViewModel = viewModel()
 ) {
     val context = LocalContext.current
     val smartSuggestions by viewModel.smartSuggestions.collectAsStateWithLifecycle()
+    val weatherUiState by weatherViewModel.uiState.collectAsStateWithLifecycle()
 
-    // Deep All-In-One Scanner states
-    val isScanning by SystemScannerManager.isScanning.collectAsStateWithLifecycle()
-    val scanProgress by SystemScannerManager.scanProgress.collectAsStateWithLifecycle()
-    val scanStatusText by SystemScannerManager.statusText.collectAsStateWithLifecycle()
-    val currentPhase by SystemScannerManager.currentPhase.collectAsStateWithLifecycle()
-    val scanResult by SystemScannerManager.scanResult.collectAsStateWithLifecycle()
+    val weatherLocationLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        val granted = results[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            results[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        weatherViewModel.onLocationPermissionResult(granted)
+    }
 
-    var showReportDialog by remember { mutableStateOf(false) }
+    LaunchedEffect(weatherViewModel) {
+        weatherViewModel.ensureInitialized()
+    }
+
     var searchQuery by remember { mutableStateOf("") }
 
     val suggestedFeatures = remember(smartSuggestions) {
@@ -197,19 +205,6 @@ fun HomeScreen(
             }
         }
         features.take(6)
-    }
-
-    // Dynamic icon representing the current scan phase
-    val phaseIcon = when (currentPhase) {
-        SystemScannerManager.ScanPhase.SCANNING_APPS -> Icons.Default.Apps
-        SystemScannerManager.ScanPhase.SCANNING_FILES -> Icons.Default.FolderOpen
-        SystemScannerManager.ScanPhase.SCANNING_NETWORK -> Icons.Default.Wifi
-        SystemScannerManager.ScanPhase.SCANNING_BLUETOOTH -> Icons.Default.Bluetooth
-        SystemScannerManager.ScanPhase.SCANNING_BATTERY_THERMAL -> Icons.Default.BatteryChargingFull
-        SystemScannerManager.ScanPhase.SCANNING_HARDWARE_RAM_CPU -> Icons.Default.Memory
-        SystemScannerManager.ScanPhase.CHECKING_INTEGRITY -> Icons.Default.Shield
-        SystemScannerManager.ScanPhase.COMPLETED -> Icons.Default.Verified
-        else -> Icons.Default.Security
     }
 
     val t0 = remember { SystemClock.uptimeMillis() }
@@ -266,7 +261,8 @@ fun HomeScreen(
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
-            .padding(horizontal = 18.dp),
+            .padding(horizontal = 18.dp)
+            .testTag("home_screen_list"),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
@@ -332,48 +328,21 @@ fun HomeScreen(
             }
         }
 
-        // ==================== SECURITY SCAN ====================
+        // ==================== LIVE WEATHER ====================
         item {
             AnimatedListItem(index = 1) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth(),
-                    onClick = {
-                        SoundEffectManager.playClick()
-                        navController.navigate(Screen.DeepScanner.route)
-                    },
-                    shape = cardShape,
-                    colors = CardDefaults.cardColors(containerColor = cardBgColor),
-                    border = cardBorder,
-                    elevation = cardElevation
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(20.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        ArworaTonalIconBadge(
-                            icon = Icons.Default.Security,
-                            size = 46.dp,
-                            iconSize = 23.dp
+                HomeWeatherCard(
+                    uiState = weatherUiState,
+                    onRefresh = { weatherViewModel.refresh(force = true) },
+                    onRequestLocationPermission = {
+                        weatherLocationLauncher.launch(
+                            arrayOf(
+                                Manifest.permission.ACCESS_COARSE_LOCATION,
+                                Manifest.permission.ACCESS_FINE_LOCATION
+                            )
                         )
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "System Security Scan",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "Tap to run a deep security scan",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
                     }
-                }
+                )
             }
         }
 
@@ -420,7 +389,7 @@ fun HomeScreen(
 
         // ==================== FEATURED BANNER ====================
         item {
-            AnimatedListItem(index = 3) {
+            AnimatedListItem(index = 4) {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth(),
@@ -721,297 +690,4 @@ fun HomeScreen(
         Spacer(modifier = Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
     }
 }
-
-    // ==================== DETAILED HARDWARE & SYSTEM REPORT DIALOG ====================
-    if (showReportDialog) {
-        val result = scanResult
-        if (result != null) {
-            var showHighRiskList by remember { mutableStateOf(false) }
-
-            AlertDialog(
-            onDismissRequest = { showReportDialog = false },
-            icon = {
-                Icon(
-                    imageVector = Icons.Default.Assessment,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(30.dp)
-                )
-            },
-            title = {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("All-In-One Diagnostic Report", fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "Device Health Score: ${result.healthScore}/100",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (result.healthScore >= 80) Color(0xFF10B981) else Color(0xFFF59E0B),
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            },
-            text = {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 480.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // 1. Wi-Fi & Network
-                    item {
-                        ReportSectionCard(
-                            title = "Wi-Fi & Network Security",
-                            icon = Icons.Default.Wifi,
-                            statusText = if (result.wifiInfo.isConnected) "Connected • ${result.wifiInfo.securityType}" else "Disconnected",
-                            isPass = result.wifiInfo.isConnected,
-                            actionLabel = "Wi-Fi Settings",
-                            onAction = {
-                                context.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
-                            }
-                        ) {
-                            Text("• SSID: ${result.wifiInfo.ssid}", style = MaterialTheme.typography.bodySmall)
-                            Text("• Signal Strength (RSSI): ${result.wifiInfo.rssi} dBm", style = MaterialTheme.typography.bodySmall)
-                            Text("• Link Speed: ${result.wifiInfo.linkSpeedMbps} Mbps", style = MaterialTheme.typography.bodySmall)
-                            Text("• Local IP: ${result.wifiInfo.localIp}", style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-
-                    // 2. Bluetooth Security
-                    item {
-                        ReportSectionCard(
-                            title = "Bluetooth Security",
-                            icon = Icons.Default.Bluetooth,
-                            statusText = if (result.bluetoothInfo.isEnabled) "${result.bluetoothInfo.pairedDevicesCount} Paired Devices (${result.bluetoothInfo.scanMode})" else "Bluetooth Disabled",
-                            isPass = result.bluetoothInfo.isSecure,
-                            actionLabel = "Bluetooth",
-                            onAction = {
-                                context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
-                            }
-                        ) {
-                            Text("• Adapter State: ${if (result.bluetoothInfo.isEnabled) "Active" else "Disabled"}", style = MaterialTheme.typography.bodySmall)
-                            Text("• Visibility Mode: ${result.bluetoothInfo.scanMode}", style = MaterialTheme.typography.bodySmall)
-                            if (result.bluetoothInfo.pairedDeviceNames.isNotEmpty()) {
-                                Text("• Paired: ${result.bluetoothInfo.pairedDeviceNames.take(3).joinToString(", ")}", style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
-                    }
-
-                    // 3. Battery & Thermal Health
-                    item {
-                        ReportSectionCard(
-                            title = "Battery & Thermal Health",
-                            icon = Icons.Default.BatteryChargingFull,
-                            statusText = "${result.batteryInfo.levelPercentage}% • ${result.batteryInfo.temperatureCelsius}°C • ${result.batteryInfo.health}",
-                            isPass = !result.batteryInfo.isOverheating,
-                            actionLabel = "Battery Settings",
-                            onAction = {
-                                context.startActivity(Intent(Intent.ACTION_POWER_USAGE_SUMMARY))
-                            }
-                        ) {
-                            Text("• Temperature: ${result.batteryInfo.temperatureCelsius}°C (${if (result.batteryInfo.isOverheating) "Warning: High Temp" else "Optimal Range"})", style = MaterialTheme.typography.bodySmall)
-                            Text("• Voltage: ${result.batteryInfo.voltageMv} mV", style = MaterialTheme.typography.bodySmall)
-                            Text("• Power Source: ${result.batteryInfo.plugType}", style = MaterialTheme.typography.bodySmall)
-                            Text("• Health Condition: ${result.batteryInfo.health}", style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-
-                    // 4. Hardware: RAM & CPU Performance
-                    item {
-                        ReportSectionCard(
-                            title = "RAM Memory & Processor",
-                            icon = Icons.Default.Memory,
-                            statusText = "${result.hardwareInfo.usedRamPercentage}% RAM used • ${result.hardwareInfo.cpuCoreCount} Cores (${result.hardwareInfo.cpuArchitecture})",
-                            isPass = result.hardwareInfo.usedRamPercentage < 85
-                        ) {
-                            Text("• Total RAM: ${result.hardwareInfo.formatBytes(result.hardwareInfo.totalRamBytes)}", style = MaterialTheme.typography.bodySmall)
-                            Text("• Free RAM: ${result.hardwareInfo.formatBytes(result.hardwareInfo.availableRamBytes)}", style = MaterialTheme.typography.bodySmall)
-                            Text("• Storage: ${result.hardwareInfo.usedStoragePercentage}% used (${result.hardwareInfo.formatBytes(result.hardwareInfo.freeStorageBytes)} free)", style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-
-                    // 5. Installed Apps & Permissions
-                    item {
-                        ReportSectionCard(
-                            title = "Installed Apps & Risk Analysis",
-                            icon = Icons.Default.Apps,
-                            statusText = "${result.totalAppsChecked} Apps (${result.highRiskApps.size} with high-risk permissions)",
-                            isPass = result.highRiskApps.size <= 5,
-                            actionLabel = if (result.highRiskApps.isNotEmpty()) (if (showHighRiskList) "Hide Details" else "View Risky Apps") else null,
-                            onAction = { showHighRiskList = !showHighRiskList }
-                        ) {
-                            Text("• User Apps: ${result.userAppsCount} | System Apps: ${result.systemAppsCount}", style = MaterialTheme.typography.bodySmall)
-                            Text("• High Risk Apps: ${result.highRiskApps.size}", style = MaterialTheme.typography.bodySmall)
-
-                            if (showHighRiskList && result.highRiskApps.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(6.dp))
-                                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-                                Spacer(modifier = Modifier.height(4.dp))
-                                result.highRiskApps.take(8).forEach { app ->
-                                    Text("⚠️ ${app.appName}: ${app.sensitivePermissions.size} permissions", fontSize = 11.sp, fontWeight = FontWeight.Medium)
-                                }
-                            }
-                        }
-                    }
-
-                    // 6. Temporary Files & Junk Cache
-                    item {
-                        ReportSectionCard(
-                            title = "Files & Storage Junk",
-                            icon = Icons.Default.DeleteOutline,
-                            statusText = "${result.totalFilesAnalyzed} files checked • ${result.junkFilesCount} junk items (${result.formattedJunkSize})",
-                            isPass = result.junkFilesCount == 0,
-                            actionLabel = if (result.junkFilesCount > 0) "Clean Junk" else null,
-                            onAction = {
-                                SoundEffectManager.playClick()
-                                val (deletedCount, deletedBytes) = SystemScannerManager.cleanJunkFiles(context)
-                                Toast.makeText(context, "Cleaned $deletedCount temporary junk files!", Toast.LENGTH_SHORT).show()
-                            }
-                        ) {
-                            Text("• Temporary / Log / Cache: ${result.junkFilesCount} files", style = MaterialTheme.typography.bodySmall)
-                            Text("• Space Reclaimable: ${result.formattedJunkSize}", style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-
-                    // 7. System Integrity (Root, ADB, Mock GPS)
-                    item {
-                        ReportSectionCard(
-                            title = "System Integrity & Debugging",
-                            icon = Icons.Default.Shield,
-                            statusText = if (!result.isRooted && !result.isAdbEnabled) "System Secure • No Root Detected" else "Developer/Root Flags Detected",
-                            isPass = !result.isRooted,
-                            actionLabel = "Dev Options",
-                            onAction = {
-                                context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
-                            }
-                        ) {
-                            Text("• Root Binary (Su): ${if (result.isRooted) "Root Found ⚠️" else "Safe / Clean ✅"}", style = MaterialTheme.typography.bodySmall)
-                            Text("• ADB Debugging: ${if (result.isAdbEnabled) "Enabled (Dev Mode)" else "Disabled ✅"}", style = MaterialTheme.typography.bodySmall)
-                            Text("• Mock GPS Provider: ${if (result.isMockLocationEnabled) "Active" else "Inactive"}", style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                Button(onClick = { showReportDialog = false }) {
-                    Text("Close Diagnostic")
-                }
-            }
-        )
-    }
-}
-}
-
-@Composable
-private fun DiagnosticMiniChip(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    isPass: Boolean
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.width(68.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(34.dp)
-                .clip(CircleShape)
-                .background(if (isPass) Color(0xFF10B981).copy(alpha = 0.15f) else Color(0xFFF59E0B).copy(alpha = 0.15f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = title,
-                tint = if (isPass) Color(0xFF10B981) else Color(0xFFF59E0B),
-                modifier = Modifier.size(18.dp)
-            )
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(text = title, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-        Text(text = subtitle, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-    }
-}
-
-@Composable
-private fun ReportSectionCard(
-    title: String,
-    icon: ImageVector,
-    statusText: String,
-    isPass: Boolean,
-    actionLabel: String? = null,
-    onAction: (() -> Unit)? = null,
-    content: @Composable ColumnScope.() -> Unit
-) {
-    Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-        border = BorderStroke(1.dp, if (isPass) MaterialTheme.colorScheme.outline else Color(0xFFF59E0B).copy(alpha = 0.5f)),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = if (isPass) Color(0xFF10B981) else Color(0xFFF59E0B),
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = title,
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.titleSmall
-                    )
-                }
-
-                Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = if (isPass) Color(0xFF10B981).copy(alpha = 0.15f) else Color(0xFFF59E0B).copy(alpha = 0.15f)
-                ) {
-                    Text(
-                        text = if (isPass) "PASS" else "CHECK",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isPass) Color(0xFF10B981) else Color(0xFFF59E0B),
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = statusText,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.Medium
-            )
-
-            Spacer(modifier = Modifier.height(6.dp))
-            content()
-
-            if (actionLabel != null && onAction != null) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    FilledTonalButton(
-                        onClick = onAction,
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text(actionLabel, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                }
-            }
-        }
-    }
 }

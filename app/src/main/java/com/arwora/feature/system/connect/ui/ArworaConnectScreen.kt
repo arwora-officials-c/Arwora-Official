@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Pin
@@ -38,6 +39,7 @@ import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -98,9 +100,18 @@ fun ArworaConnectScreen(
     val transfers by vm.transfers.collectAsStateWithLifecycle()
     val isServiceRunning by vm.isServiceRunning.collectAsStateWithLifecycle()
     val autoReconnect by vm.autoReconnectEnabled.collectAsStateWithLifecycle()
+    val messageRetentionPolicy by vm.messageRetentionPolicy.collectAsStateWithLifecycle()
+    val lastRetentionDuration by vm.lastNonOffRetentionPolicy.collectAsStateWithLifecycle()
     val isPairingBusy by vm.isPairingBusy.collectAsStateWithLifecycle()
     val isScanningLan by vm.isScanningLan.collectAsStateWithLifecycle()
     val discoveredHosts by vm.discoveredLanHosts.collectAsStateWithLifecycle()
+    val nearbyPeers by vm.nearbyPeers.collectAsStateWithLifecycle()
+    val isNearbyScanning by vm.isNearbyScanning.collectAsStateWithLifecycle()
+    val connectingNearbyIds by vm.connectingNearbyIds.collectAsStateWithLifecycle()
+    val chatMessagesByPeer by vm.chatMessagesByPeer.collectAsStateWithLifecycle()
+    val unreadChatCounts by vm.unreadChatCounts.collectAsStateWithLifecycle()
+    val activeChatPeerId by vm.activeChatPeerId.collectAsStateWithLifecycle()
+    val isSendingChatImage by vm.isSendingChatImage.collectAsStateWithLifecycle()
     val statusMessage by vm.statusMessage.collectAsStateWithLifecycle()
     val actionFeedback by vm.actionFeedback.collectAsStateWithLifecycle()
 
@@ -108,6 +119,7 @@ fun ArworaConnectScreen(
     var showScannerDialog by remember { mutableStateOf(false) }
     var showPairCodeDialog by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
     var pendingDisconnectPeer by remember { mutableStateOf<PeerUiState?>(null) }
 
     val notificationLauncher = rememberLauncherForActivityResult(
@@ -137,21 +149,29 @@ fun ArworaConnectScreen(
     }
 
     BackHandler(
-        enabled = showQrModal ||
+        enabled = activeChatPeerId != null ||
+            showQrModal ||
             showScannerDialog ||
             showPairCodeDialog ||
             showRenameDialog ||
+            showSettingsDialog ||
             pendingDisconnectPeer != null
     ) {
+        vm.closeChatRoom()
         showQrModal = false
         showScannerDialog = false
         showPairCodeDialog = false
         showRenameDialog = false
+        showSettingsDialog = false
         pendingDisconnectPeer = null
     }
 
     val activeOnline = identity.isServerRunning || isServiceRunning
     val connectedPeers = peers.filter { it.connectionState == PeerConnectionState.CONNECTED }
+    val visibleNearbyPeers = remember(nearbyPeers, connectedPeers) {
+        val connectedIds = connectedPeers.map { it.peer.deviceId }.toSet()
+        nearbyPeers.filterNot { it.deviceId in connectedIds }
+    }
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -197,6 +217,15 @@ fun ArworaConnectScreen(
                     ) {
                         Icon(Icons.Default.Refresh, contentDescription = "Probe Trusted Peers")
                     }
+                    IconButton(
+                        onClick = {
+                            SoundEffectManager.playClick()
+                            showSettingsDialog = true
+                        },
+                        modifier = Modifier.testTag("connect_hub_settings_button")
+                    ) {
+                        Icon(Icons.Default.Settings, contentDescription = "Arwora Connect Settings")
+                    }
                     Switch(
                         checked = activeOnline,
                         onCheckedChange = { enable ->
@@ -232,6 +261,17 @@ fun ArworaConnectScreen(
                 .navigationBarsPadding()
                 .testTag("connect_hub_list")
         ) {
+            // 0. Zero-Config Nearby Devices Radar Banner & List
+            item {
+                NearbyDevicesRadarCard(
+                    nearbyPeers = visibleNearbyPeers,
+                    isScanning = isNearbyScanning,
+                    isHubOnline = activeOnline,
+                    connectingPeerIds = connectingNearbyIds,
+                    onOneTapConnect = { peer -> vm.connectToNearbyPeer(peer) }
+                )
+            }
+
             // 1. My Device Identity & Pairing Card
             item {
                 Card(
@@ -401,6 +441,16 @@ fun ArworaConnectScreen(
                 }
             }
 
+            // 1b. Arwora Connect Settings Configuration Panel (P2P Message Auto-Delete)
+            item {
+                ArworaConnectSettingsPanel(
+                    policy = messageRetentionPolicy,
+                    lastSelectedDuration = lastRetentionDuration,
+                    onSelectPolicy = { policy -> vm.setMessageRetentionPolicy(policy) },
+                    modifier = Modifier.testTag("connect_settings_panel_card")
+                )
+            }
+
             // 2. Send / Receive Action Card
             item {
                 val selectedConnected = connectedPeers.filter { it.isSelectedForSend }
@@ -510,7 +560,9 @@ fun ArworaConnectScreen(
                 items(peers, key = { it.peer.deviceId }) { peerUi ->
                     PeerSessionCard(
                         peerUi = peerUi,
+                        unreadChatCount = unreadChatCounts[peerUi.peer.deviceId] ?: 0,
                         onToggleSelect = { vm.togglePeerSelection(peerUi.peer.deviceId) },
+                        onOpenChat = { vm.openChatRoom(peerUi.peer.deviceId) },
                         onDisconnect = { pendingDisconnectPeer = peerUi },
                         onReconnect = { vm.reconnectPeer(peerUi.peer.deviceId) },
                         onForget = { vm.forgetPeer(peerUi.peer.deviceId) }
@@ -582,6 +634,17 @@ fun ArworaConnectScreen(
         )
     }
 
+    if (showSettingsDialog) {
+        ArworaConnectSettingsDialog(
+            policy = messageRetentionPolicy,
+            lastSelectedDuration = lastRetentionDuration,
+            autoReconnectEnabled = autoReconnect,
+            onSelectPolicy = { policy -> vm.setMessageRetentionPolicy(policy) },
+            onToggleAutoReconnect = { enabled -> vm.setAutoReconnect(enabled) },
+            onDismiss = { showSettingsDialog = false }
+        )
+    }
+
     pendingDisconnectPeer?.let { targetPeer ->
         DisconnectPeerConfirmationDialog(
             peerName = targetPeer.peer.deviceName,
@@ -593,12 +656,34 @@ fun ArworaConnectScreen(
             onDismiss = { pendingDisconnectPeer = null }
         )
     }
+
+    activeChatPeerId?.let { chatPeerId ->
+        val targetPeerUi = peers.firstOrNull { it.peer.deviceId == chatPeerId }
+        if (targetPeerUi != null) {
+            ArworaConnectChatDialog(
+                peerUi = targetPeerUi,
+                messages = chatMessagesByPeer[chatPeerId].orEmpty(),
+                localDeviceId = identity.deviceId,
+                isSendingImage = isSendingChatImage,
+                retentionPolicy = messageRetentionPolicy,
+                onSendText = { text -> vm.sendChatText(chatPeerId, text) },
+                onSendImageUri = { uri -> vm.sendChatImage(chatPeerId, uri) },
+                onSendVoiceNote = { audioBase64, durationMs, waveform ->
+                    vm.sendChatVoice(chatPeerId, audioBase64, durationMs, waveform)
+                },
+                onToggleReaction = { msgId, emoji -> vm.toggleChatReaction(chatPeerId, msgId, emoji) },
+                onDismiss = { vm.closeChatRoom() }
+            )
+        }
+    }
 }
 
 @Composable
 private fun PeerSessionCard(
     peerUi: PeerUiState,
+    unreadChatCount: Int,
     onToggleSelect: () -> Unit,
+    onOpenChat: () -> Unit,
     onDisconnect: () -> Unit,
     onReconnect: () -> Unit,
     onForget: () -> Unit
@@ -683,66 +768,95 @@ private fun PeerSessionCard(
                         .padding(end = 8.dp)
                 )
 
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(
+                IconButton(
+                    onClick = {
+                        SoundEffectManager.playClick()
+                        onForget()
+                    },
+                    modifier = Modifier.testTag("connect_forget_peer_${peerUi.peer.deviceId}")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DeleteOutline,
+                        contentDescription = "Forget Trusted Peer",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            if (isConnected) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedButton(
                         onClick = {
                             SoundEffectManager.playClick()
-                            onForget()
+                            onOpenChat()
                         },
-                        modifier = Modifier.testTag("connect_forget_peer_${peerUi.peer.deviceId}")
+                        shape = ArworaDesignTokens.PillShape,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .testTag("connect_chat_peer_${peerUi.peer.deviceId}")
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.DeleteOutline,
-                            contentDescription = "Forget Trusted Peer",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        Icon(Icons.Default.Forum, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (unreadChatCount > 0) "Chat Room ($unreadChatCount)" else "Chat Room",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
 
-                    if (isConnected) {
-                        OutlinedButton(
-                            onClick = {
-                                SoundEffectManager.playClick()
-                                onDisconnect()
-                            },
-                            shape = ArworaDesignTokens.PillShape,
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                            modifier = Modifier
-                                .heightIn(min = 48.dp)
-                                .testTag("connect_disconnect_peer_${peerUi.peer.deviceId}")
-                        ) {
-                            Icon(Icons.Default.LinkOff, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Disconnect",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                softWrap = false,
-                                modifier = Modifier.testTag("connect_disconnect_label_${peerUi.peer.deviceId}")
-                            )
-                        }
-                    } else {
-                        Button(
-                            onClick = {
-                                SoundEffectManager.playClick()
-                                onReconnect()
-                            },
-                            shape = ArworaDesignTokens.PillShape,
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                            modifier = Modifier
-                                .heightIn(min = 48.dp)
-                                .testTag("connect_reconnect_peer_${peerUi.peer.deviceId}")
-                        ) {
-                            Text(
-                                text = "Reconnect",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                softWrap = false
-                            )
-                        }
+                    OutlinedButton(
+                        onClick = {
+                            SoundEffectManager.playClick()
+                            onDisconnect()
+                        },
+                        shape = ArworaDesignTokens.PillShape,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .testTag("connect_disconnect_peer_${peerUi.peer.deviceId}")
+                    ) {
+                        Icon(Icons.Default.LinkOff, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Disconnect",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false,
+                            modifier = Modifier.testTag("connect_disconnect_label_${peerUi.peer.deviceId}")
+                        )
                     }
+                }
+            } else {
+                Button(
+                    onClick = {
+                        SoundEffectManager.playClick()
+                        onReconnect()
+                    },
+                    shape = ArworaDesignTokens.PillShape,
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .testTag("connect_reconnect_peer_${peerUi.peer.deviceId}")
+                ) {
+                    Text(
+                        text = "Reconnect",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false
+                    )
                 }
             }
         }

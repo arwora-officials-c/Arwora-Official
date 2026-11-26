@@ -7,8 +7,11 @@ import androidx.lifecycle.viewModelScope
 import com.arwora.feature.system.connect.data.ArworaConnectEngine
 import com.arwora.feature.system.connect.data.ArworaConnectManager
 import com.arwora.feature.system.connect.data.ConnectNetworkUtils
+import com.arwora.feature.system.connect.model.ConnectChatMessage
+import com.arwora.feature.system.connect.model.DiscoveredNearbyPeer
 import com.arwora.feature.system.connect.model.FileTransferRecord
 import com.arwora.feature.system.connect.model.LocalIdentityState
+import com.arwora.feature.system.connect.model.P2pMessageRetentionPolicy
 import com.arwora.feature.system.connect.model.PairingQrPayload
 import com.arwora.feature.system.connect.model.PeerUiState
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,9 +29,25 @@ class ArworaConnectViewModel(application: Application) : AndroidViewModel(applic
     val statusMessage: StateFlow<String?> = engine.statusMessage
     val isServiceRunning: StateFlow<Boolean> = ArworaConnectManager.isServiceRunning
     val autoReconnectEnabled: StateFlow<Boolean> = ArworaConnectManager.autoReconnectEnabled
+    val messageRetentionPolicy: StateFlow<P2pMessageRetentionPolicy> = ArworaConnectManager.messageRetentionPolicy
+    val lastNonOffRetentionPolicy: StateFlow<P2pMessageRetentionPolicy> = ArworaConnectManager.lastNonOffRetentionPolicy
+
+    val nearbyPeers: StateFlow<List<DiscoveredNearbyPeer>> = engine.nearbyPeers
+    val isNearbyScanning: StateFlow<Boolean> = engine.isNearbyScanning
+    val chatMessagesByPeer: StateFlow<Map<String, List<ConnectChatMessage>>> = engine.chatMessagesByPeer
+    val unreadChatCounts: StateFlow<Map<String, Int>> = engine.unreadChatCounts
 
     private val _isPairingBusy = MutableStateFlow(false)
     val isPairingBusy: StateFlow<Boolean> = _isPairingBusy.asStateFlow()
+
+    private val _connectingNearbyIds = MutableStateFlow<Set<String>>(emptySet())
+    val connectingNearbyIds: StateFlow<Set<String>> = _connectingNearbyIds.asStateFlow()
+
+    private val _activeChatPeerId = MutableStateFlow<String?>(null)
+    val activeChatPeerId: StateFlow<String?> = _activeChatPeerId.asStateFlow()
+
+    private val _isSendingChatImage = MutableStateFlow(false)
+    val isSendingChatImage: StateFlow<Boolean> = _isSendingChatImage.asStateFlow()
 
     private val _isScanningLan = MutableStateFlow(false)
     val isScanningLan: StateFlow<Boolean> = _isScanningLan.asStateFlow()
@@ -40,6 +59,8 @@ class ArworaConnectViewModel(application: Application) : AndroidViewModel(applic
     val actionFeedback: StateFlow<String?> = _actionFeedback.asStateFlow()
 
     init {
+        ArworaConnectManager.syncPreferences(application)
+        engine.chatManager.pruneExpiredMessages()
         engine.refreshLocalNetworkInfo()
     }
 
@@ -61,6 +82,15 @@ class ArworaConnectViewModel(application: Application) : AndroidViewModel(applic
         ArworaConnectManager.setAutoReconnectEnabled(getApplication(), enabled)
     }
 
+    fun setMessageRetentionPolicy(policy: P2pMessageRetentionPolicy) {
+        ArworaConnectManager.setMessageRetentionPolicy(getApplication(), policy)
+        _actionFeedback.value = when (policy) {
+            P2pMessageRetentionPolicy.OFF -> "P2P message auto-delete disabled"
+            P2pMessageRetentionPolicy.HOURS_24 -> "Auto-delete P2P messages after 24 hours"
+            P2pMessageRetentionPolicy.DAYS_7 -> "Auto-delete P2P messages after 7 days"
+        }
+    }
+
     fun buildQrPayload(): PairingQrPayload = engine.buildQrPayload()
 
     fun regeneratePairingCode() {
@@ -80,6 +110,9 @@ class ArworaConnectViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun disconnectPeer(deviceId: String) {
+        if (_activeChatPeerId.value == deviceId) {
+            closeChatRoom()
+        }
         engine.disconnectPeer(deviceId, userInitiated = true)
         _actionFeedback.value = "Disconnected peer"
     }
@@ -92,8 +125,78 @@ class ArworaConnectViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun forgetPeer(deviceId: String) {
+        if (_activeChatPeerId.value == deviceId) {
+            closeChatRoom()
+        }
         engine.forgetTrustedPeer(deviceId)
         _actionFeedback.value = "Removed trusted peer certificate"
+    }
+
+    fun connectToNearbyPeer(peer: DiscoveredNearbyPeer) {
+        if (_connectingNearbyIds.value.contains(peer.deviceId)) return
+        viewModelScope.launch {
+            _connectingNearbyIds.value = _connectingNearbyIds.value + peer.deviceId
+            val result = engine.pairWithNearbyPeer(peer)
+            _connectingNearbyIds.value = _connectingNearbyIds.value - peer.deviceId
+            result.onSuccess { record ->
+                _actionFeedback.value = "Connected to ${record.deviceName}"
+            }.onFailure { err ->
+                _actionFeedback.value = err.localizedMessage ?: "Unable to connect to ${peer.deviceName}"
+            }
+        }
+    }
+
+    fun openChatRoom(peerDeviceId: String) {
+        _activeChatPeerId.value = peerDeviceId
+        engine.chatManager.setActiveChatPeer(peerDeviceId)
+    }
+
+    fun closeChatRoom() {
+        _activeChatPeerId.value = null
+        engine.chatManager.setActiveChatPeer(null)
+    }
+
+    fun sendChatText(peerDeviceId: String, text: String) {
+        viewModelScope.launch {
+            val result = engine.sendChatText(peerDeviceId, text)
+            result.onFailure { err ->
+                _actionFeedback.value = err.localizedMessage ?: "Failed to send message"
+            }
+        }
+    }
+
+    fun sendChatImage(peerDeviceId: String, uri: Uri) {
+        viewModelScope.launch {
+            _isSendingChatImage.value = true
+            val result = engine.sendChatImage(peerDeviceId, uri)
+            _isSendingChatImage.value = false
+            result.onFailure { err ->
+                _actionFeedback.value = err.localizedMessage ?: "Failed to send image"
+            }
+        }
+    }
+
+    fun sendChatVoice(
+        peerDeviceId: String,
+        audioBase64: String,
+        durationMs: Long,
+        waveform: List<Float>
+    ) {
+        viewModelScope.launch {
+            val result = engine.sendChatVoice(peerDeviceId, audioBase64, durationMs, waveform)
+            result.onFailure { err ->
+                _actionFeedback.value = err.localizedMessage ?: "Failed to send voice note"
+            }
+        }
+    }
+
+    fun toggleChatReaction(peerDeviceId: String, messageId: String, emoji: String) {
+        viewModelScope.launch {
+            val result = engine.toggleChatReaction(peerDeviceId, messageId, emoji)
+            result.onFailure { err ->
+                _actionFeedback.value = err.localizedMessage ?: "Failed to send reaction"
+            }
+        }
     }
 
     fun pairWithQrRaw(rawQr: String, onResult: (Boolean, String) -> Unit = { _, _ -> }) {

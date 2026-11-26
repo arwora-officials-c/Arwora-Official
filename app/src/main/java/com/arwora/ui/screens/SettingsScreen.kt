@@ -54,6 +54,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.NavController
+import com.arwora.feature.system.connect.data.ArworaConnectManager
+import com.arwora.feature.system.connect.ui.ArworaConnectSettingsDialog
 import com.arwora.ui.MainViewModel
 import com.arwora.ui.components.AppLogo
 import com.arwora.ui.components.ArworaAnimatedSwitch
@@ -1187,8 +1189,14 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
             SettingsCategoryHeader(title = "Data, Storage & Telemetry", icon = Icons.Default.Storage)
 
             val compressionDefaults by com.arwora.feature.compressor.CompressionDefaultsStore.settings.collectAsStateWithLifecycle()
+            val connectRetentionPolicy by ArworaConnectManager.messageRetentionPolicy.collectAsStateWithLifecycle()
+            val connectLastDuration by ArworaConnectManager.lastNonOffRetentionPolicy.collectAsStateWithLifecycle()
+            val connectAutoReconnect by ArworaConnectManager.autoReconnectEnabled.collectAsStateWithLifecycle()
+            var showConnectSettingsDialog by remember { mutableStateOf(false) }
+
             LaunchedEffect(Unit) {
                 com.arwora.feature.compressor.CompressionDefaultsStore.ensureLoaded(context)
+                ArworaConnectManager.syncPreferences(context)
             }
 
             SettingsGroupCard {
@@ -1207,6 +1215,26 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
                     onClick = {
                         com.arwora.utils.SoundEffectManager.playClick()
                         navController.navigate(Screen.CompressionSettings.route)
+                    }
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+
+                SettingsItemRow(
+                    title = "Arwora Connect Settings",
+                    subtitle = "Auto-delete P2P messages: ${connectRetentionPolicy.label}",
+                    icon = Icons.Default.AutoDelete,
+                    modifier = Modifier.testTag("settings_arwora_connect_row"),
+                    trailingContent = {
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    onClick = {
+                        com.arwora.utils.SoundEffectManager.playClick()
+                        showConnectSettingsDialog = true
                     }
                 )
 
@@ -1260,6 +1288,21 @@ fun SettingsScreen(navController: NavController, viewModel: MainViewModel) {
                         com.arwora.utils.SoundEffectManager.playClick()
                         showClearFavDialog = true
                     }
+                )
+            }
+
+            if (showConnectSettingsDialog) {
+                ArworaConnectSettingsDialog(
+                    policy = connectRetentionPolicy,
+                    lastSelectedDuration = connectLastDuration,
+                    autoReconnectEnabled = connectAutoReconnect,
+                    onSelectPolicy = { policy ->
+                        ArworaConnectManager.setMessageRetentionPolicy(context, policy)
+                    },
+                    onToggleAutoReconnect = { enabled ->
+                        ArworaConnectManager.setAutoReconnectEnabled(context, enabled)
+                    },
+                    onDismiss = { showConnectSettingsDialog = false }
                 )
             }
 
@@ -1590,6 +1633,7 @@ private fun AppPermissionStatusRow(
         ManagedPermissionCategory.CAMERA -> Icons.Default.CameraAlt
         ManagedPermissionCategory.WIRELESS_ADB -> Icons.Default.DeveloperMode
         ManagedPermissionCategory.USAGE_STATS -> Icons.Default.QueryStats
+        ManagedPermissionCategory.NEARBY_DEVICES -> Icons.Default.Sensors
     }
 
     Surface(

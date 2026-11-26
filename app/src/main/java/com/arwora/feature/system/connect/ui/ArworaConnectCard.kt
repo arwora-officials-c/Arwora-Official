@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.QrCode2
@@ -38,6 +39,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -78,11 +80,21 @@ fun ArworaConnectCard(
 
     val identity by engine.localIdentity.collectAsStateWithLifecycle()
     val peers by engine.peers.collectAsStateWithLifecycle()
+    val nearbyPeers by engine.nearbyPeers.collectAsStateWithLifecycle()
+    val chatMessagesByPeer by engine.chatMessagesByPeer.collectAsStateWithLifecycle()
+    val unreadChatCounts by engine.unreadChatCounts.collectAsStateWithLifecycle()
     val isServiceRunning by ArworaConnectManager.isServiceRunning.collectAsStateWithLifecycle()
+    val retentionPolicy by ArworaConnectManager.messageRetentionPolicy.collectAsStateWithLifecycle()
+
+    LaunchedEffect(Unit) {
+        ArworaConnectManager.syncPreferences(context)
+    }
 
     var showRenameDialog by remember { mutableStateOf(false) }
     var showQrDialog by remember { mutableStateOf(false) }
     var pendingDisconnectPeer by remember { mutableStateOf<PeerUiState?>(null) }
+    var activeChatPeerId by remember { mutableStateOf<String?>(null) }
+    var isSendingChatImage by remember { mutableStateOf(false) }
 
     val notificationLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -160,7 +172,11 @@ fun ArworaConnectCard(
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "Offline P2P file sharing with trusted auto-accept & multi-device sync",
+                        text = if (nearbyPeers.isNotEmpty()) {
+                            "${nearbyPeers.size} nearby device(s) discovered on local Wi-Fi"
+                        } else {
+                            "Offline P2P file sharing, live chat & zero-config discovery"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
                         maxLines = 2,
@@ -317,6 +333,24 @@ fun ArworaConnectCard(
                                     )
                                 }
                                 if (isConnected) {
+                                    val unread = unreadChatCounts[item.peer.deviceId] ?: 0
+                                    IconButton(
+                                        onClick = {
+                                            SoundEffectManager.playClick()
+                                            activeChatPeerId = item.peer.deviceId
+                                            engine.chatManager.setActiveChatPeer(item.peer.deviceId)
+                                        },
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .testTag("connect_card_chat_${item.peer.deviceId}")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Forum,
+                                            contentDescription = if (unread > 0) "Chat Room ($unread unread)" else "Open Chat Room",
+                                            tint = if (unread > 0) Color(0xFF10B981) else MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
                                     TextButton(
                                         onClick = {
                                             SoundEffectManager.playClick()
@@ -446,9 +480,52 @@ fun ArworaConnectCard(
             onConfirm = {
                 val peerId = targetPeer.peer.deviceId
                 pendingDisconnectPeer = null
+                if (activeChatPeerId == peerId) {
+                    activeChatPeerId = null
+                    engine.chatManager.setActiveChatPeer(null)
+                }
                 engine.disconnectPeer(peerId, userInitiated = true)
             },
             onDismiss = { pendingDisconnectPeer = null }
         )
+    }
+
+    activeChatPeerId?.let { chatPeerId ->
+        val targetPeerUi = peers.firstOrNull { it.peer.deviceId == chatPeerId }
+        if (targetPeerUi != null) {
+            ArworaConnectChatDialog(
+                peerUi = targetPeerUi,
+                messages = chatMessagesByPeer[chatPeerId].orEmpty(),
+                localDeviceId = identity.deviceId,
+                isSendingImage = isSendingChatImage,
+                retentionPolicy = retentionPolicy,
+                onSendText = { text ->
+                    scope.launch {
+                        engine.sendChatText(chatPeerId, text)
+                    }
+                },
+                onSendImageUri = { uri ->
+                    scope.launch {
+                        isSendingChatImage = true
+                        engine.sendChatImage(chatPeerId, uri)
+                        isSendingChatImage = false
+                    }
+                },
+                onSendVoiceNote = { audioBase64, durationMs, waveform ->
+                    scope.launch {
+                        engine.sendChatVoice(chatPeerId, audioBase64, durationMs, waveform)
+                    }
+                },
+                onToggleReaction = { msgId, emoji ->
+                    scope.launch {
+                        engine.toggleChatReaction(chatPeerId, msgId, emoji)
+                    }
+                },
+                onDismiss = {
+                    activeChatPeerId = null
+                    engine.chatManager.setActiveChatPeer(null)
+                }
+            )
+        }
     }
 }

@@ -22,7 +22,8 @@ enum class ManagedPermissionCategory {
     OVERLAY,
     CAMERA,
     WIRELESS_ADB,
-    USAGE_STATS
+    USAGE_STATS,
+    NEARBY_DEVICES
 }
 
 data class ManagedAppPermission(
@@ -52,6 +53,7 @@ object AppPermissionsHelper {
         val cameraGranted = isCameraGranted(context)
         val wirelessAdbGranted = isWirelessAdbGranted(context)
         val usageStatsGranted = isUsageStatsGranted(context)
+        val nearbyDevicesGranted = isNearbyDevicesGranted(context)
 
         return buildPermissionList(
             sdkInt = Build.VERSION.SDK_INT,
@@ -62,7 +64,8 @@ object AppPermissionsHelper {
             overlayGranted = overlayGranted,
             cameraGranted = cameraGranted,
             wirelessAdbGranted = wirelessAdbGranted,
-            usageStatsGranted = usageStatsGranted
+            usageStatsGranted = usageStatsGranted,
+            nearbyDevicesGranted = nearbyDevicesGranted
         )
     }
 
@@ -75,7 +78,8 @@ object AppPermissionsHelper {
         overlayGranted: Boolean,
         cameraGranted: Boolean = false,
         wirelessAdbGranted: Boolean = false,
-        usageStatsGranted: Boolean = false
+        usageStatsGranted: Boolean = false,
+        nearbyDevicesGranted: Boolean = false
     ): List<ManagedAppPermission> {
         val storageKey = if (sdkInt >= Build.VERSION_CODES.TIRAMISU) {
             "READ_MEDIA_IMAGES / VIDEO"
@@ -86,6 +90,14 @@ object AppPermissionsHelper {
             "POST_NOTIFICATIONS"
         } else {
             "APP_NOTIFICATIONS"
+        }
+        val nearbyDevicesKey = when {
+            sdkInt >= Build.VERSION_CODES.TIRAMISU ->
+                "NEARBY_WIFI_DEVICES / BLUETOOTH_SCAN / BLUETOOTH_CONNECT"
+            sdkInt >= Build.VERSION_CODES.S ->
+                "BLUETOOTH_SCAN / BLUETOOTH_CONNECT"
+            else ->
+                "ACCESS_FINE_LOCATION"
         }
 
         return listOf(
@@ -152,6 +164,14 @@ object AppPermissionsHelper {
                 permissionKey = "PACKAGE_USAGE_STATS",
                 category = ManagedPermissionCategory.USAGE_STATS,
                 isGranted = usageStatsGranted
+            ),
+            ManagedAppPermission(
+                id = "nearby_devices",
+                title = "Nearby Devices",
+                subtitle = "Required for Arwora Connect P2P file sharing, Wi-Fi & peer discovery",
+                permissionKey = nearbyDevicesKey,
+                category = ManagedPermissionCategory.NEARBY_DEVICES,
+                isGranted = nearbyDevicesGranted
             )
         )
     }
@@ -327,6 +347,47 @@ object AppPermissionsHelper {
         false
     }
 
+    fun isNearbyDevicesGranted(context: Context): Boolean = try {
+        when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.NEARBY_WIFI_DEVICES
+                ) == PackageManager.PERMISSION_GRANTED &&
+                    ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.BLUETOOTH_SCAN
+                    ) == PackageManager.PERMISSION_GRANTED &&
+                    ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.BLUETOOTH_CONNECT
+                    ) == PackageManager.PERMISSION_GRANTED
+            }
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.BLUETOOTH_SCAN
+                ) == PackageManager.PERMISSION_GRANTED &&
+                    ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.BLUETOOTH_CONNECT
+                    ) == PackageManager.PERMISSION_GRANTED
+            }
+            else -> {
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.ACCESS_FINE_LOCATION
+                ) == PackageManager.PERMISSION_GRANTED ||
+                    ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                    ) == PackageManager.PERMISSION_GRANTED
+            }
+        }
+    } catch (_: Throwable) {
+        false
+    }
+
     fun runtimePermissionsForCategory(
         category: ManagedPermissionCategory,
         sdkInt: Int = Build.VERSION.SDK_INT
@@ -345,6 +406,18 @@ object AppPermissionsHelper {
             listOf(Manifest.permission.POST_NOTIFICATIONS)
         } else {
             emptyList()
+        }
+        ManagedPermissionCategory.NEARBY_DEVICES -> when {
+            sdkInt >= Build.VERSION_CODES.TIRAMISU -> listOf(
+                Manifest.permission.NEARBY_WIFI_DEVICES,
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.BLUETOOTH_CONNECT
+            )
+            sdkInt >= Build.VERSION_CODES.S -> listOf(
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.BLUETOOTH_CONNECT
+            )
+            else -> listOf(Manifest.permission.ACCESS_FINE_LOCATION)
         }
         ManagedPermissionCategory.NOTIFICATION_LISTENER,
         ManagedPermissionCategory.OVERLAY,
@@ -422,7 +495,8 @@ object AppPermissionsHelper {
         return when (category) {
             ManagedPermissionCategory.STORAGE -> return createManageAllFilesAccessIntent(context)
             ManagedPermissionCategory.MICROPHONE,
-            ManagedPermissionCategory.CAMERA -> Intent(
+            ManagedPermissionCategory.CAMERA,
+            ManagedPermissionCategory.NEARBY_DEVICES -> Intent(
                 Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                 packageUri
             )
@@ -546,8 +620,15 @@ object AppPermissionsHelper {
             add("pm grant $packageName ${Manifest.permission.READ_MEDIA_IMAGES}")
             add("pm grant $packageName ${Manifest.permission.READ_MEDIA_VIDEO}")
             add("pm grant $packageName ${Manifest.permission.POST_NOTIFICATIONS}")
+            add("pm grant $packageName ${Manifest.permission.NEARBY_WIFI_DEVICES}")
         } else {
             add("pm grant $packageName ${Manifest.permission.READ_EXTERNAL_STORAGE}")
+        }
+        if (sdkInt >= Build.VERSION_CODES.S) {
+            add("pm grant $packageName ${Manifest.permission.BLUETOOTH_SCAN}")
+            add("pm grant $packageName ${Manifest.permission.BLUETOOTH_CONNECT}")
+        } else {
+            add("pm grant $packageName ${Manifest.permission.ACCESS_FINE_LOCATION}")
         }
         add("appops set $packageName SYSTEM_ALERT_WINDOW allow")
         add("appops set $packageName GET_USAGE_STATS allow")
@@ -564,8 +645,15 @@ object AppPermissionsHelper {
             add("pm revoke $packageName ${Manifest.permission.READ_MEDIA_IMAGES}")
             add("pm revoke $packageName ${Manifest.permission.READ_MEDIA_VIDEO}")
             add("pm revoke $packageName ${Manifest.permission.POST_NOTIFICATIONS}")
+            add("pm revoke $packageName ${Manifest.permission.NEARBY_WIFI_DEVICES}")
         } else {
             add("pm revoke $packageName ${Manifest.permission.READ_EXTERNAL_STORAGE}")
+        }
+        if (sdkInt >= Build.VERSION_CODES.S) {
+            add("pm revoke $packageName ${Manifest.permission.BLUETOOTH_SCAN}")
+            add("pm revoke $packageName ${Manifest.permission.BLUETOOTH_CONNECT}")
+        } else {
+            add("pm revoke $packageName ${Manifest.permission.ACCESS_FINE_LOCATION}")
         }
         add("appops set $packageName SYSTEM_ALERT_WINDOW ignore")
         add("appops set $packageName GET_USAGE_STATS ignore")
@@ -581,8 +669,15 @@ object AppPermissionsHelper {
             add(Manifest.permission.READ_MEDIA_IMAGES)
             add(Manifest.permission.READ_MEDIA_VIDEO)
             add(Manifest.permission.POST_NOTIFICATIONS)
+            add(Manifest.permission.NEARBY_WIFI_DEVICES)
         } else {
             add(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+        if (sdkInt >= Build.VERSION_CODES.S) {
+            add(Manifest.permission.BLUETOOTH_SCAN)
+            add(Manifest.permission.BLUETOOTH_CONNECT)
+        } else {
+            add(Manifest.permission.ACCESS_FINE_LOCATION)
         }
     }
 

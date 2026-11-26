@@ -4,14 +4,18 @@ import android.content.Context
 import android.net.Uri
 import android.util.Base64
 import android.util.Log
+import com.arwora.feature.system.connect.model.ConnectChatMessage
+import com.arwora.feature.system.connect.model.DiscoveredNearbyPeer
 import com.arwora.feature.system.connect.model.FileTransferRecord
 import com.arwora.feature.system.connect.model.LocalIdentityState
+import com.arwora.feature.system.connect.model.P2pMessageRetentionPolicy
 import com.arwora.feature.system.connect.model.PairingQrPayload
 import com.arwora.feature.system.connect.model.PeerConnectionState
 import com.arwora.feature.system.connect.model.PeerUiState
 import com.arwora.feature.system.connect.model.TransferDirection
 import com.arwora.feature.system.connect.model.TransferStatus
 import com.arwora.feature.system.connect.model.TrustedPeerRecord
+import com.arwora.feature.system.connect.service.NearbyDiscoveryService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -55,7 +59,8 @@ class ArworaConnectEngine(
     context: Context,
     val securityStore: ConnectSecurityStore = ConnectSecurityStore(context),
     private val preferredPort: Int = ConnectSecurityStore.DEFAULT_PORT,
-    private val overrideReceiveDir: File? = null
+    private val overrideReceiveDir: File? = null,
+    initialRetentionPolicy: P2pMessageRetentionPolicy = P2pMessageRetentionPolicy.OFF
 ) {
     private val appContext = context.applicationContext
     private val engineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -80,6 +85,12 @@ class ArworaConnectEngine(
     private val selectedPeerIds = Collections.synchronizedSet(mutableSetOf<String>())
     private val reconnectingIds = Collections.synchronizedSet(mutableSetOf<String>())
 
+    val chatManager = ArworaConnectChatManager(
+        context = appContext,
+        initialRetentionPolicy = initialRetentionPolicy
+    )
+    val nearbyDiscovery = NearbyDiscoveryService(appContext, securityStore)
+
     private val _localIdentity = MutableStateFlow(buildIdentityState(isServerRunning = false, port = preferredPort))
     val localIdentity: StateFlow<LocalIdentityState> = _localIdentity.asStateFlow()
 
@@ -92,7 +103,13 @@ class ArworaConnectEngine(
     private val _statusMessage = MutableStateFlow<String?>(null)
     val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
 
+    val nearbyPeers: StateFlow<List<DiscoveredNearbyPeer>> = nearbyDiscovery.discoveredPeers
+    val isNearbyScanning: StateFlow<Boolean> = nearbyDiscovery.isScanning
+    val chatMessagesByPeer: StateFlow<Map<String, List<ConnectChatMessage>>> = chatManager.messagesByPeer
+    val unreadChatCounts: StateFlow<Map<String, Int>> = chatManager.unreadCountsByPeer
+
     var onIncomingFileCompleted: ((FileTransferRecord) -> Unit)? = null
+    var onIncomingChatMessage: ((ConnectChatMessage) -> Unit)? = null
 
     init {
         selectedPeerIds.addAll(securityStore.loadTrustedPeers().map { it.deviceId })
@@ -181,10 +198,12 @@ class ArworaConnectEngine(
             }
         }
 
+        nearbyDiscovery.start(port = boundPort, deviceName = _localIdentity.value.deviceName)
         return@withLock boundPort
     }
 
     suspend fun stopServer() = serverLock.withLock {
+        nearbyDiscovery.stop()
         acceptJob?.cancel()
         acceptJob = null
         heartbeatJob?.cancel()
@@ -203,6 +222,7 @@ class ArworaConnectEngine(
     }
 
     fun stopServerImmediate() {
+        nearbyDiscovery.stop()
         acceptJob?.cancel()
         acceptJob = null
         heartbeatJob?.cancel()
@@ -217,6 +237,8 @@ class ArworaConnectEngine(
     }
 
     fun shutdown() {
+        nearbyDiscovery.shutdown()
+        chatManager.clearAll()
         runCatching { serverSocket?.close() }
         serverSocket = null
         activeSessions.keys.toList().forEach { closeSessionInternal(it, sendDisconnect = false, manual = false) }
@@ -226,6 +248,10 @@ class ArworaConnectEngine(
     suspend fun updateDeviceName(newName: String): String {
         val updated = securityStore.setDeviceName(newName)
         _localIdentity.value = _localIdentity.value.copy(deviceName = updated)
+        val currentPort = serverSocket?.localPort ?: _localIdentity.value.listeningPort
+        if (_localIdentity.value.isServerRunning) {
+            nearbyDiscovery.updateLocalDeviceName(updated, currentPort)
+        }
 
         // Sync device rename immediately to all active connected peers
         val msg = JSONObject().apply {
@@ -281,6 +307,103 @@ class ArworaConnectEngine(
             pairingCode = cleanCode,
             method = "CODE"
         )
+    }
+
+    /**
+     * Zero-config one-tap pairing for a peer discovered via NSD / mDNS without requiring a code or QR.
+     */
+    suspend fun pairWithNearbyPeer(peer: DiscoveredNearbyPeer): Result<TrustedPeerRecord> = withContext(Dispatchers.IO) {
+        if (peer.deviceId == securityStore.getOrCreateDeviceId()) {
+            return@withContext Result.failure(IllegalArgumentException("Cannot pair a device with itself"))
+        }
+        var socket: Socket? = null
+        try {
+            if (serverSocket == null || serverSocket?.isClosed == true) {
+                startServer()
+            }
+            val startNs = System.nanoTime()
+            socket = Socket()
+            socket.tcpNoDelay = true
+            socket.soTimeout = CONNECT_TIMEOUT_MS
+            socket.connect(InetSocketAddress(peer.hostIp, peer.port), CONNECT_TIMEOUT_MS)
+
+            val input = DataInputStream(BufferedInputStream(socket.getInputStream()))
+            val output = DataOutputStream(BufferedOutputStream(socket.getOutputStream()))
+
+            val myId = securityStore.getOrCreateDeviceId()
+            val myName = securityStore.getDeviceName()
+            val myPort = serverSocket?.localPort ?: _localIdentity.value.listeningPort
+            val myPub = securityStore.getPublicKeyBase64()
+            val myFp = securityStore.getCertFingerprint()
+            val ts = System.currentTimeMillis()
+            val sig = securityStore.signPayload("$myId|NEARBY|$ts")
+
+            writeFrame(
+                output,
+                JSONObject().apply {
+                    put("type", TYPE_NEARBY_PAIR_REQUEST)
+                    put("method", "NSD_NEARBY")
+                    put("deviceId", myId)
+                    put("deviceName", myName)
+                    put("listeningPort", myPort)
+                    put("publicKey", myPub)
+                    put("fingerprint", myFp)
+                    put("timestamp", ts)
+                    put("sig", sig)
+                }
+            )
+
+            val resp = readFrame(input)
+            if (resp.optString("type") != TYPE_NEARBY_PAIR_ACCEPT) {
+                val reason = resp.optString("reason", "Nearby pairing declined")
+                socket.close()
+                _statusMessage.value = reason
+                return@withContext Result.failure(IllegalStateException(reason))
+            }
+
+            val rttMs = ((System.nanoTime() - startNs) / 1_000_000L).coerceAtLeast(1L)
+            val peerId = resp.getString("deviceId")
+            val peerName = resp.optString("deviceName", peer.deviceName).ifBlank { peer.deviceName }
+            val peerPort = resp.optInt("listeningPort", peer.port)
+            val peerPub = resp.getString("publicKey")
+            val peerFp = resp.getString("fingerprint")
+            val peerTs = resp.getLong("timestamp")
+            val peerSig = resp.getString("sig")
+
+            if (!verifyPublicKeyMatchesFingerprint(peerPub, peerFp) ||
+                !securityStore.verifyPeerSignature(peerPub, "$peerId|NEARBY|$peerTs", peerSig)
+            ) {
+                socket.close()
+                return@withContext Result.failure(SecurityException("Nearby peer certificate signature invalid"))
+            }
+
+            val now = System.currentTimeMillis()
+            val record = TrustedPeerRecord(
+                deviceId = peerId,
+                deviceName = peerName,
+                lastKnownIp = peer.hostIp,
+                port = peerPort,
+                publicKeyBase64 = peerPub,
+                certFingerprint = peerFp,
+                pairedAtMillis = now,
+                lastSeenMillis = now,
+                trustedAutoAccept = true
+            )
+            securityStore.upsertTrustedPeer(record)
+            manuallyDisconnectedIds.remove(peerId)
+            selectedPeerIds.add(peerId)
+            nearbyDiscovery.removeByDeviceId(peerId)
+
+            socket.soTimeout = SESSION_READ_TIMEOUT_MS
+            attachActiveSession(peerId, socket, input, output, initialRttMs = rttMs)
+            _statusMessage.value = "Connected to nearby peer $peerName"
+            Result.success(record)
+        } catch (e: Exception) {
+            runCatching { socket?.close() }
+            val msg = e.localizedMessage ?: "Unable to connect to ${peer.deviceName}"
+            _statusMessage.value = msg
+            Result.failure(e)
+        }
     }
 
     private suspend fun connectAndPairInternal(
@@ -497,7 +620,137 @@ class ArworaConnectEngine(
         selectedPeerIds.remove(deviceId)
         closeSessionInternal(deviceId, sendDisconnect = true, manual = true)
         securityStore.removeTrustedPeer(deviceId)
+        chatManager.clearPeerChat(deviceId)
         refreshPeerStates()
+    }
+
+    suspend fun sendChatText(peerDeviceId: String, text: String): Result<ConnectChatMessage> =
+        withContext(Dispatchers.IO) {
+            val clean = text.trim()
+            if (clean.isEmpty()) {
+                return@withContext Result.failure(IllegalArgumentException("Message cannot be empty"))
+            }
+            val session = activeSessions[peerDeviceId]
+                ?: return@withContext Result.failure(IllegalStateException("Peer is not connected"))
+            val identity = _localIdentity.value
+            val (message, packet) = chatManager.createOutgoingTextMessage(
+                peerDeviceId = peerDeviceId,
+                localDeviceId = identity.deviceId,
+                localDeviceName = identity.deviceName,
+                text = clean
+            )
+            chatManager.appendLocalMessage(message)
+            try {
+                session.writeMutex.withLock {
+                    writeFrame(session.output, packet)
+                }
+                Result.success(message)
+            } catch (e: Exception) {
+                chatManager.removeMessage(peerDeviceId, message.id)
+                Result.failure(e)
+            }
+        }
+
+    suspend fun sendChatImage(
+        peerDeviceId: String,
+        uri: Uri,
+        caption: String = ""
+    ): Result<ConnectChatMessage> = withContext(Dispatchers.IO) {
+        val base64 = chatManager.compressImageUriToBase64(uri)
+            ?: return@withContext Result.failure(IllegalStateException("Unable to compress selected image"))
+        sendChatImageBase64(peerDeviceId, base64, caption)
+    }
+
+    suspend fun sendChatImageBase64(
+        peerDeviceId: String,
+        imageBase64: String,
+        caption: String = ""
+    ): Result<ConnectChatMessage> = withContext(Dispatchers.IO) {
+        if (imageBase64.isBlank()) {
+            return@withContext Result.failure(IllegalArgumentException("Image payload is empty"))
+        }
+        val session = activeSessions[peerDeviceId]
+            ?: return@withContext Result.failure(IllegalStateException("Peer is not connected"))
+        val identity = _localIdentity.value
+        val (message, packet) = chatManager.createOutgoingImageMessage(
+            peerDeviceId = peerDeviceId,
+            localDeviceId = identity.deviceId,
+            localDeviceName = identity.deviceName,
+            imageBase64 = imageBase64,
+            caption = caption
+        )
+        chatManager.appendLocalMessage(message)
+        try {
+            session.writeMutex.withLock {
+                writeFrame(session.output, packet)
+            }
+            Result.success(message)
+        } catch (e: Exception) {
+            chatManager.removeMessage(peerDeviceId, message.id)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun sendChatVoice(
+        peerDeviceId: String,
+        audioBase64: String,
+        durationMs: Long,
+        waveform: List<Float>
+    ): Result<ConnectChatMessage> = withContext(Dispatchers.IO) {
+        if (audioBase64.isBlank()) {
+            return@withContext Result.failure(IllegalArgumentException("Voice note payload is empty"))
+        }
+        val session = activeSessions[peerDeviceId]
+            ?: return@withContext Result.failure(IllegalStateException("Peer is not connected"))
+        val identity = _localIdentity.value
+        val (message, packet) = chatManager.createOutgoingVoiceMessage(
+            peerDeviceId = peerDeviceId,
+            localDeviceId = identity.deviceId,
+            localDeviceName = identity.deviceName,
+            audioBase64 = audioBase64,
+            durationMs = durationMs,
+            waveform = waveform
+        )
+        if (packet.toString().toByteArray(Charsets.UTF_8).size > MAX_CONTROL_FRAME_BYTES) {
+            return@withContext Result.failure(IllegalStateException("Voice note exceeds P2P frame limit"))
+        }
+        chatManager.appendLocalMessage(message)
+        try {
+            session.writeMutex.withLock {
+                writeFrame(session.output, packet)
+            }
+            Result.success(message)
+        } catch (e: Exception) {
+            chatManager.removeMessage(peerDeviceId, message.id)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun toggleChatReaction(
+        peerDeviceId: String,
+        messageId: String,
+        emoji: String
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        val session = activeSessions[peerDeviceId]
+            ?: return@withContext Result.failure(IllegalStateException("Peer is not connected"))
+        val myId = securityStore.getOrCreateDeviceId()
+        val (_, packet) = chatManager.toggleReaction(
+            peerDeviceId = peerDeviceId,
+            messageId = messageId,
+            actorDeviceId = myId,
+            emoji = emoji
+        ) ?: return@withContext Result.failure(IllegalArgumentException("Message not found"))
+
+        try {
+            session.writeMutex.withLock {
+                writeFrame(session.output, packet)
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            // Roll back local toggle if socket failed
+            chatManager.toggleReaction(peerDeviceId, messageId, myId, emoji)
+            Result.failure(e)
+        }
     }
 
     suspend fun broadcastFilesToSelectedPeers(
@@ -659,6 +912,7 @@ class ArworaConnectEngine(
             val firstFrame = readFrame(input)
             when (firstFrame.optString("type")) {
                 TYPE_PAIR_REQUEST -> handleIncomingPairRequest(socket, remoteIp, input, output, firstFrame)
+                TYPE_NEARBY_PAIR_REQUEST -> handleIncomingNearbyPairRequest(socket, remoteIp, input, output, firstFrame)
                 TYPE_TRUSTED_CONNECT -> handleIncomingTrustedConnect(socket, remoteIp, input, output, firstFrame)
                 TYPE_FILE_TRANSFER_INIT -> handleIncomingFileTransfer(socket, input, output, firstFrame)
                 else -> socket.close()
@@ -744,6 +998,82 @@ class ArworaConnectEngine(
         socket.soTimeout = SESSION_READ_TIMEOUT_MS
         attachActiveSession(peerId, socket, input, output, initialRttMs = 10L)
         _statusMessage.value = "Trusted peer paired: $peerName"
+    }
+
+    private fun handleIncomingNearbyPairRequest(
+        socket: Socket,
+        remoteIp: String,
+        input: DataInputStream,
+        output: DataOutputStream,
+        req: JSONObject
+    ) {
+        val peerId = req.optString("deviceId").trim()
+        val peerName = req.optString("deviceName", "Arwora Peer").ifBlank { "Arwora Peer" }
+        val peerPort = req.optInt("listeningPort", ConnectSecurityStore.DEFAULT_PORT)
+        val peerPub = req.optString("publicKey")
+        val peerFp = req.optString("fingerprint")
+        val peerTs = req.optLong("timestamp", 0L)
+        val peerSig = req.optString("sig")
+
+        val valid = peerId.isNotEmpty() &&
+            peerId != securityStore.getOrCreateDeviceId() &&
+            verifyPublicKeyMatchesFingerprint(peerPub, peerFp) &&
+            securityStore.verifyPeerSignature(peerPub, "$peerId|NEARBY|$peerTs", peerSig)
+
+        if (!valid) {
+            writeFrame(
+                output,
+                JSONObject().apply {
+                    put("type", TYPE_PAIR_REJECT)
+                    put("reason", "Invalid nearby peer certificate")
+                }
+            )
+            socket.close()
+            return
+        }
+
+        val myId = securityStore.getOrCreateDeviceId()
+        val myName = securityStore.getDeviceName()
+        val myPort = serverSocket?.localPort ?: _localIdentity.value.listeningPort
+        val myPub = securityStore.getPublicKeyBase64()
+        val myFp = securityStore.getCertFingerprint()
+        val myTs = System.currentTimeMillis()
+        val mySig = securityStore.signPayload("$myId|NEARBY|$myTs")
+
+        writeFrame(
+            output,
+            JSONObject().apply {
+                put("type", TYPE_NEARBY_PAIR_ACCEPT)
+                put("deviceId", myId)
+                put("deviceName", myName)
+                put("listeningPort", myPort)
+                put("publicKey", myPub)
+                put("fingerprint", myFp)
+                put("timestamp", myTs)
+                put("sig", mySig)
+            }
+        )
+
+        val now = System.currentTimeMillis()
+        val record = TrustedPeerRecord(
+            deviceId = peerId,
+            deviceName = peerName,
+            lastKnownIp = remoteIp,
+            port = peerPort,
+            publicKeyBase64 = peerPub,
+            certFingerprint = peerFp,
+            pairedAtMillis = now,
+            lastSeenMillis = now,
+            trustedAutoAccept = true
+        )
+        securityStore.upsertTrustedPeer(record)
+        manuallyDisconnectedIds.remove(peerId)
+        selectedPeerIds.add(peerId)
+        nearbyDiscovery.removeByDeviceId(peerId)
+
+        socket.soTimeout = SESSION_READ_TIMEOUT_MS
+        attachActiveSession(peerId, socket, input, output, initialRttMs = 10L)
+        _statusMessage.value = "Nearby peer connected: $peerName"
     }
 
     private fun handleIncomingTrustedConnect(
@@ -997,6 +1327,30 @@ class ArworaConnectEngine(
                                 refreshPeerStates()
                             }
                         }
+                        ArworaConnectChatManager.TYPE_CHAT -> {
+                            val peerName = securityStore.loadTrustedPeers()
+                                .firstOrNull { it.deviceId == deviceId }?.deviceName ?: "Arwora Peer"
+                            chatManager.handleIncomingTextFrame(deviceId, frame, peerName)?.let { msg ->
+                                onIncomingChatMessage?.invoke(msg)
+                            }
+                        }
+                        ArworaConnectChatManager.TYPE_IMAGE -> {
+                            val peerName = securityStore.loadTrustedPeers()
+                                .firstOrNull { it.deviceId == deviceId }?.deviceName ?: "Arwora Peer"
+                            chatManager.handleIncomingImageFrame(deviceId, frame, peerName)?.let { msg ->
+                                onIncomingChatMessage?.invoke(msg)
+                            }
+                        }
+                        ArworaConnectChatManager.TYPE_VOICE -> {
+                            val peerName = securityStore.loadTrustedPeers()
+                                .firstOrNull { it.deviceId == deviceId }?.deviceName ?: "Arwora Peer"
+                            chatManager.handleIncomingVoiceFrame(deviceId, frame, peerName)?.let { msg ->
+                                onIncomingChatMessage?.invoke(msg)
+                            }
+                        }
+                        ArworaConnectChatManager.TYPE_REACTION -> {
+                            chatManager.handleIncomingReactionFrame(deviceId, frame)
+                        }
                         TYPE_DISCONNECT -> {
                             val manual = frame.optBoolean("manual", false)
                             if (manual) manuallyDisconnectedIds.add(deviceId)
@@ -1019,6 +1373,7 @@ class ArworaConnectEngine(
 
     private suspend fun pingActiveSessions() {
         val now = System.currentTimeMillis()
+        chatManager.pruneExpiredMessages(now)
         activeSessions.values.toList().forEach { session ->
             try {
                 session.writeMutex.withLock {
@@ -1125,7 +1480,7 @@ class ArworaConnectEngine(
         private const val SESSION_READ_TIMEOUT_MS = 0 // persistent control socket read
         private const val TRANSFER_SOCKET_TIMEOUT_MS = 30_000
         private const val HEARTBEAT_INTERVAL_MS = 10_000L
-        private const val MAX_CONTROL_FRAME_BYTES = 131_072
+        private const val MAX_CONTROL_FRAME_BYTES = 2_097_152
         private const val STREAM_BUFFER_BYTES = 65_536
         private const val PROGRESS_NOTIFY_STEP_BYTES = 262_144L
         private const val MAX_TRANSFER_HISTORY = 60
@@ -1133,6 +1488,8 @@ class ArworaConnectEngine(
         private const val TYPE_PAIR_REQUEST = "PAIR_REQUEST"
         private const val TYPE_PAIR_ACCEPT = "PAIR_ACCEPT"
         private const val TYPE_PAIR_REJECT = "PAIR_REJECT"
+        private const val TYPE_NEARBY_PAIR_REQUEST = "NEARBY_PAIR_REQUEST"
+        private const val TYPE_NEARBY_PAIR_ACCEPT = "NEARBY_PAIR_ACCEPT"
         private const val TYPE_TRUSTED_CONNECT = "TRUSTED_CONNECT"
         private const val TYPE_TRUSTED_ACCEPT = "TRUSTED_ACCEPT"
         private const val TYPE_TRUSTED_REJECT = "TRUSTED_REJECT"

@@ -160,3 +160,83 @@ data class LocalIdentityState(
     val certFingerprint: String = "",
     val isServerRunning: Boolean = false
 )
+
+data class DiscoveredNearbyPeer(
+    val serviceName: String,
+    val deviceId: String,
+    val deviceName: String,
+    val hostIp: String,
+    val port: Int,
+    val certFingerprintPrefix: String = "",
+    val discoveredAtMillis: Long = System.currentTimeMillis()
+)
+
+enum class ChatMessageType {
+    TEXT,
+    IMAGE,
+    VOICE
+}
+
+data class ConnectChatMessage(
+    val id: String,
+    val peerDeviceId: String,
+    val senderDeviceId: String,
+    val senderName: String,
+    val type: ChatMessageType,
+    val text: String = "",
+    val imageBase64: String? = null,
+    val audioBase64: String? = null,
+    val durationMs: Long = 0L,
+    val waveform: List<Float> = emptyList(),
+    val timestampMillis: Long = System.currentTimeMillis(),
+    val isOutgoing: Boolean,
+    val reactions: Map<String, Set<String>> = emptyMap()
+) {
+    val reactionCounts: List<Pair<String, Int>>
+        get() = SUPPORTED_REACTIONS.mapNotNull { emoji ->
+            val count = reactions[emoji]?.size ?: 0
+            if (count > 0) emoji to count else null
+        } + reactions.entries
+            .filter { it.key !in SUPPORTED_REACTIONS && it.value.isNotEmpty() }
+            .map { it.key to it.value.size }
+
+    companion object {
+        val SUPPORTED_REACTIONS: List<String> = listOf("❤️", "😂", "👍", "🔥", "😮")
+    }
+}
+
+enum class P2pMessageRetentionPolicy(
+    val storageValue: String,
+    val label: String,
+    val shortBadge: String,
+    val description: String,
+    val retentionMillis: Long?
+) {
+    OFF(
+        storageValue = "off",
+        label = "Off",
+        shortBadge = "Off",
+        description = "P2P messages remain in session history until cleared",
+        retentionMillis = null
+    ),
+    HOURS_24(
+        storageValue = "24h",
+        label = "24 Hours",
+        shortBadge = "24h",
+        description = "Automatically delete P2P messages older than 24 hours",
+        retentionMillis = 24L * 60L * 60L * 1000L
+    ),
+    DAYS_7(
+        storageValue = "7d",
+        label = "7 Days",
+        shortBadge = "7d",
+        description = "Automatically delete P2P messages older than 7 days",
+        retentionMillis = 7L * 24L * 60L * 60L * 1000L
+    );
+
+    companion object {
+        fun fromStorageValue(raw: String?): P2pMessageRetentionPolicy {
+            return entries.firstOrNull { it.storageValue == raw } ?: OFF
+        }
+    }
+}

@@ -1,8 +1,11 @@
 package com.arwora
 
 import android.content.Context
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasAnyChild
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -45,7 +48,7 @@ class SettingsPermissionsUiTest {
     }
 
     @Test
-    fun settingsScreenDisplaysEightPermissionsAndSideBySideAllOnAllOffButtons() {
+    fun settingsScreenDisplaysNinePermissionsIncludingNearbyDevicesAndAllOnAllOffButtons() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
             .allowMainThreadQueries()
@@ -83,7 +86,7 @@ class SettingsPermissionsUiTest {
             .performClick()
         composeTestRule.waitForIdle()
 
-        // Verify all 8 permissions including Camera, Wireless ADB, and Usage Stats
+        // Verify all 9 permissions including Camera, Wireless ADB, Usage Stats, and Nearby Devices
         listOf(
             "settings_permission_item_microphone",
             "settings_permission_item_storage",
@@ -92,10 +95,19 @@ class SettingsPermissionsUiTest {
             "settings_permission_item_overlay",
             "settings_permission_item_camera",
             "settings_permission_item_wireless_adb",
-            "settings_permission_item_usage_stats"
+            "settings_permission_item_usage_stats",
+            "settings_permission_item_nearby_devices"
         ).forEach { tag ->
             composeTestRule.onNodeWithTag(tag).performScrollTo().assertIsDisplayed()
         }
+
+        composeTestRule.onNodeWithText("Nearby Devices").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText(
+            "Required for Arwora Connect P2P file sharing, Wi-Fi & peer discovery"
+        ).performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("settings_permission_status_nearby_devices", useUnmergedTree = true)
+            .assertIsDisplayed()
+            .assert(hasAnyChild(hasText("Not Granted")))
 
         // Verify both side-by-side pill controls: 1-Click All ON & 1-Click All OFF
         val allOnBtn = composeTestRule.onNodeWithTag("settings_permissions_all_on_button")
@@ -121,5 +133,56 @@ class SettingsPermissionsUiTest {
         composeTestRule.onNodeWithText("Disable App Permissions?").assertIsDisplayed()
         composeTestRule.onNodeWithTag("settings_cancel_all_off_button").performClick()
         composeTestRule.waitForIdle()
+    }
+
+    @Test
+    fun nearbyDevicesPermissionBadgeReflectsGrantedState() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        org.robolectric.Shadows.shadowOf(app).grantPermissions(
+            android.Manifest.permission.NEARBY_WIFI_DEVICES,
+            android.Manifest.permission.BLUETOOTH_SCAN,
+            android.Manifest.permission.BLUETOOTH_CONNECT
+        )
+
+        val database = Room.inMemoryDatabaseBuilder(app, AppDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        db = database
+
+        val viewModel = MainViewModel(
+            historyRepository = HistoryRepository(database.historyDao()),
+            favoriteRepository = FavoriteRepository(database.favoriteDao()),
+            savedTextRepository = SavedTextRepository(database.savedTextDao()),
+            settingsRepository = SettingsRepository(app.dataStore)
+        )
+
+        composeTestRule.setContent {
+            val navController = rememberNavController()
+            NameGenProTheme(darkTheme = true) {
+                SettingsScreen(
+                    navController = navController,
+                    viewModel = viewModel
+                )
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("settings_app_permissions_row")
+            .performScrollTo()
+            .performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("settings_permission_item_nearby_devices")
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithTag("settings_permission_status_nearby_devices", useUnmergedTree = true)
+            .assertIsDisplayed()
+            .assert(hasAnyChild(hasText("Granted")))
+        val expectedGranted = com.arwora.utils.AppPermissionsHelper.inspectPermissions(app).count { it.isGranted }
+        assertTrue("Nearby Devices should count toward granted permissions", expectedGranted >= 1)
+        // Verify summary reflects granted Nearby Devices permission out of 9 total permissions
+        composeTestRule.onNodeWithText("$expectedGranted of 9 permissions granted")
+            .performScrollTo()
+            .assertIsDisplayed()
     }
 }

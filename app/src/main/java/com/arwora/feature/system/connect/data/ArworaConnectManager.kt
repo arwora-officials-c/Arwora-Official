@@ -20,23 +20,28 @@ import androidx.work.WorkManager
 import com.arwora.MainActivity
 import com.arwora.R
 import com.arwora.feature.system.connect.model.FileTransferRecord
+import com.arwora.feature.system.connect.model.P2pMessageRetentionPolicy
 import com.arwora.feature.system.connect.service.ArworaConnectService
 import com.arwora.feature.system.connect.service.AutoReconnectWorker
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.io.File
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * App-wide coordinator for Arwora Connect managing the lazy [ArworaConnectEngine],
- * foreground service lifecycle, WorkManager auto-reconnect scheduling, and transfer alerts.
+ * foreground service lifecycle, WorkManager auto-reconnect scheduling, transfer alerts,
+ * and P2P message auto-delete retention policy.
  */
 object ArworaConnectManager {
 
     private const val TAG = "ArworaConnectManager"
     private const val PREFS_NAME = "arwora_connect_runtime_prefs"
     private const val KEY_AUTO_RECONNECT = "auto_reconnect_enabled"
+    private const val KEY_MESSAGE_RETENTION_POLICY = "p2p_message_retention_policy"
+    private const val KEY_LAST_RETENTION_DURATION = "p2p_last_retention_duration"
     private const val RECONNECT_WORK_NAME = "arwora_connect_auto_reconnect_work"
 
     const val CHANNEL_MONITOR = "arwora_connect_monitor_channel"
@@ -52,17 +57,45 @@ object ArworaConnectManager {
     private val _autoReconnectEnabled = MutableStateFlow(true)
     val autoReconnectEnabled: StateFlow<Boolean> = _autoReconnectEnabled.asStateFlow()
 
+    private val _messageRetentionPolicy = MutableStateFlow(P2pMessageRetentionPolicy.OFF)
+    val messageRetentionPolicy: StateFlow<P2pMessageRetentionPolicy> = _messageRetentionPolicy.asStateFlow()
+
+    private val _lastNonOffRetentionPolicy = MutableStateFlow(P2pMessageRetentionPolicy.HOURS_24)
+    val lastNonOffRetentionPolicy: StateFlow<P2pMessageRetentionPolicy> = _lastNonOffRetentionPolicy.asStateFlow()
+
     private val notifIdSeed = AtomicInteger(7200)
+
+    fun syncPreferences(context: Context) {
+        val appCtx = context.applicationContext
+        val prefs = appCtx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        _autoReconnectEnabled.value = prefs.getBoolean(KEY_AUTO_RECONNECT, true)
+        val policy = P2pMessageRetentionPolicy.fromStorageValue(
+            prefs.getString(KEY_MESSAGE_RETENTION_POLICY, null)
+        )
+        val storedLastDuration = P2pMessageRetentionPolicy.fromStorageValue(
+            prefs.getString(KEY_LAST_RETENTION_DURATION, null)
+        )
+        val resolvedLastDuration = when {
+            policy != P2pMessageRetentionPolicy.OFF -> policy
+            storedLastDuration != P2pMessageRetentionPolicy.OFF -> storedLastDuration
+            else -> P2pMessageRetentionPolicy.HOURS_24
+        }
+        _messageRetentionPolicy.value = policy
+        _lastNonOffRetentionPolicy.value = resolvedLastDuration
+        engineInstance?.chatManager?.setRetentionPolicy(policy)
+    }
 
     @Synchronized
     fun getEngine(context: Context): ArworaConnectEngine {
         val existing = engineInstance
         if (existing != null) return existing
         val appCtx = context.applicationContext
-        val prefs = appCtx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        _autoReconnectEnabled.value = prefs.getBoolean(KEY_AUTO_RECONNECT, true)
+        syncPreferences(appCtx)
 
-        val engine = ArworaConnectEngine(appCtx).apply {
+        val engine = ArworaConnectEngine(
+            context = appCtx,
+            initialRetentionPolicy = _messageRetentionPolicy.value
+        ).apply {
             onIncomingFileCompleted = { record ->
                 dispatchIncomingTransferNotification(appCtx, record)
             }
@@ -87,6 +120,24 @@ object ArworaConnectManager {
         } else {
             cancelAutoReconnectWorker(appCtx)
         }
+    }
+
+    fun setMessageRetentionPolicy(context: Context, policy: P2pMessageRetentionPolicy) {
+        val appCtx = context.applicationContext
+        _messageRetentionPolicy.value = policy
+        val nextDuration = if (policy != P2pMessageRetentionPolicy.OFF) {
+            policy
+        } else {
+            _lastNonOffRetentionPolicy.value.takeIf { it != P2pMessageRetentionPolicy.OFF }
+                ?: P2pMessageRetentionPolicy.HOURS_24
+        }
+        _lastNonOffRetentionPolicy.value = nextDuration
+        appCtx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_MESSAGE_RETENTION_POLICY, policy.storageValue)
+            .putString(KEY_LAST_RETENTION_DURATION, nextDuration.storageValue)
+            .apply()
+        engineInstance?.chatManager?.setRetentionPolicy(policy)
     }
 
     fun startHubService(context: Context) {
@@ -200,11 +251,16 @@ object ArworaConnectManager {
 
     @Synchronized
     fun resetForTests(context: Context) {
+        val appCtx = context.applicationContext
         engineInstance?.shutdown()
         engineInstance = null
         _isServiceRunning.value = false
         _autoReconnectEnabled.value = true
-        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().clear().apply()
-        ConnectSecurityStore(context.applicationContext).clearAllForTests()
+        _messageRetentionPolicy.value = P2pMessageRetentionPolicy.OFF
+        _lastNonOffRetentionPolicy.value = P2pMessageRetentionPolicy.HOURS_24
+        appCtx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().clear().apply()
+        runCatching { File(appCtx.filesDir, ArworaConnectChatManager.HISTORY_FILE_NAME).delete() }
+        runCatching { File(appCtx.cacheDir, "arwora_voice_cache").deleteRecursively() }
+        ConnectSecurityStore(appCtx).clearAllForTests()
     }
 }

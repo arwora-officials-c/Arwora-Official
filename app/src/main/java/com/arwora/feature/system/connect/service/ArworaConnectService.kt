@@ -51,6 +51,7 @@ class ArworaConnectService : Service() {
         reconnectLoopJob = serviceScope.launch {
             while (isActive) {
                 delay(AUTO_RECONNECT_INTERVAL_MS)
+                engine.chatManager.pruneExpiredMessages()
                 engine.refreshLocalNetworkInfo()
                 if (ArworaConnectManager.autoReconnectEnabled.value) {
                     engine.probeAndAutoReconnectDisconnectedPeers()
