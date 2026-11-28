@@ -1303,6 +1303,79 @@ fun SystemDashboardScreen(
                 }
             }
 
+            // ARWORA CHAT HUB CARD
+            item {
+                DashboardStaggeredItem(
+                    index = 30,
+                    triggerAnimation = canPlayCardEntrance,
+                    isInitialLoadBurst = isInitialStaggerWindowActive
+                ) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("system_chat_hub_card"),
+                        onClick = {
+                            SoundEffectManager.playClick()
+                            navigateGuarded(Screen.ChatHub.route) {
+                                navController.navigate(Screen.ChatHub.route)
+                            }
+                        },
+                        shape = ArworaDesignTokens.CardShape,
+                        colors = CardDefaults.cardColors(containerColor = ArworaDesignTokens.cardContainerColor()),
+                        border = ArworaDesignTokens.cardBorder(),
+                        elevation = CardDefaults.cardElevation(defaultElevation = ArworaDesignTokens.cardElevationDp())
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(20.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                ArworaTonalIconBadge(
+                                    icon = Icons.Default.Forum,
+                                    size = 46.dp,
+                                    iconSize = 23.dp
+                                )
+                                Spacer(modifier = Modifier.width(14.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Arwora Chat Hub",
+                                        style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "Offline Wi-Fi/BLE Near Chat, Vault, View-Once & Auto-Delete",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                            Button(
+                                onClick = {
+                                    SoundEffectManager.playClick()
+                                    navigateGuarded(Screen.ChatHub.route) {
+                                        navController.navigate(Screen.ChatHub.route)
+                                    }
+                                },
+                                shape = ArworaDesignTokens.PillShape,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                            ) {
+                                Text("Open Chat Hub", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+
             item {
                 Spacer(modifier = Modifier.height(96.dp))
             }

@@ -1,17 +1,25 @@
 package com.arwora.service
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.accessibilityservice.GestureDescription
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.Path
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
+import android.text.TextUtils
 import android.util.Log
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityManager
 import android.view.accessibility.AccessibilityNodeInfo
+import com.arwora.AppLockActivity
+import com.arwora.receiver.UninstallReceiver
+import com.arwora.utils.AppLockerManager
 import com.arwora.utils.AutoScrollMode
 import com.arwora.utils.AutoVideoScrollManager
 import com.arwora.utils.VideoCompletionDetector
@@ -35,34 +43,16 @@ data class SwipeCoordinates(
     val endY: Float
 )
 
-class AutoScrollAccessibilityService : AccessibilityService() {
-
-    companion object {
-        private const val TAG = "AutoScrollService"
-        private const val SWIPE_DURATION_MS = 340L
-        private const val COMPLETION_COOLDOWN_MS = 2_500L
-        private const val EVENT_INSPECT_THROTTLE_MS = 350L
-        private const val COMPLETION_POLL_INTERVAL_MS = 500L
-
-        @Volatile
-        var instance: AutoScrollAccessibilityService? = null
-            private set
-
-        val isRunning: Boolean
-            get() = instance != null
-
-        fun computeSwipeCoordinates(widthPx: Int, heightPx: Int): SwipeCoordinates {
-            val safeWidth = widthPx.coerceAtLeast(320).toFloat()
-            val safeHeight = heightPx.coerceAtLeast(480).toFloat()
-            val centerX = safeWidth * 0.5f
-            return SwipeCoordinates(
-                startX = centerX,
-                startY = safeHeight * 0.78f,
-                endX = centerX,
-                endY = safeHeight * 0.22f
-            )
-        }
-    }
+/**
+ * Unified Core Accessibility Service for Arwora Hyper Toolkit.
+ *
+ * Consolidates:
+ * 1. App Locker Protection Guard: foreground locked-app enforcement, uninstall protection,
+ *    Device Admin tamper interception, and PackageInstaller / Play Store install blocking.
+ * 2. Auto Video Scroll Engine: short-video feed detection, playback completion inspection,
+ *    and automated vertical swipe gesture dispatching.
+ */
+class ArworaCoreAccessibilityService : AccessibilityService() {
 
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -73,10 +63,19 @@ class AutoScrollAccessibilityService : AccessibilityService() {
     private var observationJob: Job? = null
 
     @Volatile
-    private var lastEventInspectMs = 0L
+    private var lastGuardEventHandledMs: Long = 0L
 
     @Volatile
-    private var lastSwipeTimestampMs = 0L
+    private var lastLockedPromptPkg: String? = null
+
+    @Volatile
+    private var lastLockedPromptMs: Long = 0L
+
+    @Volatile
+    private var lastScrollEventInspectMs: Long = 0L
+
+    @Volatile
+    private var lastSwipeTimestampMs: Long = 0L
 
     @Volatile
     private var previousVideoRatio: Float? = null
@@ -90,14 +89,116 @@ class AutoScrollAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
-        AutoVideoScrollManager.init(this)
+        AppLockerManager.init(applicationContext)
+        AutoVideoScrollManager.init(applicationContext)
         AutoVideoScrollManager.setAccessibilityServiceRunning(true)
         observeAutoScrollState()
-        Log.d(TAG, "AutoScrollAccessibilityService connected")
+        Log.d(TAG, "ArworaCoreAccessibilityService connected")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
+
+        // Duty 1: App Locker foreground monitoring, install block, and uninstall protection
+        handleAppProtectionEvent(event)
+
+        // Duty 2: Auto Video Scroll platform recognition and playback completion inspection
+        handleAutoScrollEvent(event)
+    }
+
+    private fun handleAppProtectionEvent(event: AccessibilityEvent) {
+        val eventType = event.eventType
+        if (eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+        ) {
+            return
+        }
+
+        AppLockerManager.init(applicationContext)
+        val lockerOn = AppLockerManager.isLockerEnabled.value
+        val uninstallGuardOn = AppLockerManager.isUninstallProtectionEnabled.value
+        val installBlockOn = AppLockerManager.isInstallBlockEnabled.value
+        if (!lockerOn && !uninstallGuardOn && !installBlockOn) return
+
+        val foregroundPkg = event.packageName?.toString()?.trim().orEmpty()
+        if (foregroundPkg.isEmpty() || AppLockerManager.isSelfPackageName(foregroundPkg)) return
+
+        val now = System.currentTimeMillis()
+
+        // Enforce App Locker on foreground window state transitions
+        if (eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            !isTransientSystemWindow(foregroundPkg)
+        ) {
+            AppLockerManager.onForegroundPackageChanged(foregroundPkg)
+            if (lockerOn &&
+                AppLockerManager.isAppLocked(foregroundPkg) &&
+                !AppLockerManager.isPackageUnlocked(foregroundPkg)
+            ) {
+                if (lastLockedPromptPkg != foregroundPkg || (now - lastLockedPromptMs) >= LOCK_PROMPT_COOLDOWN_MS) {
+                    lastLockedPromptPkg = foregroundPkg
+                    lastLockedPromptMs = now
+                    launchAppLockScreen(foregroundPkg)
+                    return
+                }
+            } else {
+                lastLockedPromptPkg = null
+            }
+        }
+
+        if (!uninstallGuardOn && !installBlockOn) return
+        if (now - lastGuardEventHandledMs < GUARD_EVENT_THROTTLE_MS) return
+
+        val isInstallerUi = foregroundPkg in INSTALLER_PACKAGES
+        val isSettingsUi = foregroundPkg == SETTINGS_PACKAGE
+        if (!isInstallerUi && !isSettingsUi) return
+
+        val root = runCatching { rootInActiveWindow }.getOrNull()
+        val visibleText = collectWindowTextLower(root, maxNodes = 40)
+        if (root != null) recycleSafely(root)
+
+        // 1. Check Install Block on PackageInstaller / Play Store install prompt
+        if (installBlockOn &&
+            isInstallerUi &&
+            !AppLockerManager.isInstallAuthorized(AppInstallMonitorService.INSTALLER_PLACEHOLDER_PKG)
+        ) {
+            val looksLikeInstall = visibleText.contains("do you want to install") ||
+                visibleText.contains("install this app") ||
+                visibleText.contains("install anyway") ||
+                (visibleText.contains("install") && !visibleText.contains("uninstall"))
+            if (looksLikeInstall) {
+                lastGuardEventHandledMs = now
+                performGlobalAction(GLOBAL_ACTION_BACK)
+                AppInstallMonitorService.handleNewInstallDetected(
+                    context = applicationContext,
+                    packageName = AppInstallMonitorService.INSTALLER_PLACEHOLDER_PKG
+                )
+                return
+            }
+        }
+
+        // 2. Check Uninstall Protection on PackageInstaller or Settings (App Info / Device Admin)
+        if (uninstallGuardOn && !AppLockerManager.isUninstallAuthorized()) {
+            val looksLikeUninstall = visibleText.contains("uninstall") ||
+                visibleText.contains("deactivate") ||
+                visibleText.contains("remove device admin") ||
+                visibleText.contains("delete app")
+
+            if (looksLikeUninstall) {
+                val matchedPkg = findProtectedPackageInText(visibleText)
+                val mentionsArwora = visibleText.contains("arwora") || visibleText.contains("hyper toolkit")
+                if (mentionsArwora || matchedPkg != null || isInstallerUi) {
+                    lastGuardEventHandledMs = now
+                    performGlobalAction(GLOBAL_ACTION_BACK)
+                    UninstallReceiver.interceptUninstallIntent(
+                        context = applicationContext,
+                        targetPackage = matchedPkg ?: applicationContext.packageName
+                    )
+                }
+            }
+        }
+    }
+
+    private fun handleAutoScrollEvent(event: AccessibilityEvent) {
         if (!AutoVideoScrollManager.isServiceActive.value || AutoVideoScrollManager.isPaused.value) {
             return
         }
@@ -122,7 +223,7 @@ class AutoScrollAccessibilityService : AccessibilityService() {
     }
 
     override fun onInterrupt() {
-        Log.d(TAG, "AutoScrollAccessibilityService interrupted")
+        Log.d(TAG, "ArworaCoreAccessibilityService interrupted")
         stopAutoScrollLoop()
     }
 
@@ -137,7 +238,6 @@ class AutoScrollAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
-        super.onDestroy()
         stopAutoScrollLoop()
         observationJob?.cancel()
         serviceScope.cancel()
@@ -145,6 +245,80 @@ class AutoScrollAccessibilityService : AccessibilityService() {
             instance = null
         }
         AutoVideoScrollManager.setAccessibilityServiceRunning(false)
+        super.onDestroy()
+    }
+
+    private fun launchAppLockScreen(lockedPackage: String) {
+        if (AppLockerManager.isSelfPackageName(lockedPackage)) return
+        if (!AppLockerManager.isLockerEnabled.value) return
+        if (!AppLockerManager.isAppLocked(lockedPackage)) return
+        if (AppLockerManager.isPackageUnlocked(lockedPackage)) return
+
+        runCatching {
+            val intent = Intent(this, AppLockActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                putExtra(AppLockActivity.EXTRA_PACKAGE_NAME, lockedPackage)
+            }
+            startActivity(intent)
+        }.onFailure { err ->
+            Log.e(TAG, "Failed to launch AppLockActivity for $lockedPackage", err)
+        }
+    }
+
+    private fun isTransientSystemWindow(packageName: String): Boolean {
+        return packageName == "com.android.systemui" ||
+            packageName.contains("inputmethod", ignoreCase = true)
+    }
+
+    private fun findProtectedPackageInText(visibleText: String): String? {
+        if (visibleText.contains(applicationContext.packageName.lowercase())) {
+            return applicationContext.packageName
+        }
+        val pm = packageManager
+        for (pkg in AppLockerManager.lockedPackages.value) {
+            if (visibleText.contains(pkg.lowercase())) return pkg
+            val appLabel = runCatching {
+                val info = pm.getApplicationInfo(pkg, 0)
+                pm.getApplicationLabel(info).toString().lowercase()
+            }.getOrNull()
+            if (!appLabel.isNullOrBlank() && visibleText.contains(appLabel)) {
+                return pkg
+            }
+        }
+        return null
+    }
+
+    private fun collectWindowTextLower(root: AccessibilityNodeInfo?, maxNodes: Int): String {
+        if (root == null) return ""
+        val sb = StringBuilder()
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        var visited = 0
+        while (queue.isNotEmpty() && visited < maxNodes) {
+            val node = queue.removeFirst()
+            visited++
+            val text = node.text?.toString()
+            val desc = node.contentDescription?.toString()
+            if (!text.isNullOrBlank()) {
+                sb.append(text.lowercase()).append(' ')
+            }
+            if (!desc.isNullOrBlank()) {
+                sb.append(desc.lowercase()).append(' ')
+            }
+            val childCount = node.childCount.coerceAtMost(12)
+            for (i in 0 until childCount) {
+                val child = node.getChild(i) ?: continue
+                queue.add(child)
+            }
+            if (node !== root) {
+                recycleSafely(node)
+            }
+        }
+        while (queue.isNotEmpty()) {
+            val leftover = queue.removeFirst()
+            if (leftover !== root) recycleSafely(leftover)
+        }
+        return sb.toString()
     }
 
     private fun observeAutoScrollState() {
@@ -246,7 +420,7 @@ class AutoScrollAccessibilityService : AccessibilityService() {
 
         synchronized(inspectionLock) {
             val now = System.currentTimeMillis()
-            if (!force && now - lastEventInspectMs < EVENT_INSPECT_THROTTLE_MS) return
+            if (!force && now - lastScrollEventInspectMs < EVENT_INSPECT_THROTTLE_MS) return
             if (now - lastSwipeTimestampMs < COMPLETION_COOLDOWN_MS) return
 
             val rootNode = runCatching { rootInActiveWindow }.getOrNull() ?: return
@@ -262,7 +436,7 @@ class AutoScrollAccessibilityService : AccessibilityService() {
                 )
             }
 
-            lastEventInspectMs = now
+            lastScrollEventInspectMs = now
             val snapshot = try {
                 extractVideoProgress(rootNode)
             } finally {
@@ -486,6 +660,108 @@ class AutoScrollAccessibilityService : AccessibilityService() {
     private fun recycleSafely(node: AccessibilityNodeInfo) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             runCatching { node.recycle() }
+        }
+    }
+
+    companion object {
+        private const val TAG = "ArworaCoreAccessibility"
+        private const val SETTINGS_PACKAGE = "com.android.settings"
+        private const val GUARD_EVENT_THROTTLE_MS = 750L
+        private const val LOCK_PROMPT_COOLDOWN_MS = 900L
+        private const val SWIPE_DURATION_MS = 340L
+        private const val COMPLETION_COOLDOWN_MS = 2_500L
+        private const val EVENT_INSPECT_THROTTLE_MS = 350L
+        private const val COMPLETION_POLL_INTERVAL_MS = 500L
+
+        private val INSTALLER_PACKAGES = setOf(
+            "com.android.packageinstaller",
+            "com.google.android.packageinstaller",
+            "com.samsung.android.packageinstaller",
+            "com.miui.packageinstaller",
+            "com.coloros.packageinstaller",
+            "com.oplus.packageinstaller",
+            "com.oneplus.packageinstaller",
+            "com.vivo.packageinstaller"
+        )
+
+        @Volatile
+        var instance: ArworaCoreAccessibilityService? = null
+            private set
+
+        val isRunning: Boolean
+            get() = instance != null
+
+        fun computeSwipeCoordinates(widthPx: Int, heightPx: Int): SwipeCoordinates {
+            val safeWidth = widthPx.coerceAtLeast(320).toFloat()
+            val safeHeight = heightPx.coerceAtLeast(480).toFloat()
+            val centerX = safeWidth * 0.5f
+            return SwipeCoordinates(
+                startX = centerX,
+                startY = safeHeight * 0.78f,
+                endX = centerX,
+                endY = safeHeight * 0.22f
+            )
+        }
+
+        fun isAccessibilityEnabled(context: Context): Boolean {
+            if (instance != null) return true
+            return runCatching {
+                val expectedComponent = ComponentName(
+                    context.packageName,
+                    ArworaCoreAccessibilityService::class.java.name
+                )
+                val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
+                if (am != null && am.isEnabled) {
+                    val enabledList = am.getEnabledAccessibilityServiceList(
+                        AccessibilityServiceInfo.FEEDBACK_ALL_MASK
+                    ).orEmpty()
+                    val matchedInManager = enabledList.any { info ->
+                        val serviceInfo = info.resolveInfo?.serviceInfo ?: return@any false
+                        serviceInfo.packageName == expectedComponent.packageName &&
+                            serviceInfo.name == expectedComponent.className
+                    }
+                    if (matchedInManager) {
+                        return@runCatching true
+                    }
+                }
+
+                val accessibilityMasterEnabled = Settings.Secure.getInt(
+                    context.contentResolver,
+                    Settings.Secure.ACCESSIBILITY_ENABLED,
+                    0
+                ) == 1
+                if (!accessibilityMasterEnabled && am?.isEnabled != true) {
+                    return@runCatching false
+                }
+
+                val enabledServices = Settings.Secure.getString(
+                    context.contentResolver,
+                    Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+                ) ?: return@runCatching false
+
+                val expectedFull = expectedComponent.flattenToString()
+                val expectedShort = expectedComponent.flattenToShortString()
+                val colonSplitter = TextUtils.SimpleStringSplitter(':')
+                colonSplitter.setString(enabledServices)
+                while (colonSplitter.hasNext()) {
+                    val entry = colonSplitter.next()
+                    if (entry.equals(expectedFull, ignoreCase = true) ||
+                        entry.equals(expectedShort, ignoreCase = true)
+                    ) {
+                        return@runCatching true
+                    }
+                }
+                false
+            }.getOrDefault(false)
+        }
+
+        fun openAccessibilitySettings(context: Context) {
+            runCatching {
+                val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+            }
         }
     }
 }

@@ -55,7 +55,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.arwora.deviceadmin.AppDeviceAdminReceiver
-import com.arwora.service.AppProtectionAccessibilityService
+import com.arwora.service.ArworaCoreAccessibilityService
 import com.arwora.ui.AppManagerViewModel
 import com.arwora.ui.MainViewModel
 import com.arwora.ui.components.ArworaDesignTokens
@@ -85,7 +85,7 @@ fun AppLockerScreen(
     val coroutineScope = rememberCoroutineScope()
 
     var isAccessibilityGuardEnabled by remember {
-        mutableStateOf(AppProtectionAccessibilityService.isAccessibilityEnabled(context))
+        mutableStateOf(ArworaCoreAccessibilityService.isAccessibilityEnabled(context))
     }
     var isDeviceAdminEnabled by remember {
         mutableStateOf(AppDeviceAdminReceiver.isDeviceAdminActive(context))
@@ -100,7 +100,7 @@ fun AppLockerScreen(
     DisposableEffect(lifecycleOwner, context) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                isAccessibilityGuardEnabled = AppProtectionAccessibilityService.isAccessibilityEnabled(context)
+                isAccessibilityGuardEnabled = ArworaCoreAccessibilityService.isAccessibilityEnabled(context)
                 isDeviceAdminEnabled = AppDeviceAdminReceiver.isDeviceAdminActive(context)
                 AppHiderManager.refreshPrivilegeMode(context)
             }
@@ -404,7 +404,7 @@ fun AppLockerScreen(
                         },
                         onOpenAccessibilitySettings = {
                             SoundEffectManager.playClick()
-                            AppProtectionAccessibilityService.openAccessibilitySettings(context)
+                            ArworaCoreAccessibilityService.openAccessibilitySettings(context)
                         },
                         onRequestDeviceAdmin = {
                             SoundEffectManager.playClick()

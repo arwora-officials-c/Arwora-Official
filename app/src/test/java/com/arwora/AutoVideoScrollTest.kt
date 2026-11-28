@@ -15,7 +15,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.test.core.app.ApplicationProvider
-import com.arwora.service.AutoScrollAccessibilityService
+import com.arwora.service.ArworaCoreAccessibilityService
 import com.arwora.service.AutoScrollOverlayService
 import com.arwora.ui.components.AutoVideoScrollCard
 import com.arwora.ui.theme.NameGenProTheme
@@ -162,25 +162,25 @@ class AutoVideoScrollTest {
 
     @Test
     fun accessibilityServiceComputesBottomCenterToTopCenterSwipeAndCleansUpOnUnbind() {
-        val coords = AutoScrollAccessibilityService.computeSwipeCoordinates(1080, 2400)
+        val coords = ArworaCoreAccessibilityService.computeSwipeCoordinates(1080, 2400)
         assertEquals(540f, coords.startX, 0.1f)
         assertEquals(540f, coords.endX, 0.1f)
         assertTrue(coords.startY > coords.endY)
         assertEquals(2400f * 0.78f, coords.startY, 0.5f)
         assertEquals(2400f * 0.22f, coords.endY, 0.5f)
 
-        val controller = Robolectric.buildService(AutoScrollAccessibilityService::class.java).create()
+        val controller = Robolectric.buildService(ArworaCoreAccessibilityService::class.java).create()
         val service = controller.get()
         service.performSwipeUpGesture()
         service.onUnbind(Intent())
-        assertFalse(AutoScrollAccessibilityService.isRunning)
+        assertFalse(ArworaCoreAccessibilityService.isRunning)
         controller.destroy()
-        assertFalse(AutoScrollAccessibilityService.isRunning)
+        assertFalse(ArworaCoreAccessibilityService.isRunning)
     }
 
     @Test
     fun completionBasedEvaluationDoesNotTriggerUntilPlaybackEndsOrLoops() {
-        val controller = Robolectric.buildService(AutoScrollAccessibilityService::class.java).create()
+        val controller = Robolectric.buildService(ArworaCoreAccessibilityService::class.java).create()
         val service = controller.get()
         AutoVideoScrollManager.setMode(AutoScrollMode.COMPLETION_BASED)
         AutoVideoScrollManager.setServiceActive(true)
@@ -217,7 +217,7 @@ class AutoVideoScrollTest {
     @Test
     fun permissionChecksRejectStaleSecureSettingWhenMasterAccessibilityIsOff() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val component = ComponentName(context.packageName, AutoScrollAccessibilityService::class.java.name).flattenToString()
+        val component = ComponentName(context.packageName, ArworaCoreAccessibilityService::class.java.name).flattenToString()
 
         // Even if ENABLED_ACCESSIBILITY_SERVICES has our component, master ACCESSIBILITY_ENABLED=0 must return false
         Settings.Secure.putInt(context.contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED, 0)
@@ -310,7 +310,7 @@ class AutoVideoScrollTest {
     @Test
     fun socialAutoVideoScrollCardShowsReadyChipsOnlyWhenStrictlyGranted() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val component = ComponentName(context.packageName, AutoScrollAccessibilityService::class.java.name).flattenToString()
+        val component = ComponentName(context.packageName, ArworaCoreAccessibilityService::class.java.name).flattenToString()
         Settings.Secure.putInt(context.contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED, 1)
         Settings.Secure.putString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, component)
         ShadowSettings.setCanDrawOverlays(true)
@@ -349,7 +349,7 @@ class AutoVideoScrollTest {
         composeTestRule.onNodeWithText("Permission Required").assertIsDisplayed()
         composeTestRule.onNodeWithTag("accessibility_settings_preview_card").assertIsDisplayed()
         composeTestRule.onNodeWithText("Settings › Accessibility › Installed apps").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Auto Video Scroll Service").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Arwora Core Service").assertIsDisplayed()
         composeTestRule.onNodeWithTag("accessibility_preview_toggle_badge").assertIsDisplayed()
         composeTestRule.onNodeWithText("ON").assertIsDisplayed()
         composeTestRule.onNodeWithTag("accessibility_open_settings_btn").assertIsDisplayed()
@@ -394,7 +394,7 @@ class AutoVideoScrollTest {
             testLifecycleOwner.registry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
             val component = ComponentName(
                 context.packageName,
-                AutoScrollAccessibilityService::class.java.name
+                ArworaCoreAccessibilityService::class.java.name
             ).flattenToString()
             Settings.Secure.putInt(context.contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED, 1)
             Settings.Secure.putString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, component)
@@ -413,7 +413,7 @@ class AutoVideoScrollTest {
 
     @Test
     fun autoVideoScrollExecutesCompletionTriggerAcrossAllSupportedFeeds() {
-        val controller = Robolectric.buildService(AutoScrollAccessibilityService::class.java).create()
+        val controller = Robolectric.buildService(ArworaCoreAccessibilityService::class.java).create()
         val service = controller.get()
         AutoVideoScrollManager.setMode(AutoScrollMode.COMPLETION_BASED)
         AutoVideoScrollManager.setServiceActive(true)

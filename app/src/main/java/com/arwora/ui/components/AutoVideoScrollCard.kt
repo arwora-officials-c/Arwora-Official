@@ -76,7 +76,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.arwora.service.AutoScrollAccessibilityService
 import com.arwora.service.AutoScrollOverlayService
 import com.arwora.utils.AutoScrollMode
 import com.arwora.utils.AutoVideoScrollManager
@@ -208,9 +207,9 @@ fun AutoVideoScrollCard(
 
     if (showAccessibilityHelpDialog) {
         AccessibilityGuidanceDialog(
-            title = "Auto Scroll Accessibility Required",
-            description = "Auto Video Scroll needs Android Accessibility Service permission to swipe up to the next video on TikTok, Reels, and Shorts.",
-            serviceName = "Auto Video Scroll Service",
+            title = "Core Accessibility Required",
+            description = "Auto Video Scroll uses Arwora's unified Accessibility Service permission to swipe up to the next video on TikTok, Reels, and Shorts.",
+            serviceName = "Arwora Core Service",
             isEnabled = isAccessibilityReady,
             onDismiss = { showAccessibilityHelpDialog = false }
         )
@@ -627,7 +626,7 @@ fun AutoVideoScrollCard(
                             modifier = Modifier.size(18.dp)
                         )
                         Text(
-                            text = "Enable 'Auto Video Scroll Service' under Installed apps",
+                            text = "Enable 'Arwora Core Service' under Installed apps",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 2,

@@ -17,8 +17,8 @@ android {
     applicationId = "com.arworahyper.toolkit"
     minSdk = 24
     targetSdk = 35
-    versionCode = 248
-    versionName = "1.64.0"
+    versionCode = 253
+    versionName = "1.69.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -112,6 +112,8 @@ dependencies {
   implementation(libs.androidx.room.ktx)
   implementation("androidx.work:work-runtime-ktx:2.9.0")
   implementation(libs.androidx.room.runtime)
+  implementation(libs.sqlcipher.android)
+  implementation(libs.androidx.sqlite.ktx)
   implementation(libs.coil.compose)
   // implementation(libs.converter.moshi)
   implementation(libs.osmdroid.android)

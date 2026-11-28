@@ -105,6 +105,8 @@ val allGlobalTools = listOf(
     GlobalToolItem("Smart Screen-Off Optimizer", "System", "Automated background cleanup routines on device screen-off events", Icons.Default.Bedtime, Screen.ScreenOffOptimizer.route, listOf("screen", "off", "optimizer", "sleep", "battery", "automation", "cleaner")),
     GlobalToolItem("Shell Terminal Console", "System", "Interactive command prompt for ADB, local shell and scripts", Icons.Default.Terminal, Screen.SystemDashboard.route, listOf("shell", "terminal", "bash", "command", "root")),
     GlobalToolItem("Arwora Connect", "System", "Offline P2P file sharing with trusted auto-accept & multi-device sync", Icons.Default.Hub, Screen.ArworaConnect.route, listOf("connect", "p2p", "share", "transfer", "qr", "offline", "wifi", "peer")),
+    GlobalToolItem("Chat Hub", "Social", "Encrypted offline Near Chat, Ghost Mode, Vault, voice notes & scheduled messaging", Icons.Default.Forum, Screen.ChatHub.route, listOf("chat", "messenger", "vault", "ghost", "near", "p2p", "voice", "message")),
+    GlobalToolItem("Pro Weather Hub", "Utility", "14-day forecast, rain radar, farming & sports planner, smart alerts & Bangla voice", Icons.Default.WbSunny, Screen.WeatherHub.route, listOf("weather", "rain", "radar", "forecast", "temperature", "alerts", "farming", "cricket")),
 
     // Network & Wi-Fi
     GlobalToolItem("Private DNS Changer", "Network", "Switch to Cloudflare, Google, AdGuard, NextDNS or custom DoT", Icons.Default.VpnKey, Screen.DnsChanger.route, listOf("dns", "cloudflare", "adguard", "network", "private", "dot")),
@@ -294,27 +296,53 @@ fun HomeScreen(
                             )
                         }
 
-                        IconButton(
-                            onClick = {
-                                SoundEffectManager.playClick()
-                                navController.navigate(Screen.DownloadHistory.route)
-                            },
-                            modifier = Modifier
-                                .size(46.dp)
-                                .clip(ArworaDesignTokens.IconBadgeShape)
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
-                                .border(
-                                    1.dp,
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
-                                    ArworaDesignTokens.IconBadgeShape
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            IconButton(
+                                onClick = {
+                                    SoundEffectManager.playClick()
+                                    navController.navigate(Screen.ChatHub.route)
+                                },
+                                modifier = Modifier
+                                    .size(46.dp)
+                                    .clip(ArworaDesignTokens.IconBadgeShape)
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
+                                    .border(
+                                        1.dp,
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+                                        ArworaDesignTokens.IconBadgeShape
+                                    )
+                                    .testTag("home_chat_hub_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Forum,
+                                    contentDescription = "Chat Hub",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(22.dp)
                                 )
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.History,
-                                contentDescription = "History",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(22.dp)
-                            )
+                            }
+
+                            IconButton(
+                                onClick = {
+                                    SoundEffectManager.playClick()
+                                    navController.navigate(Screen.DownloadHistory.route)
+                                },
+                                modifier = Modifier
+                                    .size(46.dp)
+                                    .clip(ArworaDesignTokens.IconBadgeShape)
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
+                                    .border(
+                                        1.dp,
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+                                        ArworaDesignTokens.IconBadgeShape
+                                    )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.History,
+                                    contentDescription = "History",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
                         }
                     }
                     
@@ -341,6 +369,9 @@ fun HomeScreen(
                                 Manifest.permission.ACCESS_FINE_LOCATION
                             )
                         )
+                    },
+                    onOpenWeatherHub = {
+                        navController.navigate(Screen.WeatherHub.route)
                     }
                 )
             }
@@ -390,58 +421,122 @@ fun HomeScreen(
         // ==================== FEATURED BANNER ====================
         item {
             AnimatedListItem(index = 4) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth(),
-                    onClick = {
-                        SoundEffectManager.playClick()
-                        navController.navigate(Screen.AppOps.route)
-                    },
-                    shape = cardShape,
-                    colors = CardDefaults.cardColors(containerColor = cardBgColor),
-                    border = cardBorder,
-                    elevation = cardElevation
-                ) {
-                    Column(modifier = Modifier.padding(20.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            ArworaTonalIconBadge(
-                                icon = Icons.Default.AdminPanelSettings,
-                                size = 36.dp,
-                                iconSize = 18.dp,
-                                cornerRadius = 11.dp
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("home_chat_hub_card"),
+                        onClick = {
+                            SoundEffectManager.playClick()
+                            navController.navigate(Screen.ChatHub.route)
+                        },
+                        shape = cardShape,
+                        colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                        border = cardBorder,
+                        elevation = cardElevation
+                    ) {
+                        Column(modifier = Modifier.padding(20.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    ArworaTonalIconBadge(
+                                        icon = Icons.Default.Forum,
+                                        size = 36.dp,
+                                        iconSize = 18.dp,
+                                        cornerRadius = 11.dp
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = "Arwora Chat Hub",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                ArworaPillBadge(text = "E2EE")
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "App Ops Manager",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontWeight = FontWeight.Bold
+                                text = "Encrypted offline Near Chat, Hidden Vault, Ghost Mode, View-Once media, voice notes & scheduled messages.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            Spacer(modifier = Modifier.height(14.dp))
+                            Button(
+                                onClick = {
+                                    SoundEffectManager.playClick()
+                                    navController.navigate(Screen.ChatHub.route)
+                                },
+                                shape = ArworaDesignTokens.PillShape,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                                    .testTag("home_open_chat_hub_btn")
+                            ) {
+                                Text(
+                                    text = "Open Chat Hub",
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "Inspect and manage application permissions, standby buckets, and package controls with advanced system diagnostics.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.align(Alignment.End)
-                        ) {
+                    }
+
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth(),
+                        onClick = {
+                            SoundEffectManager.playClick()
+                            navController.navigate(Screen.AppOps.route)
+                        },
+                        shape = cardShape,
+                        colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                        border = cardBorder,
+                        elevation = cardElevation
+                    ) {
+                        Column(modifier = Modifier.padding(20.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                ArworaTonalIconBadge(
+                                    icon = Icons.Default.AdminPanelSettings,
+                                    size = 36.dp,
+                                    iconSize = 18.dp,
+                                    cornerRadius = 11.dp
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = "App Ops Manager",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "Open App Ops",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Bold
+                                text = "Inspect and manage application permissions, standby buckets, and package controls with advanced system diagnostics.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
-                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.align(Alignment.End)
+                            ) {
+                                Text(
+                                    text = "Open App Ops",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
                     }
                 }

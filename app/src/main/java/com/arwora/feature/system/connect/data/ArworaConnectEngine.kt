@@ -110,6 +110,7 @@ class ArworaConnectEngine(
 
     var onIncomingFileCompleted: ((FileTransferRecord) -> Unit)? = null
     var onIncomingChatMessage: ((ConnectChatMessage) -> Unit)? = null
+    var onChatHubFrame: ((peerDeviceId: String, frame: JSONObject) -> Unit)? = null
 
     init {
         selectedPeerIds.addAll(securityStore.loadTrustedPeers().map { it.deviceId })
@@ -753,6 +754,26 @@ class ArworaConnectEngine(
         }
     }
 
+    suspend fun sendChatHubPacket(
+        peerDeviceId: String,
+        packet: JSONObject
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        val session = activeSessions[peerDeviceId]
+            ?: return@withContext Result.failure(IllegalStateException("Peer is not connected"))
+        val sizeBytes = packet.toString().toByteArray(Charsets.UTF_8).size
+        if (sizeBytes > MAX_CONTROL_FRAME_BYTES) {
+            return@withContext Result.failure(IllegalStateException("Payload exceeds 2 MB P2P frame limit"))
+        }
+        try {
+            session.writeMutex.withLock {
+                writeFrame(session.output, packet)
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun broadcastFilesToSelectedPeers(
         uris: List<Uri>,
         targetPeerIds: List<String>? = null
@@ -1355,6 +1376,12 @@ class ArworaConnectEngine(
                             val manual = frame.optBoolean("manual", false)
                             if (manual) manuallyDisconnectedIds.add(deviceId)
                             break
+                        }
+                        else -> {
+                            val frameType = frame.optString("type")
+                            if (frameType.startsWith("CHAT_HUB_")) {
+                                onChatHubFrame?.invoke(deviceId, frame)
+                            }
                         }
                     }
                 }

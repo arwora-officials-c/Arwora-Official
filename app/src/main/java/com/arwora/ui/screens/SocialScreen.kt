@@ -35,6 +35,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -174,7 +175,76 @@ fun SocialScreen(
                 )
             }
 
-        // ==================== AUTO VIDEO SCROLL CARD ====================
+            // ==================== CHAT HUB CARD ====================
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("social_chat_hub_card"),
+                    onClick = {
+                        SoundEffectManager.playClick()
+                        navController.navigate(Screen.ChatHub.route)
+                    },
+                    shape = cardShape,
+                    colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                    border = cardBorder,
+                    elevation = cardElevation
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            ArworaTonalIconBadge(
+                                icon = Icons.Default.Forum,
+                                size = 46.dp,
+                                iconSize = 23.dp
+                            )
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Chat Hub",
+                                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp),
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "Encrypted Near Chat, Hidden Vault, Voice Notes & Ghost Mode",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            ArworaPillBadge(text = "E2EE")
+                        }
+                        Button(
+                            onClick = {
+                                SoundEffectManager.playClick()
+                                navController.navigate(Screen.ChatHub.route)
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp),
+                            shape = ArworaDesignTokens.PillShape
+                        ) {
+                            Text(
+                                text = "Open Chat Hub",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+
+            // ==================== AUTO VIDEO SCROLL CARD ====================
         item {
             AutoVideoScrollCard(
                 onToastMessage = { msg -> viewModel.showFloatingToast(msg) },

@@ -1,6 +1,7 @@
 package com.arwora.feature.home.weather
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.AcUnit
 import androidx.compose.material.icons.filled.Air
 import androidx.compose.material.icons.filled.Cloud
@@ -55,14 +57,18 @@ import com.arwora.utils.SoundEffectManager
 
 /**
  * Material 3 Expressive Dark live weather widget card placed at the top of Home Dashboard.
- * Matches ArworaDesignTokens (24.dp corner radius, 1.dp uniform outline, tonal inner strip).
+ * Clean 3-band hierarchy:
+ * 1) Top Row: Location pin + Locality + Source Pill on left; Refresh button on far right.
+ * 2) Middle Row: Large 36.sp Temperature + Condition stacked on left; Weather Icon badge on right.
+ * 3) Bottom Strip: Symmetric 3-column metrics bar separated by 1.dp vertical dividers.
  */
 @Composable
 fun HomeWeatherCard(
     uiState: WeatherUiState,
     onRefresh: () -> Unit,
     onRequestLocationPermission: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onOpenWeatherHub: () -> Unit = {}
 ) {
     val cardBgColor = ArworaDesignTokens.cardContainerColor()
     val cardShape = ArworaDesignTokens.CardShape
@@ -78,40 +84,50 @@ fun HomeWeatherCard(
         border = cardBorder,
         elevation = cardElevation
     ) {
-        when (uiState) {
-            is WeatherUiState.Loading -> {
-                if (uiState.cached != null) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clickable {
+                        SoundEffectManager.playClick()
+                        onOpenWeatherHub()
+                    }
+            )
+            when (uiState) {
+                is WeatherUiState.Loading -> {
+                    if (uiState.cached != null) {
+                        WeatherContentBody(
+                            data = uiState.cached,
+                            isRefreshing = true,
+                            needsLocationPermission = false,
+                            staleErrorMessage = null,
+                            onRefresh = onRefresh,
+                            onRequestLocationPermission = onRequestLocationPermission
+                        )
+                    } else {
+                        WeatherLoadingPlaceholder()
+                    }
+                }
+
+                is WeatherUiState.Success -> {
                     WeatherContentBody(
-                        data = uiState.cached,
-                        isRefreshing = true,
-                        needsLocationPermission = false,
-                        staleErrorMessage = null,
+                        data = uiState.data,
+                        isRefreshing = uiState.isRefreshing,
+                        needsLocationPermission = uiState.needsLocationPermission,
+                        staleErrorMessage = uiState.staleErrorMessage,
                         onRefresh = onRefresh,
                         onRequestLocationPermission = onRequestLocationPermission
                     )
-                } else {
-                    WeatherLoadingPlaceholder()
                 }
-            }
 
-            is WeatherUiState.Success -> {
-                WeatherContentBody(
-                    data = uiState.data,
-                    isRefreshing = uiState.isRefreshing,
-                    needsLocationPermission = uiState.needsLocationPermission,
-                    staleErrorMessage = uiState.staleErrorMessage,
-                    onRefresh = onRefresh,
-                    onRequestLocationPermission = onRequestLocationPermission
-                )
-            }
-
-            is WeatherUiState.Error -> {
-                WeatherErrorPlaceholder(
-                    message = uiState.message,
-                    needsLocationPermission = uiState.needsLocationPermission,
-                    onRetry = onRefresh,
-                    onRequestLocationPermission = onRequestLocationPermission
-                )
+                is WeatherUiState.Error -> {
+                    WeatherErrorPlaceholder(
+                        message = uiState.message,
+                        needsLocationPermission = uiState.needsLocationPermission,
+                        onRetry = onRefresh,
+                        onRequestLocationPermission = onRequestLocationPermission
+                    )
+                }
             }
         }
     }
@@ -287,68 +303,112 @@ private fun WeatherContentBody(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+            .padding(horizontal = 18.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Top Row: Temperature, Condition & Locality on Left/Center; Weather Icon & Refresh on Right
+        // 1. Top Row: Location Pin + City + Location Source Pill on Left | Refresh Icon on Far Right
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.LocationOn,
+                    contentDescription = "Location",
+                    tint = visual.tint,
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = data.localityName,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .testTag("home_weather_locality")
+                )
+                ArworaPillBadge(
+                    text = data.locationSource.label,
+                    tint = if (data.locationSource == WeatherLocationSource.GPS) {
+                        Color(0xFF10B981)
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                    showDot = true
+                )
+            }
+
+            Box(
+                modifier = Modifier.size(48.dp),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                if (isRefreshing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .size(20.dp)
+                            .testTag("home_weather_refresh_spinner"),
+                        strokeWidth = 2.2.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    IconButton(
+                        onClick = {
+                            SoundEffectManager.playClick()
+                            onRefresh()
+                        },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("home_weather_refresh_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Refresh Weather",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+
+        // 2. Middle Row: Cleanly Stacked Temperature + Condition on Left | Weather Icon Badge on Right
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(end = 10.dp)
+                    .padding(end = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
+                Text(
+                    text = "${data.temperatureCelsius}°C",
+                    style = MaterialTheme.typography.displaySmall.copy(
+                        fontSize = 36.sp,
+                        lineHeight = 40.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = (-0.8).sp
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    modifier = Modifier.testTag("home_weather_temperature")
+                )
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.LocationOn,
-                        contentDescription = "Location",
-                        tint = visual.tint,
-                        modifier = Modifier.size(15.dp)
-                    )
-                    Text(
-                        text = data.localityName,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .weight(1f, fill = false)
-                            .testTag("home_weather_locality")
-                    )
-                    ArworaPillBadge(
-                        text = data.locationSource.label,
-                        tint = if (data.locationSource == WeatherLocationSource.GPS) {
-                            Color(0xFF10B981)
-                        } else {
-                            MaterialTheme.colorScheme.primary
-                        },
-                        showDot = true
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                Row(
-                    verticalAlignment = Alignment.Bottom,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Text(
-                        text = "${data.temperatureCelsius}°C",
-                        style = MaterialTheme.typography.displaySmall.copy(
-                            fontSize = 36.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            letterSpacing = (-0.8).sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        modifier = Modifier.testTag("home_weather_temperature")
-                    )
                     Text(
                         text = data.conditionLabel,
                         style = MaterialTheme.typography.titleSmall,
@@ -356,58 +416,27 @@ private fun WeatherContentBody(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .padding(bottom = 5.dp)
-                            .testTag("home_weather_condition")
+                        modifier = Modifier.testTag("home_weather_condition")
+                    )
+                    Text(
+                        text = "• Feels ${data.feelsLikeCelsius}°C",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                        maxLines = 1
                     )
                 }
             }
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                ArworaTonalIconBadge(
-                    icon = visual.icon,
-                    tint = visual.tint,
-                    containerColor = visual.tint.copy(alpha = 0.14f),
-                    borderColor = visual.tint.copy(alpha = 0.32f),
-                    size = 52.dp,
-                    iconSize = 28.dp,
-                    contentDescription = data.conditionLabel
-                )
-
-                Box(
-                    modifier = Modifier.size(48.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (isRefreshing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier
-                                .size(20.dp)
-                                .testTag("home_weather_refresh_spinner"),
-                            strokeWidth = 2.2.dp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    } else {
-                        IconButton(
-                            onClick = {
-                                SoundEffectManager.playClick()
-                                onRefresh()
-                            },
-                            modifier = Modifier
-                                .size(48.dp)
-                                .testTag("home_weather_refresh_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = "Refresh Weather",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            }
+            ArworaTonalIconBadge(
+                icon = visual.icon,
+                tint = visual.tint,
+                containerColor = visual.tint.copy(alpha = 0.14f),
+                borderColor = visual.tint.copy(alpha = 0.32f),
+                size = 56.dp,
+                iconSize = 30.dp,
+                cornerRadius = 16.dp,
+                contentDescription = data.conditionLabel
+            )
         }
 
         if (isRefreshing) {
@@ -418,7 +447,7 @@ private fun WeatherContentBody(
             )
         }
 
-        // Bottom Strip: Compact secondary metrics (Humidity, Wind Speed, High/Low)
+        // 3. Bottom Strip: Symmetric 3-column metrics with 1.dp vertical dividers
         Surface(
             shape = ArworaDesignTokens.InnerTileShape,
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f),
@@ -430,8 +459,7 @@ private fun WeatherContentBody(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                    .padding(horizontal = 8.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 WeatherMetricItem(
@@ -441,6 +469,7 @@ private fun WeatherContentBody(
                     value = "${data.humidityPercent}%",
                     modifier = Modifier.weight(1f)
                 )
+                WeatherMetricDivider()
                 WeatherMetricItem(
                     icon = Icons.Default.Air,
                     tint = Color(0xFF10B981),
@@ -448,6 +477,7 @@ private fun WeatherContentBody(
                     value = "${data.windSpeedKmh} km/h",
                     modifier = Modifier.weight(1f)
                 )
+                WeatherMetricDivider()
                 WeatherMetricItem(
                     icon = Icons.Default.Thermostat,
                     tint = Color(0xFFF59E0B),
@@ -458,48 +488,78 @@ private fun WeatherContentBody(
             }
         }
 
-        // Optional compact footer prompt when location permission is denied or network is offline
-        if (needsLocationPermission || !staleErrorMessage.isNullOrBlank()) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = staleErrorMessage
-                        ?: "Approximate location • Enable GPS for exact local weather",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+        // 4. Footer: Pro Hub Hint + Optional GPS / Offline Prompt
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 2.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = staleErrorMessage
+                    ?: if (needsLocationPermission) "Approximate location • Tap for Pro Hub"
+                    else "Tap for Pro Forecast, Radar & Alerts",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 6.dp)
+            )
+            if (needsLocationPermission) {
+                TextButton(
+                    onClick = {
+                        SoundEffectManager.playClick()
+                        onRequestLocationPermission()
+                    },
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                     modifier = Modifier
-                        .weight(1f)
-                        .padding(end = 8.dp)
-                )
-                if (needsLocationPermission) {
-                    TextButton(
-                        onClick = {
-                            SoundEffectManager.playClick()
-                            onRequestLocationPermission()
-                        },
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        modifier = Modifier
-                            .heightIn(min = 48.dp)
-                            .testTag("home_weather_enable_location_button")
-                    ) {
-                        Text(
-                            text = "Enable GPS",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
-                            maxLines = 1,
-                            softWrap = false
-                        )
-                    }
+                        .heightIn(min = 48.dp)
+                        .testTag("home_weather_enable_location_button")
+                ) {
+                    Text(
+                        text = "Enable GPS",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
+            } else {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        text = "Pro Hub",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = "Open Pro Weather Hub",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
                 }
             }
         }
     }
+}
+
+@Composable
+private fun WeatherMetricDivider() {
+    Box(
+        modifier = Modifier
+            .padding(horizontal = 4.dp)
+            .width(1.dp)
+            .height(28.dp)
+            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+    )
 }
 
 @Composable
@@ -511,9 +571,9 @@ private fun WeatherMetricItem(
     modifier: Modifier = Modifier
 ) {
     Row(
-        modifier = modifier,
+        modifier = modifier.padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
+        horizontalArrangement = Arrangement.Center
     ) {
         Icon(
             imageVector = icon,
@@ -521,6 +581,7 @@ private fun WeatherMetricItem(
             tint = tint,
             modifier = Modifier.size(16.dp)
         )
+        Spacer(modifier = Modifier.width(6.dp))
         Column {
             Text(
                 text = label,
@@ -541,12 +602,12 @@ private fun WeatherMetricItem(
     }
 }
 
-private data class WeatherVisual(
+data class WeatherVisual(
     val icon: ImageVector,
     val tint: Color
 )
 
-private fun resolveWeatherVisual(type: WeatherConditionType, isDay: Boolean): WeatherVisual =
+fun resolveWeatherVisual(type: WeatherConditionType, isDay: Boolean): WeatherVisual =
     when (type) {
         WeatherConditionType.CLEAR -> if (isDay) {
             WeatherVisual(Icons.Default.WbSunny, Color(0xFFF59E0B))

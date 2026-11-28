@@ -91,7 +91,6 @@ fun GenerateDashboardScreen(navController: NavController, viewModel: MainViewMod
         ToolItem("Text Saver", Icons.Filled.Save, Screen.TextSaver.route),
         ToolItem("Text Repeat", Icons.Filled.Repeat, Screen.TextRepeat.route),
         ToolItem("Age Calculator", Icons.Filled.Cake, Screen.AgeCalculator.route),
-        ToolItem("Fake Chat & Bill", Icons.Filled.ChatBubble, Screen.FakeContentDashboard.route),
         ToolItem("Coin Toss", Icons.Filled.Casino, Screen.CoinToss.route)
     )
 

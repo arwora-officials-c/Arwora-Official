@@ -1,12 +1,9 @@
 package com.arwora.utils
 
-import android.accessibilityservice.AccessibilityServiceInfo
-import android.content.ComponentName
 import android.content.Context
 import android.content.SharedPreferences
 import android.provider.Settings
-import android.text.TextUtils
-import android.view.accessibility.AccessibilityManager
+import com.arwora.service.ArworaCoreAccessibilityService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -260,54 +257,7 @@ object AutoVideoScrollManager {
     }
 
     fun isAccessibilityServiceEnabled(context: Context): Boolean {
-        if (com.arwora.service.AutoScrollAccessibilityService.isRunning) {
-            return true
-        }
-        return runCatching {
-            val expectedComponent = ComponentName(
-                context.packageName,
-                com.arwora.service.AutoScrollAccessibilityService::class.java.name
-            )
-            val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
-            if (am != null && am.isEnabled) {
-                val enabledList = am.getEnabledAccessibilityServiceList(
-                    AccessibilityServiceInfo.FEEDBACK_ALL_MASK
-                ).orEmpty()
-                val matchedInManager = enabledList.any { info ->
-                    val serviceInfo = info.resolveInfo?.serviceInfo ?: return@any false
-                    serviceInfo.packageName == expectedComponent.packageName &&
-                        serviceInfo.name == expectedComponent.className
-                }
-                if (matchedInManager) {
-                    return@runCatching true
-                }
-            }
-
-            val accessibilityMasterEnabled = Settings.Secure.getInt(
-                context.contentResolver,
-                Settings.Secure.ACCESSIBILITY_ENABLED,
-                0
-            ) == 1
-            if (!accessibilityMasterEnabled && am?.isEnabled != true) {
-                return@runCatching false
-            }
-
-            val enabledServices = Settings.Secure.getString(
-                context.contentResolver,
-                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-            ) ?: return@runCatching false
-
-            val colonSplitter = TextUtils.SimpleStringSplitter(':')
-            colonSplitter.setString(enabledServices)
-            while (colonSplitter.hasNext()) {
-                val componentString = colonSplitter.next()
-                val parsed = ComponentName.unflattenFromString(componentString)
-                if (parsed == expectedComponent) {
-                    return@runCatching true
-                }
-            }
-            false
-        }.getOrDefault(false)
+        return ArworaCoreAccessibilityService.isAccessibilityEnabled(context)
     }
 
     fun canDrawOverlays(context: Context): Boolean {

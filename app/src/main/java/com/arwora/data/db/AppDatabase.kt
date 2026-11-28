@@ -4,8 +4,17 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [HistoryItem::class, FavoriteItem::class, AppHistoryEntity::class, SavedTextItem::class, DownloadHistoryEntity::class, NotificationEntity::class, LocationLogEntity::class],
-    version = 9,
+    entities = [
+        HistoryItem::class,
+        FavoriteItem::class,
+        AppHistoryEntity::class,
+        SavedTextItem::class,
+        DownloadHistoryEntity::class,
+        NotificationEntity::class,
+        LocationLogEntity::class,
+        WeatherAlertPreferencesEntity::class
+    ],
+    version = 10,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -16,4 +25,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun downloadHistoryDao(): DownloadHistoryDao
     abstract fun notificationDao(): NotificationDao
     abstract fun locationLogDao(): LocationLogDao
+    abstract fun weatherAlertPreferencesDao(): WeatherAlertPreferencesDao
 }

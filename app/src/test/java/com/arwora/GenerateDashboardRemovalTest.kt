@@ -37,7 +37,7 @@ class GenerateDashboardRemovalTest {
     val composeTestRule = createComposeRule()
 
     @Test
-    fun generateDashboardExcludesUsernameBuilderAndFakeDataGeneratorWhileKeepingRemainingTools() {
+    fun generateDashboardExcludesRemovedToolsAndFakeChatBillWhileKeepingRemainingTools() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
             .allowMainThreadQueries()
@@ -61,6 +61,8 @@ class GenerateDashboardRemovalTest {
             // Verify removed tools are absent from Home global search catalog too
             assertFalse(allGlobalTools.any { it.title.contains("Username Builder", ignoreCase = true) })
             assertFalse(allGlobalTools.any { it.title.contains("Fake Data", ignoreCase = true) })
+            assertFalse(allGlobalTools.any { it.title.contains("Fake Chat", ignoreCase = true) })
+            assertFalse(allGlobalTools.any { it.title.contains("Fake Bill", ignoreCase = true) })
 
             val grid = composeTestRule.onNodeWithTag("generate_dashboard_grid")
 
@@ -71,6 +73,7 @@ class GenerateDashboardRemovalTest {
             // Verify removed tools do not appear before scrolling
             assertEquals(0, composeTestRule.onAllNodesWithText("Username Builder", substring = true).fetchSemanticsNodes().size)
             assertEquals(0, composeTestRule.onAllNodesWithText("Fake Data Generator", substring = true).fetchSemanticsNodes().size)
+            assertEquals(0, composeTestRule.onAllNodesWithText("Fake Chat", substring = true).fetchSemanticsNodes().size)
 
             // Scroll through all remaining tools and verify they still render intact
             grid.performScrollToNode(hasText("Stylish Text Generator"))
@@ -79,14 +82,15 @@ class GenerateDashboardRemovalTest {
             grid.performScrollToNode(hasText("Name Mixer"))
             composeTestRule.onNodeWithText("Name Mixer").assertIsDisplayed()
 
-            grid.performScrollToNode(hasText("Fake Chat & Bill"))
-            composeTestRule.onNodeWithText("Fake Chat & Bill").assertIsDisplayed()
+            grid.performScrollToNode(hasText("Age Calculator"))
+            composeTestRule.onNodeWithText("Age Calculator").assertIsDisplayed()
 
             grid.performScrollToNode(hasText("Coin Toss"))
             composeTestRule.onNodeWithText("Coin Toss").assertIsDisplayed()
 
             assertEquals(0, composeTestRule.onAllNodesWithText("Username Builder", substring = true).fetchSemanticsNodes().size)
             assertEquals(0, composeTestRule.onAllNodesWithText("Fake Data Generator", substring = true).fetchSemanticsNodes().size)
+            assertEquals(0, composeTestRule.onAllNodesWithText("Fake Chat", substring = true).fetchSemanticsNodes().size)
         } finally {
             db.close()
         }

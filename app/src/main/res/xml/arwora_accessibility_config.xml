@@ -5,5 +5,5 @@
     android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows|flagReportViewIds"
     android:canPerformGestures="true"
     android:canRetrieveWindowContent="true"
-    android:description="@string/auto_scroll_service_description"
-    android:notificationTimeout="150" />
+    android:description="@string/arwora_core_accessibility_description"
+    android:notificationTimeout="120" />

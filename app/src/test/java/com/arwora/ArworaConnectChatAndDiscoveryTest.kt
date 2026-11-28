@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Application
 import android.graphics.Bitmap
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -532,7 +533,9 @@ class ArworaConnectChatAndDiscoveryTest {
                 composeTestRule.onAllNodesWithTag("connect_settings_dialog").fetchSemanticsNodes().isNotEmpty()
             }
             composeTestRule.onNodeWithTag("connect_settings_dialog").assertIsDisplayed()
-            composeTestRule.onNodeWithTag("connect_retention_24h_btn").performClick()
+            composeTestRule.onNode(
+                hasTestTag("connect_retention_24h_btn") and hasAnyAncestor(hasTestTag("connect_settings_dialog"))
+            ).performClick()
             composeTestRule.waitUntil(3_000L) {
                 ArworaConnectManager.messageRetentionPolicy.value == P2pMessageRetentionPolicy.HOURS_24
             }

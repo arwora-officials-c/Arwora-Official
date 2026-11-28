@@ -29,4 +29,11 @@
 -keep class moe.shizuku.** {
     *;
 }
+-keep class net.zetetic.** {
+    *;
+}
+-keep class net.sqlcipher.** {
+    *;
+}
+
 

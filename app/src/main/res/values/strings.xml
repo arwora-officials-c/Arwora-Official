@@ -2,8 +2,8 @@
     <string name="app_name">Arwora Hyper Toolkit</string>
     <string name="auto_clicker_service_name">Auto Clicker Service</string>
     <string name="auto_clicker_service_description">Automates screen taps and swipe gestures at configured intervals for games and productivity tasks.</string>
-    <string name="auto_scroll_service_name">Auto Video Scroll Service</string>
-    <string name="auto_scroll_service_description">Automatically scrolls short video feeds (TikTok, Instagram Reels, Facebook Reels, YouTube Shorts) using time-based or playback completion detection.</string>
-    <string name="app_protection_service_name">App Locker Protection Guard</string>
-    <string name="app_protection_service_description">Detects uninstall attempts on protected apps and blocks unauthorized new app installations until App Locker PIN or biometric verification succeeds.</string>
+    <string name="arwora_core_accessibility_name">Arwora Core Service</string>
+    <string name="arwora_core_accessibility_description">Unified accessibility engine powering App Locker protection, install/uninstall guards, and Auto Video Scroll gestures.</string>
+    <string name="weather_widget_description">Displays real-time local temperature, weather condition, and high/low metrics from Arwora Pro Weather Hub.</string>
+    <string name="weather_wallpaper_description">Dynamic atmospheric wallpaper that adapts live sky colors, rain streaks, clouds, and stars to local weather conditions.</string>
 </resources>

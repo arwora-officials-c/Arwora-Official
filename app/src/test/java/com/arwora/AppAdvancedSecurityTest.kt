@@ -19,6 +19,7 @@ import com.arwora.receiver.AppInstallReceiver
 import com.arwora.receiver.SecretCodeReceiver
 import com.arwora.receiver.UninstallReceiver
 import com.arwora.service.AppInstallMonitorService
+import com.arwora.service.ArworaCoreAccessibilityService
 import com.arwora.ui.screens.AppLockerScreen
 import com.arwora.ui.theme.NameGenProTheme
 import com.arwora.utils.AdbShellExecutor
@@ -33,6 +34,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
@@ -258,5 +260,41 @@ class AppAdvancedSecurityTest {
         // Protection must stay enabled and prompt PinAuthDialog
         assertTrue(AppLockerManager.isUninstallProtectionEnabled.value)
         composeTestRule.onNodeWithText("Disable Uninstall Guard").assertIsDisplayed()
+    }
+
+    @Test
+    fun unifiedCoreAccessibilityServiceEnforcesLockedAppsAndReportsSharedStatus() {
+        val targetPkg = "com.example.lockedchat"
+        AppLockerManager.setPin(context, "1234")
+        AppLockerManager.setLockerEnabled(context, true)
+        AppLockerManager.toggleAppLock(context, targetPkg)
+        assertTrue(AppLockerManager.isAppLocked(targetPkg))
+
+        val controller = Robolectric.buildService(ArworaCoreAccessibilityService::class.java).create()
+        val service = controller.get()
+        assertFalse(ArworaCoreAccessibilityService.isRunning)
+
+        // Dispatch foreground window state change for locked package
+        val event = android.view.accessibility.AccessibilityEvent.obtain(
+            android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+        ).apply {
+            packageName = targetPkg
+        }
+        service.onAccessibilityEvent(event)
+        @Suppress("DEPRECATION")
+        event.recycle()
+
+        val launched = shadowOf(context as Application).nextStartedActivity
+        assertNotNull("Expected ArworaCoreAccessibilityService to launch AppLockActivity", launched)
+        assertEquals(AppLockActivity::class.java.name, launched.component?.className)
+        assertEquals(targetPkg, launched.getStringExtra(AppLockActivity.EXTRA_PACKAGE_NAME))
+
+        // Verify shared enabled-state check matches Settings.Secure entry
+        val component = ComponentName(context.packageName, ArworaCoreAccessibilityService::class.java.name).flattenToString()
+        android.provider.Settings.Secure.putInt(context.contentResolver, android.provider.Settings.Secure.ACCESSIBILITY_ENABLED, 1)
+        android.provider.Settings.Secure.putString(context.contentResolver, android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, component)
+        assertTrue(ArworaCoreAccessibilityService.isAccessibilityEnabled(context))
+
+        controller.destroy()
     }
 }

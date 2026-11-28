@@ -116,13 +116,6 @@ sealed class Screen(val route: String) {
 
 
     object AgeCalculator : Screen("age_calculator")
-    object FakeContentDashboard : Screen("fake_content_dashboard")
-    object FakeChatGenerator : Screen("fake_chat_gen/{templateName}") {
-        fun createRoute(templateName: String) = "fake_chat_gen/$templateName"
-    }
-    object FakeBillGenerator : Screen("fake_bill_gen/{templateName}") {
-        fun createRoute(templateName: String) = "fake_bill_gen/$templateName"
-    }
     object Calculator : Screen("calculator")
     object WifiController : Screen("wifi_controller")
     object WifiPassword : Screen("wifi_password")
@@ -158,12 +151,19 @@ sealed class Screen(val route: String) {
         }
     }
     object ArworaConnect : Screen("arwora_connect")
+    object ChatHub : Screen("chat_hub")
+    object ChatThread : Screen("chat_thread/{threadId}") {
+        fun createRoute(threadId: String) = "chat_thread/${android.net.Uri.encode(threadId)}"
+    }
     object CompressorHub : Screen("compressor_hub")
     object CompressorTool : Screen("compressor/{typeId}") {
         fun createRoute(typeId: String = "image") = "compressor/$typeId"
     }
     object CompressionSettings : Screen("compression_settings")
     object QrScanner : Screen("qr_scanner")
+    object WeatherHub : Screen("weather_hub")
+    object WeatherCamera : Screen("weather_camera")
+    object WeatherAlertSettings : Screen("weather_alert_settings")
 }
 
 @Composable
@@ -834,23 +834,6 @@ fun NameGenNavHost(
         composable(Screen.AgeCalculator.route) {
             AgeCalculatorScreen(onBack = { navController.popBackStack() })
         }
-        composable(Screen.FakeContentDashboard.route) {
-            FakeContentDashboardScreen(navController = navController)
-        }
-        composable(
-            route = "fake_chat_gen/{templateName}",
-            arguments = listOf(navArgument("templateName") { type = NavType.StringType })
-        ) { backStackEntry ->
-            val templateName = backStackEntry.arguments?.getString("templateName") ?: "WhatsApp"
-            FakeChatGeneratorScreen(navController = navController, initialPlatform = templateName)
-        }
-        composable(
-            route = "fake_bill_gen/{templateName}",
-            arguments = listOf(navArgument("templateName") { type = NavType.StringType })
-        ) { backStackEntry ->
-            val templateName = backStackEntry.arguments?.getString("templateName") ?: "bKash Bill"
-            FakeBillGeneratorScreen(navController = navController, initialPlatform = templateName)
-        }
         composable(Screen.AppLocker.route) {
             val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as com.arwora.NameGenApplication
             AppLockerScreen(
@@ -921,6 +904,43 @@ fun NameGenNavHost(
                 onBack = { navController.popBackStack() }
             )
         }
+        composable(Screen.ChatHub.route) {
+            val owner = androidx.compose.ui.platform.LocalContext.current as? androidx.lifecycle.ViewModelStoreOwner
+            val chatVm: com.arwora.feature.chat.ui.ChatHubViewModel = if (owner != null) {
+                androidx.lifecycle.viewmodel.compose.viewModel(viewModelStoreOwner = owner)
+            } else {
+                androidx.lifecycle.viewmodel.compose.viewModel()
+            }
+            com.arwora.feature.chat.ui.ChatHubScreen(
+                onBack = { navController.popBackStack() },
+                onOpenThread = { tid ->
+                    navController.navigate(Screen.ChatThread.createRoute(tid))
+                },
+                onOpenAppLocker = {
+                    navController.navigate(Screen.AppLocker.route)
+                },
+                vm = chatVm
+            )
+        }
+        composable(
+            route = Screen.ChatThread.route,
+            arguments = listOf(navArgument("threadId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val threadId = android.net.Uri.decode(
+                backStackEntry.arguments?.getString("threadId") ?: ""
+            )
+            val owner = androidx.compose.ui.platform.LocalContext.current as? androidx.lifecycle.ViewModelStoreOwner
+            val chatVm: com.arwora.feature.chat.ui.ChatHubViewModel = if (owner != null) {
+                androidx.lifecycle.viewmodel.compose.viewModel(viewModelStoreOwner = owner)
+            } else {
+                androidx.lifecycle.viewmodel.compose.viewModel()
+            }
+            com.arwora.feature.chat.ui.ChatThreadScreen(
+                threadId = threadId,
+                onBack = { navController.popBackStack() },
+                vm = chatVm
+            )
+        }
         composable(Screen.CompressorHub.route) {
             com.arwora.feature.compressor.CompressorHubScreen(
                 onBack = { navController.popBackStack() },
@@ -966,6 +986,48 @@ fun NameGenNavHost(
                     navController.popBackStack()
                 }
             }
+        }
+        composable(Screen.WeatherHub.route) {
+            val owner = androidx.compose.ui.platform.LocalContext.current as? androidx.lifecycle.ViewModelStoreOwner
+            val weatherProVm: com.arwora.feature.home.weather.WeatherProViewModel = if (owner != null) {
+                androidx.lifecycle.viewmodel.compose.viewModel(viewModelStoreOwner = owner)
+            } else {
+                androidx.lifecycle.viewmodel.compose.viewModel()
+            }
+            com.arwora.feature.home.weather.WeatherHubScreen(
+                onBack = { navController.popBackStack() },
+                onOpenWeatherCamera = {
+                    navController.navigate(Screen.WeatherCamera.route)
+                },
+                onOpenAlertSettings = {
+                    navController.navigate(Screen.WeatherAlertSettings.route)
+                },
+                proViewModel = weatherProVm
+            )
+        }
+        composable(Screen.WeatherCamera.route) {
+            val owner = androidx.compose.ui.platform.LocalContext.current as? androidx.lifecycle.ViewModelStoreOwner
+            val weatherProVm: com.arwora.feature.home.weather.WeatherProViewModel = if (owner != null) {
+                androidx.lifecycle.viewmodel.compose.viewModel(viewModelStoreOwner = owner)
+            } else {
+                androidx.lifecycle.viewmodel.compose.viewModel()
+            }
+            com.arwora.feature.home.weather.WeatherCameraScreen(
+                onBack = { navController.popBackStack() },
+                proViewModel = weatherProVm
+            )
+        }
+        composable(Screen.WeatherAlertSettings.route) {
+            val owner = androidx.compose.ui.platform.LocalContext.current as? androidx.lifecycle.ViewModelStoreOwner
+            val weatherProVm: com.arwora.feature.home.weather.WeatherProViewModel = if (owner != null) {
+                androidx.lifecycle.viewmodel.compose.viewModel(viewModelStoreOwner = owner)
+            } else {
+                androidx.lifecycle.viewmodel.compose.viewModel()
+            }
+            com.arwora.feature.home.weather.WeatherAlertSettingsScreen(
+                onBack = { navController.popBackStack() },
+                proViewModel = weatherProVm
+            )
         }
     }
 }

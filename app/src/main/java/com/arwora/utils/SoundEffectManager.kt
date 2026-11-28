@@ -149,9 +149,11 @@ object SoundEffectManager {
         if (!isSoundEnabled) return
         try {
             clickTrack?.let { track ->
-                track.stop()
-                track.reloadStaticData()
-                track.play()
+                if (track.state == AudioTrack.STATE_INITIALIZED) {
+                    track.stop()
+                    track.reloadStaticData()
+                    track.play()
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -163,9 +165,11 @@ object SoundEffectManager {
         if (!isSoundEnabled) return
         try {
             coinTossTrack?.let { track ->
-                track.stop()
-                track.reloadStaticData()
-                track.play()
+                if (track.state == AudioTrack.STATE_INITIALIZED) {
+                    track.stop()
+                    track.reloadStaticData()
+                    track.play()
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -177,9 +181,11 @@ object SoundEffectManager {
         if (!isSoundEnabled) return
         try {
             coinLandTrack?.let { track ->
-                track.stop()
-                track.reloadStaticData()
-                track.play()
+                if (track.state == AudioTrack.STATE_INITIALIZED) {
+                    track.stop()
+                    track.reloadStaticData()
+                    track.play()
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()
